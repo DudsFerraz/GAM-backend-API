@@ -51,7 +51,7 @@ Atualmente, o código usa camadas e padrões explícitos, incluindo controllers,
 
 Notas de arquitetura e direcionamento de refatoração estão documentados em:
 
-- [Revisão de Arquitetura do Projeto](docs/refactor/project-architecture.md)
+- [Revisão de Arquitetura do Projeto](docs/refactor/project-refactor-roadmap.md)
 - [Roadmap de Refatoração da Arquitetura](docs/refactor/architecture-refactor-roadmap.md)
 
 ## Como Executar

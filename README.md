@@ -51,7 +51,7 @@ It currently uses explicit layers and patterns, including controllers, use-case 
 
 Architecture notes and refactor direction are documented in:
 
-- [Project Architecture Review](docs/refactor/project-architecture.md)
+- [Project Architecture Review](docs/refactor/project-refactor-roadmap.md)
 - [Architecture Refactor Roadmap](docs/refactor/architecture-refactor-roadmap.md)
 
 ## Getting Started
