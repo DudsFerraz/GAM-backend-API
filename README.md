@@ -71,10 +71,13 @@ Run the test suite:
 Run the application with the development shortcut:
 
 ```powershell
+$env:JWT_SECRET_KEY = "<base64-encoded-32-byte-secret>"
 .\mvnw.cmd -Pdev
 ```
 
 This command activates the Maven profile named `dev`. That Maven profile is only a shortcut: it runs the `spring-boot:run` goal and passes the Spring profile named `dev` to the application. The Spring profile then loads `application-dev.properties`.
+
+The development profile requires `JWT_SECRET_KEY` to be set in the environment. Use a local-only base64-encoded secret with at least 32 bytes of decoded key material.
 
 The development Spring profile uses Spring Boot Docker Compose support to start PostgreSQL from `compose.yml` when needed. The PostgreSQL container is kept running after the application exits so later application restarts are faster.
 
