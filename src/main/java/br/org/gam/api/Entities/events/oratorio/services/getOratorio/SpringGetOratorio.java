@@ -3,15 +3,16 @@ package br.org.gam.api.Entities.events.oratorio.services.getOratorio;
 import br.org.gam.api.Entities.events.generic.exception.EventNotFoundException;
 import br.org.gam.api.Entities.events.generic.persistence.EventEntity;
 import br.org.gam.api.Entities.events.generic.security.EventSecurity;
-import br.org.gam.api.Entities.events.generic.services.getEvent.GetEvent;
 import br.org.gam.api.Entities.events.generic.services.getEventInstance.GetEventInstance;
 import br.org.gam.api.Entities.events.oratorio.OratorioMapper;
 import br.org.gam.api.Entities.events.oratorio.persistence.OratorioEntity;
 import br.org.gam.api.Entities.events.oratorio.services.OratorioRDTO;
 import br.org.gam.api.Entities.events.oratorio.services.getOratorioInstance.GetOratorioInstance;
+import org.springframework.stereotype.Service;
 
 import java.util.UUID;
 
+@Service
 public class SpringGetOratorio implements GetOratorio {
     private final OratorioMapper oratorioMapper;
     private final GetEventInstance getEventInstance;
