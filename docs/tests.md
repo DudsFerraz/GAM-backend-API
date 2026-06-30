@@ -138,6 +138,29 @@ Every test class should have @DisplayName. It must describe scenario and result 
 
 Use @Nested to group scenarios inside a test class, only when they make the test easier to read. Good groups are: Valid inputs, Invalid inputs, Boundary values Authentication, Authorization, Creation, Update, Deletion, Error handling
 
+When a test file contains more than one test type, such as functional and structural cases, keep the outer test class and filename neutral. Do not name the file `*FunctionalTest` if it also contains structural tests. Instead, create nested classes named by test type and annotate them with the matching custom annotation, such as `@FunctionalTest` or `@StructuralTest`. Only create a nested test-type class when it contains at least one test.
+
+```java
+@UnitTest
+@DisplayName("Account Lookup Use Case")
+class AccountLookupTest {
+
+    @Nested
+    @FunctionalTest
+    @DisplayName("Functional")
+    class Functional {
+        // Functional tests
+    }
+
+    @Nested
+    @StructuralTest
+    @DisplayName("Structural")
+    class Structural {
+        // Structural tests
+    }
+}
+```
+
 ### Parameterized Tests
 
 Use parameterized tests when the same behavior must be checked with several values. Use:

@@ -23,6 +23,11 @@ public record MyEmail(
         return value;
     }
 
+    @Override
+    public String toString() {
+        return value;
+    }
+
     @JsonCreator
     public static MyEmail of(String value) {
         return new MyEmail(value);
