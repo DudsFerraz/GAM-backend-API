@@ -45,8 +45,18 @@ Functional tests are based on the specification, though nothing prevents analyzi
 3. **Partition Identification:** Investigate inputs and outputs to map equivalence classes. Analyze each input individually, potential interactions between inputs, and all possible outputs.
 4. **Boundary Analysis:** Analyze each equivalence class to identify the boundaries that lead to changes in the program's behavior.
 5. **Test Case Creation:** Combine equivalence classes to create test cases. To avoid an explosion in the number of tests, combine only valid classes and test invalid classes only once. (If the number of combinations is too large, divide the tested module).
-6. **Test Automation:** Implement the test cases using a testing framework, preferring realistic values for input data even if they are not actively used in the test. Dedicate more attention to testing modules that have a higher cost of failure.
-7. **Test Suite Expansion:** Revisit the created tests and add new tests if deemed necessary.
+6. **Domain Contract Gate:** Before implementing or accepting a test suite, explicitly verify that the suite describes the intended domain behavior, not only the behavior already present in the code. If the specification is incomplete, ambiguous, or missing important constraints such as limits, allowed formats, normalization, error messages, or rejection rules, pause and ask for clarification. Do not proceed with tests that merely preserve an under-specified implementation.
+7. **Test Automation:** Implement the test cases using a testing framework, preferring realistic values for input data even if they are not actively used in the test. Dedicate more attention to testing modules that have a higher cost of failure.
+8. **Test Suite Expansion:** Revisit the created tests and add new tests if deemed necessary.
+
+Before considering a functional suite complete, review it with the following gate questions:
+
+* Does each test case cover a distinct behavior, equivalence class, boundary, output, or failure mode? Remove cases that only repeat the same behavioral signal with different example data.
+* Does the suite maximize behavior variance with the minimum practical number of test cases? Prefer one representative valid case per equivalence class, plus explicit boundary and invalid cases.
+* Are boundary fixtures derived in a way that makes the boundary obvious? Use `@MethodSource` for generated values such as `"a".repeat(32)` when inline literals would be hard to count or easy to misread.
+* Is test data human-readable? Prefer direct literals such as `"Á"` over Unicode escapes such as `"\u00C1"` unless the escape itself is the behavior under test.
+* Are normalization tests justified by the domain contract? Only test Unicode normalization, separator equivalence, trimming, or canonicalization when normalization is explicitly required before saving or comparing values.
+* Are tests named and grouped by the behavior being protected, not by incidental implementation details?
 
 ### 2.2. Structural Testing Approach (White-Box)
 
