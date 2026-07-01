@@ -7,6 +7,7 @@ import java.util.stream.Collectors;
 
 public class SpecificationBuilder {
     public static <E> Specification<E> build(List<SpecificationFilter> filters) {
+        if (filters == null) return Specification.allOf(List.of());
 
         List<Specification<E>> specs = filters.stream()
                 .filter(SpecificationFilter::isValid)
