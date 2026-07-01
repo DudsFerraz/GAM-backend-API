@@ -65,12 +65,11 @@ public class RefreshTokenService {
         return savedRefreshTokenEntity.getToken();
     }
 
-    public RefreshTokenEntity verifyExpiration(RefreshTokenEntity token) {
+    public void verifyExpiration(RefreshTokenEntity token) {
         if (token.getExpiryDate().compareTo(Instant.now()) < 0) {
-            refreshTokenRepository.delete(token);
+            refreshTokenRepository.deleteByToken(token.getToken());
             throw new RefreshTokenExpiredException("Refresh token was expired. Please make a new signin request");
         }
-        return token;
     }
 
     @Transactional
@@ -80,7 +79,7 @@ public class RefreshTokenService {
 
         AccountEntity accountEntity = oldTokenEntity.getAccount();
 
-        refreshTokenRepository.delete(oldTokenEntity);
+        refreshTokenRepository.deleteByToken(oldTokenEntity.getToken());
 
         UUID newRefreshToken = this.createRefreshToken(accountEntity.getEmail());
 
@@ -94,7 +93,7 @@ public class RefreshTokenService {
     public void logout(String refreshTokenStr){
 
         try {
-            refreshTokenRepository.delete(this.findByToken(refreshTokenStr));
+            refreshTokenRepository.deleteByToken(this.findByToken(refreshTokenStr).getToken());
         }catch (Exception e){
             // Ignored Exception. User has already logged out
         }
