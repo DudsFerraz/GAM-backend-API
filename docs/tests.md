@@ -96,6 +96,22 @@ Integration tests evaluate how different parts of the system interact with each 
 6. **Robust Verification (Then):** Do not solely validate the status code. Verify the full content of the responses, validating the payload (using extractions like `JsonPath`) and persistence rules.
 7. **Test Scope Isolation:** Clearly mark integration tests with tags (e.g., `@Tag("ApiTest")`) so they can be separated from the fast unit test suite.
 
+### 3.3. API/Security Integration Lessons
+
+API and security integration tests must be self-contained. Required secrets, database configuration, ports, and fixture data must be provided by the test profile or test bootstrap, not by local developer machine state. A fixed local environment variable can be stable on one machine, but it is still outside the test boundary and can fail in CI, another developer environment, or a test runner that did not inherit the variable.
+
+Centralize API test mechanics in a base support class. REST Assured base URI/port setup, JSON content negotiation, authentication helpers, fixture builders, and cleanup should live in shared test support so each test focuses on behavior.
+
+When API tests write to a real database, cleanup must remove only known test-created records and must do so in dependency order. Prefer tracked fixture IDs for cleanup, and avoid teardown paths that rely on unrelated production behavior such as soft delete unless that behavior is the subject of the test.
+
+Security tests must verify the actual authentication mechanism used by each endpoint. Bearer-token endpoints, refresh-cookie endpoints, and public endpoints have different contracts and must not be tested as though they all use the same security path.
+
+Separate authentication failures from authorization failures. Unauthenticated requests should assert `401`, while authenticated users without the required permission should assert `403`.
+
+API/security tests are allowed to reveal production defects. If a test exposes a runtime behavior mismatch, such as a repository delete path incompatible with the target entity, fix the production behavior instead of weakening the test.
+
+After changing shared API test support, authentication, authorization, token behavior, or security configuration, run the full `mvn verify`. Focused API test runs are useful during iteration, but shared test infrastructure and auth changes can affect persistence, context loading, and other integration tests.
+
 ## 4. Test Organization and Architecture
 
 ### Custom Test Tags
