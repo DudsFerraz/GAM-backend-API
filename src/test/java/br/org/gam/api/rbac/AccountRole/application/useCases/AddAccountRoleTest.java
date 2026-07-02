@@ -72,7 +72,7 @@ class AddAccountRoleTest {
             when(getRoleInstance.requiredById(dto.roleId())).thenReturn(role);
             when(accountRoleRepo.existsByAccount_IdAndRole_Id(account.getId(), role.getId())).thenReturn(false);
             when(accountRoleRepo.save(anyAccountRoleEntity())).thenReturn(savedEntity);
-            when(accountRoleMapper.entityToAccountRoleRDTO(savedEntity)).thenReturn(expectedResponse);
+            when(accountRoleMapper.entityToRDTO(savedEntity)).thenReturn(expectedResponse);
 
             AccountRoleRDTO response = addAccountRole.byDTO(dto);
 
@@ -156,7 +156,7 @@ class AddAccountRoleTest {
             when(getRoleInstance.requiredById(role.getId())).thenReturn(role);
             when(accountRoleRepo.existsByAccount_IdAndRole_Id(account.getId(), role.getId())).thenReturn(false);
             when(accountRoleRepo.save(anyAccountRoleEntity())).thenReturn(savedEntity);
-            when(accountRoleMapper.entityToAccountRoleRDTO(savedEntity)).thenReturn(expectedResponse);
+            when(accountRoleMapper.entityToRDTO(savedEntity)).thenReturn(expectedResponse);
 
             AccountRoleRDTO response = addAccountRole.byRoleName("ADMIN", account.getId());
 

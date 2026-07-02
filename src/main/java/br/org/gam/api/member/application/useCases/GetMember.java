@@ -24,7 +24,7 @@ public class GetMember {
         MemberEntity memberEntity = getMemberInstance.requiredById(id);
         if(!memberSecurity.canGetMember(memberEntity)) throw new MemberNotFoundException("Could not find member with id " + id);
 
-        return memberMapper.entityToMemberRDTO(memberEntity);
+        return memberMapper.entityToRDTO(memberEntity);
     }
 
 }

@@ -23,7 +23,7 @@ public class GetAccount {
     public AccountRDTO byId(UUID id) {
 
         AccountEntity accountEntity = getAccountInstance.requiredById(id);
-        return accountMapper.entityToAccountRDTO(accountEntity);
+        return accountMapper.entityToRDTO(accountEntity);
     }
 
 }

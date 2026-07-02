@@ -60,13 +60,13 @@ class GetLocationTest {
             LocationRDTO expectedResponse = response(id, "Parish Hall");
 
             when(getLocationInstance.requiredById(id)).thenReturn(entity);
-            when(locationMapper.entityToLocationRDTO(entity)).thenReturn(expectedResponse);
+            when(locationMapper.entityToRDTO(entity)).thenReturn(expectedResponse);
 
             LocationRDTO response = getLocation.byId(id);
 
             assertThat(response).isSameAs(expectedResponse);
             verify(getLocationInstance).requiredById(id);
-            verify(locationMapper).entityToLocationRDTO(entity);
+            verify(locationMapper).entityToRDTO(entity);
         }
 
         @Test
@@ -95,16 +95,16 @@ class GetLocationTest {
 
             when(locationRepo.findAll(pageable))
                     .thenReturn(new PageImpl<>(List.of(firstEntity, secondEntity), pageable, 2));
-            when(locationMapper.entityToLocationRDTO(firstEntity)).thenReturn(firstResponse);
-            when(locationMapper.entityToLocationRDTO(secondEntity)).thenReturn(secondResponse);
+            when(locationMapper.entityToRDTO(firstEntity)).thenReturn(firstResponse);
+            when(locationMapper.entityToRDTO(secondEntity)).thenReturn(secondResponse);
 
             Page<LocationRDTO> response = getLocation.all(pageable);
 
             assertThat(response.getContent()).containsExactly(firstResponse, secondResponse);
             assertThat(response.getTotalElements()).isEqualTo(2);
             verify(locationRepo).findAll(pageable);
-            verify(locationMapper).entityToLocationRDTO(firstEntity);
-            verify(locationMapper).entityToLocationRDTO(secondEntity);
+            verify(locationMapper).entityToRDTO(firstEntity);
+            verify(locationMapper).entityToRDTO(secondEntity);
         }
     }
 

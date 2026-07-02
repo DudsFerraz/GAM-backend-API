@@ -56,14 +56,14 @@ class GetAccountRolesTest {
             RoleRDTO secondResponse = response(UUID.randomUUID(), "MEMBER");
 
             when(accountRoleRepo.findAllByAccount_Id(accountId)).thenReturn(List.of(firstAccountRole, secondAccountRole));
-            when(roleMapper.entityToRoleRDTO(firstRole)).thenReturn(firstResponse);
-            when(roleMapper.entityToRoleRDTO(secondRole)).thenReturn(secondResponse);
+            when(roleMapper.entityToRDTO(firstRole)).thenReturn(firstResponse);
+            when(roleMapper.entityToRDTO(secondRole)).thenReturn(secondResponse);
 
             AccountRolesRDTO response = getAccountRoles.get(accountId);
 
             assertThat(response.roles()).containsExactly(firstResponse, secondResponse);
-            verify(roleMapper).entityToRoleRDTO(firstRole);
-            verify(roleMapper).entityToRoleRDTO(secondRole);
+            verify(roleMapper).entityToRDTO(firstRole);
+            verify(roleMapper).entityToRDTO(secondRole);
         }
     }
 

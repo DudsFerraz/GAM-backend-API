@@ -10,17 +10,30 @@ import org.mapstruct.Named;
 
 @Mapper(componentModel = "spring")
 public interface OratorianoMapper {
+
+    // =====================================================================================
+    // Domain <-> Persistence
+    // =====================================================================================
+
     @IgnoreFullAuditFields
     OratorianoEntity domainToEntity(Oratoriano oratorianoDomain);
 
     Oratoriano entityToDomain(OratorianoEntity oratorianoEntity);
+
+    // =====================================================================================
+    // Persistence -> RDTO
+    // =====================================================================================
+
+    @Mapping(target = "name", source = "oratorianoEntity.name", qualifiedByName = "nameToString")
+    OratorianoRDTO entityToRDTO(OratorianoEntity oratorianoEntity);
+
+    // =====================================================================================
+    // Helpers
+    // =====================================================================================
 
     @Named("nameToString")
     default String nameToString(Name name) {
         if (name == null) return null;
         return name.toString();
     }
-
-    @Mapping(target = "name", source = "oratorianoEntity.name", qualifiedByName = "nameToString")
-    OratorianoRDTO entityToRDTO(OratorianoEntity oratorianoEntity);
 }

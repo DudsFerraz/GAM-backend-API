@@ -19,6 +19,6 @@ public class GetRole {
     public RoleRDTO byId(UUID id) {
 
         RoleEntity roleEntity = getRoleInstance.requiredById(id);
-        return roleMapper.entityToRoleRDTO(roleEntity);
+        return roleMapper.entityToRDTO(roleEntity);
     }
 }

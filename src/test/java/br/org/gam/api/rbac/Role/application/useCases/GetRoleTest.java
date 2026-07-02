@@ -49,13 +49,13 @@ class GetRoleTest {
             RoleRDTO expectedResponse = new RoleRDTO(id, "ADMIN", "System administrator");
 
             when(getRoleInstance.requiredById(id)).thenReturn(entity);
-            when(roleMapper.entityToRoleRDTO(entity)).thenReturn(expectedResponse);
+            when(roleMapper.entityToRDTO(entity)).thenReturn(expectedResponse);
 
             RoleRDTO response = getRole.byId(id);
 
             assertThat(response).isSameAs(expectedResponse);
             verify(getRoleInstance).requiredById(id);
-            verify(roleMapper).entityToRoleRDTO(entity);
+            verify(roleMapper).entityToRDTO(entity);
         }
 
         @Test

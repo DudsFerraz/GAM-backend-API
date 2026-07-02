@@ -28,7 +28,7 @@ public class GetAccountRoles {
 
         List<RoleRDTO> dtosList = rolesEntities
                 .stream()
-                .map(roleMapper::entityToRoleRDTO).toList();
+                .map(roleMapper::entityToRDTO).toList();
 
         return new AccountRolesRDTO(dtosList);
     }

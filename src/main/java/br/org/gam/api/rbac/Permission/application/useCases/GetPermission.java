@@ -19,6 +19,6 @@ public class GetPermission {
     public PermissionRDTO byId(UUID id) {
 
         PermissionEntity permissionEntity = getPermissionInstance.requiredById(id);
-        return permissionMapper.entityToPermissionRDTO(permissionEntity);
+        return permissionMapper.entityToRDTO(permissionEntity);
     }
 }

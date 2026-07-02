@@ -12,20 +12,33 @@ import org.mapstruct.Named;
 
 @Mapper(componentModel = "spring", uses = {AccountMapper.class})
 public interface MemberMapper {
+
+    // =====================================================================================
+    // Domain <-> Persistence
+    // =====================================================================================
+
     @IgnoreFullAuditFields
     MemberEntity domainToEntity(Member memberDomain);
 
     Member entityToDomain(MemberEntity memberEntity);
 
+    // =====================================================================================
+    // Persistence -> RDTO
+    // =====================================================================================
+
     RegisterMemberRDTO entityToRegisterMemberRDTO(MemberEntity memberEntity);
+
+    @Mapping(target = "name", source = "memberEntity.name", qualifiedByName = "nameToString")
+    @Mapping(target = "id", source = "memberEntity.id")
+    MemberRDTO entityToRDTO(MemberEntity memberEntity);
+
+    // =====================================================================================
+    // Helpers
+    // =====================================================================================
 
     @Named("nameToString")
     default String nameToString(Name name) {
         if (name == null) return null;
         return name.toString();
     }
-
-    @Mapping(target = "name", source = "memberEntity.name", qualifiedByName = "nameToString")
-    @Mapping(target = "id", source = "memberEntity.id")
-    MemberRDTO entityToMemberRDTO(MemberEntity memberEntity);
 }

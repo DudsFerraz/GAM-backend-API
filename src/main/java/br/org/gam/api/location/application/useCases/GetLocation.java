@@ -25,11 +25,11 @@ public class GetLocation {
     public LocationRDTO byId(UUID id) {
 
         LocationEntity locationEntity = getLocationInstance.requiredById(id);
-        return locationMapper.entityToLocationRDTO(locationEntity);
+        return locationMapper.entityToRDTO(locationEntity);
     }
     public Page<LocationRDTO> all(Pageable pageable) {
 
         return locationRepo.findAll(pageable)
-                .map(locationMapper::entityToLocationRDTO);
+                .map(locationMapper::entityToRDTO);
     }
 }

@@ -58,14 +58,14 @@ class GetEventTest {
 
             when(getEventInstance.requiredById(id)).thenReturn(entity);
             when(eventSecurity.canGetEvent(entity)).thenReturn(true);
-            when(eventMapper.entityToEventRDTO(entity)).thenReturn(expectedResponse);
+            when(eventMapper.entityToRDTO(entity)).thenReturn(expectedResponse);
 
             EventRDTO response = getEvent.byId(id);
 
             assertThat(response).isSameAs(expectedResponse);
             verify(getEventInstance).requiredById(id);
             verify(eventSecurity).canGetEvent(entity);
-            verify(eventMapper).entityToEventRDTO(entity);
+            verify(eventMapper).entityToRDTO(entity);
         }
 
         @Test

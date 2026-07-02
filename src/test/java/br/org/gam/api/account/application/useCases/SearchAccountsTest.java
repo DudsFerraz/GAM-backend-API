@@ -67,8 +67,8 @@ class SearchAccountsTest {
 
             when(accountRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(new PageImpl<>(List.of(firstEntity, secondEntity), pageable, 2));
-            when(accountMapper.entityToAccountRDTO(firstEntity)).thenReturn(firstResponse);
-            when(accountMapper.entityToAccountRDTO(secondEntity)).thenReturn(secondResponse);
+            when(accountMapper.entityToRDTO(firstEntity)).thenReturn(firstResponse);
+            when(accountMapper.entityToRDTO(secondEntity)).thenReturn(secondResponse);
 
             Page<AccountRDTO> response = searchAccounts.search(filters, pageable);
 
@@ -78,8 +78,8 @@ class SearchAccountsTest {
             ArgumentCaptor<Specification<AccountEntity>> specificationCaptor = ArgumentCaptor.forClass(Specification.class);
             verify(accountRepo).findAll(specificationCaptor.capture(), eq(pageable));
             assertThat(specificationCaptor.getValue()).isNotNull();
-            verify(accountMapper).entityToAccountRDTO(firstEntity);
-            verify(accountMapper).entityToAccountRDTO(secondEntity);
+            verify(accountMapper).entityToRDTO(firstEntity);
+            verify(accountMapper).entityToRDTO(secondEntity);
         }
 
         @Test
@@ -91,13 +91,13 @@ class SearchAccountsTest {
 
             when(accountRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(new PageImpl<>(List.of(entity), pageable, 1));
-            when(accountMapper.entityToAccountRDTO(entity)).thenReturn(expectedResponse);
+            when(accountMapper.entityToRDTO(entity)).thenReturn(expectedResponse);
 
             Page<AccountRDTO> response = searchAccounts.search(List.of(), pageable);
 
             assertThat(response.getContent()).containsExactly(expectedResponse);
             verify(accountRepo).findAll(any(Specification.class), eq(pageable));
-            verify(accountMapper).entityToAccountRDTO(entity);
+            verify(accountMapper).entityToRDTO(entity);
         }
 
         @Test

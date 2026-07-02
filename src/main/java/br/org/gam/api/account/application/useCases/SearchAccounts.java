@@ -31,7 +31,7 @@ public class SearchAccounts {
         Page<AccountEntity> entitiesPage = accountRepo.findAll(spec, pageable);
 
         return entitiesPage
-                .map(accountMapper::entityToAccountRDTO);
+                .map(accountMapper::entityToRDTO);
     }
 
 }

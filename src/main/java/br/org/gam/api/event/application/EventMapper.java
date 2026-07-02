@@ -10,9 +10,21 @@ import org.mapstruct.Mapper;
 
 @Mapper(componentModel = "spring", uses = {LocationMapper.class, PermissionMapper.class})
 public interface EventMapper {
+
+    // =====================================================================================
+    // Domain <-> Persistence
+    // =====================================================================================
+
     @IgnoreFullAuditFields
     EventEntity domainToEntity(Event event);
+
     Event entityToDomain(EventEntity eventEntity);
+
+    // =====================================================================================
+    // Persistence -> RDTO
+    // =====================================================================================
+
     CreateEventRDTO entityToCreateEventRDTO(EventEntity eventEntity);
-    EventRDTO entityToEventRDTO(EventEntity eventEntity);
+
+    EventRDTO entityToRDTO(EventEntity eventEntity);
 }

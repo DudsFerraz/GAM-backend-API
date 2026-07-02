@@ -35,7 +35,7 @@ public class SearchMembers {
         Specification<MemberEntity> spec = securityFilter.and(searchFilters).and(MemberSpecifications.fetchAccount());
 
         return memberRepo.findAll(spec, pageable)
-                .map(memberMapper::entityToMemberRDTO);
+                .map(memberMapper::entityToRDTO);
     }
 
 

@@ -49,13 +49,13 @@ class GetPermissionTest {
             PermissionRDTO expectedResponse = new PermissionRDTO(id, "MEMBER_GET", "View active members");
 
             when(getPermissionInstance.requiredById(id)).thenReturn(entity);
-            when(permissionMapper.entityToPermissionRDTO(entity)).thenReturn(expectedResponse);
+            when(permissionMapper.entityToRDTO(entity)).thenReturn(expectedResponse);
 
             PermissionRDTO response = getPermission.byId(id);
 
             assertThat(response).isSameAs(expectedResponse);
             verify(getPermissionInstance).requiredById(id);
-            verify(permissionMapper).entityToPermissionRDTO(entity);
+            verify(permissionMapper).entityToRDTO(entity);
         }
 
         @Test

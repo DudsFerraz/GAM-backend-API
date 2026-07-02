@@ -33,7 +33,7 @@ public class GetRolePermissions {
 
         List<PermissionRDTO> dtosList = permissionEntities
                 .stream()
-                .map(permissionMapper::entityToPermissionRDTO).toList();
+                .map(permissionMapper::entityToRDTO).toList();
 
         return new GetRolePermissionsRDTO(dtosList);
     }

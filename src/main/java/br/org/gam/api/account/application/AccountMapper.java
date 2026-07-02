@@ -16,18 +16,33 @@ import org.mapstruct.Named;
 
 @Mapper(componentModel = "spring", uses = { RoleMapper.class })
 public interface AccountMapper {
+
+    // =====================================================================================
+    // Domain <-> Persistence
+    // =====================================================================================
+
     @IgnoreFullAuditFields
     AccountEntity domainToEntity(Account account);
+
     Account entityToDomain(AccountEntity accountEntity);
+
+    // =====================================================================================
+    // Persistence -> RDTO
+    // =====================================================================================
+
     RegisterAccountRDTO entityToRegisterAccountRDTO(AccountEntity accountEntity);
 
     @Mapping(target = "roles", source = "accountRoles", qualifiedByName = "accountRolesToAccountRolesRDTO")
-    AccountRDTO entityToAccountRDTO(AccountEntity accountEntity);
+    AccountRDTO entityToRDTO(AccountEntity accountEntity);
 
     @Mapping(source = "role", target = ".")
     RoleRDTO accountRoleToRoleRDTO(AccountRoleEntity accountRoleEntity);
 
     List<RoleRDTO> accountRolesToRoleRDTOs(Collection<AccountRoleEntity> accountRoles);
+
+    // =====================================================================================
+    // Helpers
+    // =====================================================================================
 
     @Named("accountRolesToAccountRolesRDTO")
     default AccountRolesRDTO accountRolesToAccountRolesRDTO(Collection<AccountRoleEntity> accountRoles) {

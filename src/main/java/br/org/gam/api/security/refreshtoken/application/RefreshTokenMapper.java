@@ -7,6 +7,12 @@ import org.mapstruct.Mapper;
 
 @Mapper(componentModel = "spring", uses = {AccountMapper.class} )
 public interface RefreshTokenMapper {
+
+    // =====================================================================================
+    // Domain <-> Persistence
+    // =====================================================================================
+
     RefreshTokenEntity domainToEntity(RefreshToken refreshToken);
+
     RefreshToken entityToDomain(RefreshTokenEntity refreshTokenEntity);
 }

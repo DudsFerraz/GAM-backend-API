@@ -57,13 +57,13 @@ class GetAccountTest {
             );
 
             when(getAccountInstance.requiredById(id)).thenReturn(entity);
-            when(accountMapper.entityToAccountRDTO(entity)).thenReturn(expectedResponse);
+            when(accountMapper.entityToRDTO(entity)).thenReturn(expectedResponse);
 
             AccountRDTO response = getAccount.byId(id);
 
             assertThat(response).isSameAs(expectedResponse);
             verify(getAccountInstance).requiredById(id);
-            verify(accountMapper).entityToAccountRDTO(entity);
+            verify(accountMapper).entityToRDTO(entity);
         }
 
         @Test

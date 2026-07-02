@@ -57,14 +57,14 @@ class GetMemberTest {
 
             when(getMemberInstance.requiredById(id)).thenReturn(entity);
             when(memberSecurity.canGetMember(entity)).thenReturn(true);
-            when(memberMapper.entityToMemberRDTO(entity)).thenReturn(expectedResponse);
+            when(memberMapper.entityToRDTO(entity)).thenReturn(expectedResponse);
 
             MemberRDTO response = getMember.byId(id);
 
             assertThat(response).isSameAs(expectedResponse);
             verify(getMemberInstance).requiredById(id);
             verify(memberSecurity).canGetMember(entity);
-            verify(memberMapper).entityToMemberRDTO(entity);
+            verify(memberMapper).entityToRDTO(entity);
         }
 
         @Test

@@ -75,8 +75,8 @@ class SearchEventsTest {
             when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of("EVENTS_SEARCH"));
             when(eventRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(new PageImpl<>(List.of(firstEntity, secondEntity), pageable, 2));
-            when(eventMapper.entityToEventRDTO(firstEntity)).thenReturn(firstResponse);
-            when(eventMapper.entityToEventRDTO(secondEntity)).thenReturn(secondResponse);
+            when(eventMapper.entityToRDTO(firstEntity)).thenReturn(firstResponse);
+            when(eventMapper.entityToRDTO(secondEntity)).thenReturn(secondResponse);
 
             Page<EventRDTO> response = searchEvents.search(filters, pageable);
 
@@ -87,8 +87,8 @@ class SearchEventsTest {
             verify(eventRepo).findAll(specificationCaptor.capture(), eq(pageable));
             assertThat(specificationCaptor.getValue()).isNotNull();
             verify(securityUtils).getLoggedUserAuthorities();
-            verify(eventMapper).entityToEventRDTO(firstEntity);
-            verify(eventMapper).entityToEventRDTO(secondEntity);
+            verify(eventMapper).entityToRDTO(firstEntity);
+            verify(eventMapper).entityToRDTO(secondEntity);
         }
 
         @Test
@@ -101,14 +101,14 @@ class SearchEventsTest {
             when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of("EVENTS_SEARCH"));
             when(eventRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(new PageImpl<>(List.of(entity), pageable, 1));
-            when(eventMapper.entityToEventRDTO(entity)).thenReturn(expectedResponse);
+            when(eventMapper.entityToRDTO(entity)).thenReturn(expectedResponse);
 
             Page<EventRDTO> response = searchEvents.search(List.of(), pageable);
 
             assertThat(response.getContent()).containsExactly(expectedResponse);
             verify(securityUtils).getLoggedUserAuthorities();
             verify(eventRepo).findAll(any(Specification.class), eq(pageable));
-            verify(eventMapper).entityToEventRDTO(entity);
+            verify(eventMapper).entityToRDTO(entity);
         }
 
         @Test

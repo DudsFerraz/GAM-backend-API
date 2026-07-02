@@ -107,7 +107,7 @@ RoleEntity -> RoleRDTO
 ### Typical Methods
 
 ```java
-MemberRDTO entityToMemberRDTO(MemberEntity entity);
+MemberRDTO entityToRDTO(MemberEntity entity);
 
 RegisterMemberRDTO entityToRegisterMemberRDTO(MemberEntity entity);
 ```
@@ -168,7 +168,7 @@ public interface MemberMapper {
     // Persistence -> RDTO
     // =====================================================================================
 
-    MemberRDTO entityToMemberRDTO(MemberEntity entity);
+    MemberRDTO entityToRDTO(MemberEntity entity);
 
     RegisterMemberRDTO entityToRegisterMemberRDTO(MemberEntity entity);
 
@@ -193,7 +193,7 @@ public interface PresenceMapper {
     // Persistence -> RDTO
     // =====================================================================================
 
-    PresenceRDTO entityToPresenceRDTO(PresenceEntity entity);
+    PresenceRDTO entityToRDTO(PresenceEntity entity);
 
     RegisterPresenceRDTO entityToRegisterPresenceRDTO(PresenceEntity entity);
 
@@ -241,7 +241,7 @@ These methods must disappear when `Presence` is simplified.
 The RDTO methods may remain:
 
 ```java
-PresenceRDTO entityToPresenceRDTO(PresenceEntity entity);
+PresenceRDTO entityToRDTO(PresenceEntity entity);
 
 RegisterPresenceRDTO entityToRegisterPresenceRDTO(PresenceEntity entity);
 ```
@@ -265,7 +265,7 @@ Apply mapper cleanup after the related domain/entity decision is implemented for
 
 Use this order:
 
-1. `RolePermissionMapper`
+1. `RolePermission` mapper cleanup; remove `RolePermissionMapper` when it has no useful methods
 2. `AccountRoleMapper`
 3. `RoleMapper`
 4. `PermissionMapper`
@@ -274,4 +274,3 @@ Use this order:
 7. Rich model mappers such as `MemberMapper`, `EventMapper`, `AccountMapper`, `MissaMapper`, `OratorioMapper`, `RefreshTokenMapper`, and `OratorianoMapper`
 
 Start with simplified models because their domain/entity mapper methods are the clearest removals.
-

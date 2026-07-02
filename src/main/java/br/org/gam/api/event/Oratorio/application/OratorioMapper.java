@@ -10,8 +10,20 @@ import org.mapstruct.Mapper;
 
 @Mapper(componentModel = "spring", uses = {EventMapper.class, MemberMapper.class, OratorianoMapper.class})
 public interface OratorioMapper {
+
+    // =====================================================================================
+    // Domain <-> Persistence
+    // =====================================================================================
+
     OratorioEntity domainToEntity(Oratorio domain);
+
     Oratorio entityToDomain(OratorioEntity entity);
+
+    // =====================================================================================
+    // Persistence -> RDTO
+    // =====================================================================================
+
     OratorioRDTO entityToRDTO(OratorioEntity entity);
+
     CreateOratorioRDTO entityToCreateOratorioRDTO(OratorioEntity entity);
 }

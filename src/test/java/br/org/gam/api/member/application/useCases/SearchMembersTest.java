@@ -73,8 +73,8 @@ class SearchMembersTest {
             when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of());
             when(memberRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(new PageImpl<>(List.of(firstEntity, secondEntity), pageable, 2));
-            when(memberMapper.entityToMemberRDTO(firstEntity)).thenReturn(firstResponse);
-            when(memberMapper.entityToMemberRDTO(secondEntity)).thenReturn(secondResponse);
+            when(memberMapper.entityToRDTO(firstEntity)).thenReturn(firstResponse);
+            when(memberMapper.entityToRDTO(secondEntity)).thenReturn(secondResponse);
 
             Page<MemberRDTO> response = searchMembers.search(filters, pageable);
 
@@ -85,8 +85,8 @@ class SearchMembersTest {
             verify(memberRepo).findAll(specificationCaptor.capture(), eq(pageable));
             assertThat(specificationCaptor.getValue()).isNotNull();
             verify(securityUtils).getLoggedUserAuthorities();
-            verify(memberMapper).entityToMemberRDTO(firstEntity);
-            verify(memberMapper).entityToMemberRDTO(secondEntity);
+            verify(memberMapper).entityToRDTO(firstEntity);
+            verify(memberMapper).entityToRDTO(secondEntity);
         }
 
         @Test
@@ -99,14 +99,14 @@ class SearchMembersTest {
             when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of("MEMBER_GET_NON_ACTIVE"));
             when(memberRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(new PageImpl<>(List.of(entity), pageable, 1));
-            when(memberMapper.entityToMemberRDTO(entity)).thenReturn(expectedResponse);
+            when(memberMapper.entityToRDTO(entity)).thenReturn(expectedResponse);
 
             Page<MemberRDTO> response = searchMembers.search(List.of(), pageable);
 
             assertThat(response.getContent()).containsExactly(expectedResponse);
             verify(securityUtils).getLoggedUserAuthorities();
             verify(memberRepo).findAll(any(Specification.class), eq(pageable));
-            verify(memberMapper).entityToMemberRDTO(entity);
+            verify(memberMapper).entityToRDTO(entity);
         }
 
         @Test

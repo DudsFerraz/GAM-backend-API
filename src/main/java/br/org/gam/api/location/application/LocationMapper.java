@@ -6,7 +6,12 @@ import org.mapstruct.Mapper;
 
 @Mapper(componentModel = "spring")
 public interface LocationMapper {
+
+    // =====================================================================================
+    // Persistence -> RDTO
+    // =====================================================================================
+
     CreateLocationRDTO entityToCreateLocationRDTO(LocationEntity locationEntity);
 
-    LocationRDTO entityToLocationRDTO(LocationEntity locationEntity);
+    LocationRDTO entityToRDTO(LocationEntity locationEntity);
 }

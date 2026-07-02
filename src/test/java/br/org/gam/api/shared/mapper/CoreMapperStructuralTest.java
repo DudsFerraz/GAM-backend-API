@@ -37,7 +37,7 @@ class CoreMapperStructuralTest {
         void permissionEntityShouldMapToResponseDto() {
             PermissionEntity entity = permissionEntity(UUID.randomUUID(), "MEMBER_GET", "View active members");
 
-            PermissionRDTO dto = permissionMapper.entityToPermissionRDTO(entity);
+            PermissionRDTO dto = permissionMapper.entityToRDTO(entity);
 
             assertThat(dto.id()).isEqualTo(entity.getId());
             assertThat(dto.name()).isEqualTo("MEMBER_GET");
@@ -49,7 +49,7 @@ class CoreMapperStructuralTest {
         void roleEntityShouldMapToResponseDto() {
             RoleEntity entity = roleEntity(UUID.randomUUID(), "ADMIN", "System administrator");
 
-            RoleRDTO dto = roleMapper.entityToRoleRDTO(entity);
+            RoleRDTO dto = roleMapper.entityToRDTO(entity);
 
             assertThat(dto.id()).isEqualTo(entity.getId());
             assertThat(dto.name()).isEqualTo("ADMIN");
@@ -70,7 +70,7 @@ class CoreMapperStructuralTest {
             entity.setLatitude(new java.math.BigDecimal("-22.90684670"));
             entity.setLongitude(new java.math.BigDecimal("-47.06158810"));
 
-            LocationRDTO dto = locationMapper.entityToLocationRDTO(entity);
+            LocationRDTO dto = locationMapper.entityToRDTO(entity);
 
             assertThat(dto.id()).isEqualTo(entity.getId());
             assertThat(dto.name()).isEqualTo("Parish Hall");

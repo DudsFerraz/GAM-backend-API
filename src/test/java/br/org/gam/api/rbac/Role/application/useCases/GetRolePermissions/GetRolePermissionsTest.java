@@ -58,8 +58,8 @@ class GetRolePermissionsTest {
 
             when(rolePermissionRepo.findAll(org.mockito.ArgumentMatchers.any(Specification.class)))
                     .thenReturn(List.of(firstRolePermission, secondRolePermission));
-            when(permissionMapper.entityToPermissionRDTO(firstPermission)).thenReturn(firstResponse);
-            when(permissionMapper.entityToPermissionRDTO(secondPermission)).thenReturn(secondResponse);
+            when(permissionMapper.entityToRDTO(firstPermission)).thenReturn(firstResponse);
+            when(permissionMapper.entityToRDTO(secondPermission)).thenReturn(secondResponse);
 
             GetRolePermissionsRDTO response = getRolePermissions.allById(roleId);
 
@@ -68,8 +68,8 @@ class GetRolePermissionsTest {
             ArgumentCaptor<Specification<RolePermissionEntity>> specificationCaptor = ArgumentCaptor.forClass(Specification.class);
             verify(rolePermissionRepo).findAll(specificationCaptor.capture());
             assertThat(specificationCaptor.getValue()).isNotNull();
-            verify(permissionMapper).entityToPermissionRDTO(firstPermission);
-            verify(permissionMapper).entityToPermissionRDTO(secondPermission);
+            verify(permissionMapper).entityToRDTO(firstPermission);
+            verify(permissionMapper).entityToRDTO(secondPermission);
         }
     }
 

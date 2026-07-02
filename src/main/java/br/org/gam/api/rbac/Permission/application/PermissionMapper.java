@@ -5,5 +5,10 @@ import org.mapstruct.Mapper;
 
 @Mapper(componentModel = "spring")
 public interface PermissionMapper {
-    PermissionRDTO entityToPermissionRDTO(PermissionEntity permissionEntity);
+
+    // =====================================================================================
+    // Persistence -> RDTO
+    // =====================================================================================
+
+    PermissionRDTO entityToRDTO(PermissionEntity permissionEntity);
 }

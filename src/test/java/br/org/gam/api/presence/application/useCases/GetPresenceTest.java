@@ -72,7 +72,7 @@ class GetPresenceTest {
             PresenceRDTO expectedResponse = response(UUID.randomUUID(), "Checked in");
 
             when(presenceRepo.findOne(any(Specification.class))).thenReturn(Optional.of(entity));
-            when(presenceMapper.entityToPresenceRDTO(entity)).thenReturn(expectedResponse);
+            when(presenceMapper.entityToRDTO(entity)).thenReturn(expectedResponse);
 
             PresenceRDTO response = getPresence.byIds(memberId, eventId);
 
@@ -81,7 +81,7 @@ class GetPresenceTest {
             ArgumentCaptor<Specification<PresenceEntity>> specificationCaptor = ArgumentCaptor.forClass(Specification.class);
             verify(presenceRepo).findOne(specificationCaptor.capture());
             assertThat(specificationCaptor.getValue()).isNotNull();
-            verify(presenceMapper).entityToPresenceRDTO(entity);
+            verify(presenceMapper).entityToRDTO(entity);
         }
 
         @Test
@@ -114,8 +114,8 @@ class GetPresenceTest {
             when(eventSecurity.canGetEvent(eventEntity)).thenReturn(true);
             when(presenceRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(new PageImpl<>(List.of(firstEntity, secondEntity), pageable, 2));
-            when(presenceMapper.entityToPresenceRDTO(firstEntity)).thenReturn(firstResponse);
-            when(presenceMapper.entityToPresenceRDTO(secondEntity)).thenReturn(secondResponse);
+            when(presenceMapper.entityToRDTO(firstEntity)).thenReturn(firstResponse);
+            when(presenceMapper.entityToRDTO(secondEntity)).thenReturn(secondResponse);
 
             Page<PresenceRDTO> response = getPresence.allByEvent(eventId, pageable);
 
@@ -126,8 +126,8 @@ class GetPresenceTest {
             verify(presenceRepo).findAll(specificationCaptor.capture(), eq(pageable));
             assertThat(specificationCaptor.getValue()).isNotNull();
             verify(eventSecurity).canGetEvent(eventEntity);
-            verify(presenceMapper).entityToPresenceRDTO(firstEntity);
-            verify(presenceMapper).entityToPresenceRDTO(secondEntity);
+            verify(presenceMapper).entityToRDTO(firstEntity);
+            verify(presenceMapper).entityToRDTO(secondEntity);
         }
 
         @Test
@@ -174,7 +174,7 @@ class GetPresenceTest {
 
             when(presenceRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(new PageImpl<>(List.of(entity), pageable, 1));
-            when(presenceMapper.entityToPresenceRDTO(entity)).thenReturn(expectedResponse);
+            when(presenceMapper.entityToRDTO(entity)).thenReturn(expectedResponse);
 
             Page<PresenceRDTO> response = getPresence.allByMember(memberId, pageable);
 
@@ -184,7 +184,7 @@ class GetPresenceTest {
             ArgumentCaptor<Specification<PresenceEntity>> specificationCaptor = ArgumentCaptor.forClass(Specification.class);
             verify(presenceRepo).findAll(specificationCaptor.capture(), eq(pageable));
             assertThat(specificationCaptor.getValue()).isNotNull();
-            verify(presenceMapper).entityToPresenceRDTO(entity);
+            verify(presenceMapper).entityToRDTO(entity);
         }
     }
 

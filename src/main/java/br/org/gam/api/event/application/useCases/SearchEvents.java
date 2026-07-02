@@ -37,6 +37,6 @@ public class SearchEvents {
 
         Page<EventEntity> entitiesPage = eventRepo.findAll(spec, pageable);
 
-        return entitiesPage.map(eventMapper::entityToEventRDTO);
+        return entitiesPage.map(eventMapper::entityToRDTO);
     }
 }

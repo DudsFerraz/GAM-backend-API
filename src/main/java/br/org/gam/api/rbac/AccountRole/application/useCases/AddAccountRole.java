@@ -47,7 +47,7 @@ public class AddAccountRole {
 
         AccountRoleEntity savedAccountRoleEntity = accountRoleRepo.save(newAccountRoleEntity);
 
-        return accountRoleMapper.entityToAccountRoleRDTO(savedAccountRoleEntity);
+        return accountRoleMapper.entityToRDTO(savedAccountRoleEntity);
     }
 
     @Transactional

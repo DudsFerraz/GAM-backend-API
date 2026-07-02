@@ -7,5 +7,10 @@ import org.mapstruct.Mapper;
 
 @Mapper(componentModel = "spring", uses = {AccountMapper.class, RoleMapper.class})
 public interface AccountRoleMapper {
-    AccountRoleRDTO entityToAccountRoleRDTO(AccountRoleEntity accountRoleEntity);
+
+    // =====================================================================================
+    // Persistence -> RDTO
+    // =====================================================================================
+
+    AccountRoleRDTO entityToRDTO(AccountRoleEntity accountRoleEntity);
 }

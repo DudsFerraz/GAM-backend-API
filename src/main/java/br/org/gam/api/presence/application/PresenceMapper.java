@@ -8,6 +8,12 @@ import org.mapstruct.Mapper;
 
 @Mapper(componentModel = "spring", uses = {MemberMapper.class, EventMapper.class})
 public interface PresenceMapper {
+
+    // =====================================================================================
+    // Persistence -> RDTO
+    // =====================================================================================
+
     RegisterPresenceRDTO entityToRegisterPresenceRDTO(PresenceEntity presenceEntity);
-    PresenceRDTO entityToPresenceRDTO(PresenceEntity presenceEntity);
+
+    PresenceRDTO entityToRDTO(PresenceEntity presenceEntity);
 }

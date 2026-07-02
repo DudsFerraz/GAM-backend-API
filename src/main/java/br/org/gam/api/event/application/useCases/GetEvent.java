@@ -25,7 +25,7 @@ public class GetEvent {
 
         if(!eventSecurity.canGetEvent(eventEntity)) throw new EventNotFoundException("Could not find event with id " + id);
 
-        return eventMapper.entityToEventRDTO(eventEntity);
+        return eventMapper.entityToRDTO(eventEntity);
     }
 
 }

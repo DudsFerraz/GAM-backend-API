@@ -36,7 +36,7 @@ public class GetPresence {
                 .and(PresenceSpecifications.filterByMemberId(memberId));
 
         return presenceRepo.findOne(spec)
-                .map(presenceMapper::entityToPresenceRDTO)
+                .map(presenceMapper::entityToRDTO)
                 .orElseThrow(() -> new PresenceNotFoundException(
                         String.format("member with id: %s has no presence registered in event with id: %s", memberId, eventId)
                         ));
@@ -50,7 +50,7 @@ public class GetPresence {
                 .and(PresenceSpecifications.filterByEventId(eventId));
 
         Page<PresenceEntity> entitiesPage = presenceRepo.findAll(spec, pageable);
-        return entitiesPage.map(presenceMapper::entityToPresenceRDTO);
+        return entitiesPage.map(presenceMapper::entityToRDTO);
     }
     public Page<PresenceRDTO> allByMember(UUID memberId, Pageable pageable) {
 
@@ -59,6 +59,6 @@ public class GetPresence {
                 .and(PresenceSpecifications.filterByMemberId(memberId));
 
         Page<PresenceEntity> entitiesPage = presenceRepo.findAll(spec, pageable);
-        return entitiesPage.map(presenceMapper::entityToPresenceRDTO);
+        return entitiesPage.map(presenceMapper::entityToRDTO);
     }
 }
