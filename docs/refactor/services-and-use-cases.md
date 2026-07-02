@@ -6,7 +6,9 @@ Date: 2026-06-25
 
 This document defines how application workflow classes, read operation classes, repeated loading helpers, and input/output data objects must be named and structured.
 
-The current codebase already has action-oriented names such as `RegisterMember`, `CreateEvent`, and `SearchMembers`. That direction is good. The problem is not the action name itself; the problem is the surrounding ceremony, especially one interface plus one Spring implementation for many single-implementation operations.
+The codebase already has action-oriented names such as `RegisterMember`, `CreateEvent`, and `SearchMembers`. That direction is good. The problem is not the action name itself; the problem was the surrounding ceremony, especially one interface plus one Spring implementation for many single-implementation operations.
+
+Topic 7 removed the single-implementation application-service interfaces and `Spring*` implementation names. This topic still owns the later `GetXInstance` to `DomainLoader` / `EntityLoader` naming cleanup.
 
 ## 2. Final Naming Decisions
 

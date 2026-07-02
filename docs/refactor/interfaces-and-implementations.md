@@ -6,7 +6,13 @@ Date: 2026-06-25
 
 This document defines which interfaces must remain, which interfaces must be removed, and when a new interface is justified.
 
-The current codebase uses many interface/implementation pairs such as `RegisterMember` and `SpringRegisterMember`. Most of these interfaces have exactly one implementation and are only used inside the same Spring application. In those cases, the interface adds ceremony rather than flexibility.
+Before topic 7 was implemented, the codebase used many interface/implementation pairs such as `RegisterMember` and `SpringRegisterMember`. Most of those interfaces had exactly one implementation and were only used inside the same Spring application. In those cases, the interface added ceremony rather than flexibility.
+
+Topic 7 implementation note:
+
+- Application-service interfaces with one implementation were removed.
+- `Spring*` application-service implementations were renamed to the operation class name.
+- `GetXInstance` names were intentionally kept for this topic; loader naming belongs to topic 6, Services and Use Cases.
 
 ## 2. Main Rule
 
@@ -26,7 +32,7 @@ Interfaces must not be created only because:
 
 Remove application-service interfaces by default.
 
-Examples:
+Former examples:
 
 ```text
 RegisterMember -> SpringRegisterMember
@@ -81,7 +87,7 @@ Interfaces help tests only when the dependency has multiple meaningful substitut
 
 Keep repository interfaces.
 
-Examples:
+Former examples:
 
 ```text
 MemberRepository
@@ -241,7 +247,7 @@ SoftDeletable
 
 ## 7. Refactor Instructions
 
-For each application-service interface:
+For each remaining application-service interface:
 
 1. Confirm it has only one implementation.
 2. Delete the interface.
@@ -250,7 +256,7 @@ For each application-service interface:
 5. Keep behavior unchanged.
 6. Keep tests focused on behavior, not the interface.
 
-Example:
+Former example:
 
 ```text
 RegisterMember.java
@@ -286,4 +292,3 @@ An interface must prove that it represents a real boundary.
 Valid boundaries include generated implementations, framework contracts, multiple real implementations, external infrastructure boundaries, strategy variation, and shared infrastructure contracts.
 
 Application-service interfaces with one implementation inside the same Spring application must be deleted.
-

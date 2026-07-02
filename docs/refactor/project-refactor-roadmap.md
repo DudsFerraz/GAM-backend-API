@@ -123,7 +123,7 @@ Detailed refactor instructions for this subject are defined in [`services-and-us
 
 ## 7. Interfaces and Implementations
 
-The codebase contains many interfaces and Spring implementations, such as:
+Before topic 7 was implemented, the codebase contained many application-service interfaces and Spring implementations, such as:
 
 ```text
 RegisterMember -> SpringRegisterMember
@@ -133,7 +133,7 @@ SearchMembers -> SpringSearchMembers
 CreateEvent -> SpringCreateEvent
 ```
 
-There are about 64 Java interfaces in the main source tree.
+There were about 64 Java interfaces in the main source tree before this cleanup.
 
 Application-service interfaces must be removed by default. Repository interfaces, mapper interfaces, framework contracts, and shared infrastructure contracts remain valid when they represent real framework or infrastructure boundaries.
 
