@@ -2,14 +2,13 @@ package br.org.gam.api.event.application.useCases;
 
 import br.org.gam.api.event.application.EventMapper;
 import br.org.gam.api.event.application.EventRDTO;
-import br.org.gam.api.event.domain.Event;
+import br.org.gam.api.event.application.search.EventSearchFilterConverter;
 import br.org.gam.api.event.domain.EventStatus;
 import br.org.gam.api.event.domain.EventType;
 import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.event.persistence.EventRepository;
 import br.org.gam.api.security.SecurityUtils;
-import br.org.gam.api.shared.specification.ComparationMethods;
-import br.org.gam.api.shared.specification.SpecificationFilter;
+import br.org.gam.api.shared.specification.SearchDTO;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.time.Instant;
@@ -52,6 +51,9 @@ class SearchEventsTest {
     @Mock
     private SecurityUtils securityUtils;
 
+    @Mock
+    private EventSearchFilterConverter searchFilterConverter;
+
     @InjectMocks
     private SearchEvents searchEvents;
 
@@ -63,9 +65,8 @@ class SearchEventsTest {
         @Test
         @DisplayName("EP - valid filters and pageable -> mapped event page")
         void validFiltersAndPageableShouldReturnMappedEventPage() {
-            List<SpecificationFilter> filters = List.of(
-                    new SpecificationFilter("type", EventType.MISSA, ComparationMethods.EQUALS)
-            );
+            SearchDTO searchDTO = new SearchDTO(List.of());
+            Specification<EventEntity> searchSpecification = Specification.allOf(List.of());
             Pageable pageable = PageRequest.of(0, 10);
             EventEntity firstEntity = new EventEntity();
             EventEntity secondEntity = new EventEntity();
@@ -73,12 +74,13 @@ class SearchEventsTest {
             EventRDTO secondResponse = response(UUID.randomUUID(), EventType.ORATORIO);
 
             when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of("EVENTS_SEARCH"));
+            when(searchFilterConverter.convert(searchDTO)).thenReturn(searchSpecification);
             when(eventRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(new PageImpl<>(List.of(firstEntity, secondEntity), pageable, 2));
             when(eventMapper.entityToRDTO(firstEntity)).thenReturn(firstResponse);
             when(eventMapper.entityToRDTO(secondEntity)).thenReturn(secondResponse);
 
-            Page<EventRDTO> response = searchEvents.search(filters, pageable);
+            Page<EventRDTO> response = searchEvents.search(searchDTO, pageable);
 
             assertThat(response.getContent()).containsExactly(firstResponse, secondResponse);
             assertThat(response.getTotalElements()).isEqualTo(2);
@@ -87,6 +89,7 @@ class SearchEventsTest {
             verify(eventRepo).findAll(specificationCaptor.capture(), eq(pageable));
             assertThat(specificationCaptor.getValue()).isNotNull();
             verify(securityUtils).getLoggedUserAuthorities();
+            verify(searchFilterConverter).convert(searchDTO);
             verify(eventMapper).entityToRDTO(firstEntity);
             verify(eventMapper).entityToRDTO(secondEntity);
         }
@@ -94,39 +97,44 @@ class SearchEventsTest {
         @Test
         @DisplayName("EP - empty filters -> mapped event page")
         void emptyFiltersShouldReturnMappedEventPage() {
+            SearchDTO searchDTO = new SearchDTO(List.of());
+            Specification<EventEntity> searchSpecification = Specification.allOf(List.of());
             Pageable pageable = PageRequest.of(0, 10);
             EventEntity entity = new EventEntity();
             EventRDTO expectedResponse = response(UUID.randomUUID(), EventType.MISSA);
 
             when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of("EVENTS_SEARCH"));
+            when(searchFilterConverter.convert(searchDTO)).thenReturn(searchSpecification);
             when(eventRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(new PageImpl<>(List.of(entity), pageable, 1));
             when(eventMapper.entityToRDTO(entity)).thenReturn(expectedResponse);
 
-            Page<EventRDTO> response = searchEvents.search(List.of(), pageable);
+            Page<EventRDTO> response = searchEvents.search(searchDTO, pageable);
 
             assertThat(response.getContent()).containsExactly(expectedResponse);
             verify(securityUtils).getLoggedUserAuthorities();
+            verify(searchFilterConverter).convert(searchDTO);
             verify(eventRepo).findAll(any(Specification.class), eq(pageable));
             verify(eventMapper).entityToRDTO(entity);
         }
 
         @Test
-        @DisplayName("EP - invalid filter value -> filter is ignored")
-        void invalidFilterValueShouldBeIgnored() {
+        @DisplayName("EP - no matching records -> empty page")
+        void noMatchingRecordsShouldReturnEmptyPage() {
+            SearchDTO searchDTO = new SearchDTO(List.of());
+            Specification<EventEntity> searchSpecification = Specification.allOf(List.of());
             Pageable pageable = PageRequest.of(0, 10);
-            List<SpecificationFilter> filters = List.of(
-                    new SpecificationFilter("title", " ", ComparationMethods.EQUALS)
-            );
 
             when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of("EVENTS_SEARCH"));
+            when(searchFilterConverter.convert(searchDTO)).thenReturn(searchSpecification);
             when(eventRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(Page.empty(pageable));
 
-            Page<EventRDTO> response = searchEvents.search(filters, pageable);
+            Page<EventRDTO> response = searchEvents.search(searchDTO, pageable);
 
             assertThat(response.getContent()).isEmpty();
             verify(securityUtils).getLoggedUserAuthorities();
+            verify(searchFilterConverter).convert(searchDTO);
             verify(eventRepo).findAll(any(Specification.class), eq(pageable));
             verifyNoInteractions(eventMapper);
         }

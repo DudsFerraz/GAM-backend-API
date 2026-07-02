@@ -15,6 +15,7 @@ import br.org.gam.api.rbac.RolePermission.application.RolePermissionNotFoundExce
 import br.org.gam.api.security.application.InvalidTokenFormatException;
 import br.org.gam.api.security.application.RefreshTokenExpiredException;
 import br.org.gam.api.security.application.TokenNotFoundException;
+import br.org.gam.api.shared.specification.InvalidSearchFilterException;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import com.fasterxml.jackson.databind.JsonMappingException;
@@ -72,6 +73,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(InvalidPhoneNumberException.class)
     public ResponseEntity<ApiErrorDTO> invalidPhoneNumberHandler(InvalidPhoneNumberException e) {
+        return buildErrorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
+    }
+
+    @ExceptionHandler(InvalidSearchFilterException.class)
+    public ResponseEntity<ApiErrorDTO> invalidSearchFilterHandler(InvalidSearchFilterException e) {
         return buildErrorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
     }
 

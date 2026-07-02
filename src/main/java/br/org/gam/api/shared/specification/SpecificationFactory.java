@@ -5,6 +5,7 @@ import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Root;
 import java.util.Collection;
+import java.util.List;
 import org.springframework.data.jpa.domain.Specification;
 
 public final class SpecificationFactory {
@@ -38,6 +39,16 @@ public final class SpecificationFactory {
         return (root, query, cb) -> {
             query.distinct(true);
             return cb.like(cb.lower(getPath(root, field).as(String.class)), "%" + value.toLowerCase() + "%");
+        };
+    }
+
+    public static <T> Specification<T> likeAny(List<String> fields, String value) {
+        return (root, query, cb) -> {
+            query.distinct(true);
+            String pattern = "%" + value.toLowerCase() + "%";
+            return cb.or(fields.stream()
+                    .map(field -> cb.like(cb.lower(getPath(root, field).as(String.class)), pattern))
+                    .toArray(jakarta.persistence.criteria.Predicate[]::new));
         };
     }
 

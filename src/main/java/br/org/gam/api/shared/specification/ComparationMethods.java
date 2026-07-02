@@ -27,7 +27,7 @@ public enum ComparationMethods {
         @SuppressWarnings({"unchecked", "rawtypes"})
         public <T> Specification<T> create(String field, Object value) {
             if (!(value instanceof Comparable)) {
-                throw new IllegalArgumentException("Valor para 'GREATER_THAN_OR_EQUAL' deve ser Comparable (ex: OffsetDateTime, Integer, Double).");
+                throw new IllegalArgumentException("Valor para 'GREATER_THAN_OR_EQUAL' deve ser Comparable (ex: Instant, LocalDate, Integer, Double).");
             }
 
             return SpecificationFactory.isGreaterThanOrEqual(field, (Comparable) value);

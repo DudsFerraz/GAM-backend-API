@@ -2,11 +2,10 @@ package br.org.gam.api.account.application.useCases;
 
 import br.org.gam.api.account.application.AccountMapper;
 import br.org.gam.api.account.application.AccountRDTO;
+import br.org.gam.api.account.application.search.AccountSearchFilterConverter;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.account.persistence.AccountRepository;
-import br.org.gam.api.shared.specification.SpecificationBuilder;
-import br.org.gam.api.shared.specification.SpecificationFilter;
-import java.util.List;
+import br.org.gam.api.shared.specification.SearchDTO;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -18,15 +17,17 @@ public class SearchAccounts {
 
     private final AccountRepository accountRepo;
     private final AccountMapper accountMapper;
+    private final AccountSearchFilterConverter searchFilterConverter;
 
-    public SearchAccounts(AccountRepository accountRepo, AccountMapper accountMapper) {
+    public SearchAccounts(AccountRepository accountRepo, AccountMapper accountMapper, AccountSearchFilterConverter searchFilterConverter) {
         this.accountRepo = accountRepo;
         this.accountMapper = accountMapper;
+        this.searchFilterConverter = searchFilterConverter;
     }
 
     @Transactional(readOnly = true)
-    public Page<AccountRDTO> search(List<SpecificationFilter> filters, Pageable pageable) {
-        Specification<AccountEntity> spec = SpecificationBuilder.build(filters);
+    public Page<AccountRDTO> search(SearchDTO searchDTO, Pageable pageable) {
+        Specification<AccountEntity> spec = searchFilterConverter.convert(searchDTO);
 
         Page<AccountEntity> entitiesPage = accountRepo.findAll(spec, pageable);
 

@@ -1,16 +1,19 @@
 package br.org.gam.api.persistence;
 
 import br.org.gam.api.account.application.AccountMapper;
+import br.org.gam.api.account.application.search.AccountSearchFilterConverter;
 import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.account.domain.MyEmail;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.account.persistence.AccountRepository;
+import br.org.gam.api.event.application.search.EventSearchFilterConverter;
 import br.org.gam.api.event.domain.Event;
 import br.org.gam.api.event.domain.EventStatus;
 import br.org.gam.api.event.domain.EventType;
 import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.event.persistence.EventRepository;
 import br.org.gam.api.event.persistence.EventSecuritySpecification;
+import br.org.gam.api.member.application.search.MemberSearchFilterConverter;
 import br.org.gam.api.member.domain.Member;
 import br.org.gam.api.member.domain.MemberStatus;
 import br.org.gam.api.member.persistence.MemberEntity;
@@ -22,9 +25,8 @@ import br.org.gam.api.shared.domain.Name;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
 import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
 import br.org.gam.api.shared.specification.ComparationMethods;
-import br.org.gam.api.shared.specification.SpecificationBuilder;
-import br.org.gam.api.shared.specification.SpecificationFilter;
 import br.org.gam.api.shared.specification.SpecificationFilterDTO;
+import br.org.gam.api.shared.specification.SearchDTO;
 import br.org.gam.api.testing.annotation.IntegrationTest;
 import br.org.gam.api.testing.annotation.PersistenceTest;
 import br.org.gam.api.testing.integration.PostgreSQLIntegrationTest;
@@ -38,9 +40,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationContext;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,7 +66,13 @@ class SpecificationPersistenceIT extends PostgreSQLIntegrationTest {
     private AccountMapper accountMapper;
 
     @Autowired
-    private ApplicationContext applicationContext;
+    private AccountSearchFilterConverter accountSearchFilterConverter;
+
+    @Autowired
+    private MemberSearchFilterConverter memberSearchFilterConverter;
+
+    @Autowired
+    private EventSearchFilterConverter eventSearchFilterConverter;
 
     @Autowired
     private EntityManager entityManager;
@@ -86,9 +92,27 @@ class SpecificationPersistenceIT extends PostgreSQLIntegrationTest {
             AccountEntity target = inTransaction(() -> accountRepository.saveAndFlush(account(uniqueEmail(), targetDisplayName)));
             inTransaction(() -> accountRepository.saveAndFlush(account(uniqueEmail(), "Other Account Spec")));
 
-            List<SpecificationFilter> filters = convert("accountSpecificationFilterConverter",
-                    List.of(new SpecificationFilterDTO("displayName", targetDisplayName, ComparationMethods.EQUALS)));
-            Specification<AccountEntity> specification = SpecificationBuilder.build(filters);
+            Specification<AccountEntity> specification = accountSearchFilterConverter.convert(new SearchDTO(
+                    List.of(new SpecificationFilterDTO("displayName", targetDisplayName, ComparationMethods.EQUALS))
+            ));
+
+            List<AccountEntity> results = inTransaction(() -> accountRepository.findAll(specification));
+
+            assertThat(results)
+                    .extracting(AccountEntity::getId)
+                    .containsExactly(target.getId());
+        }
+
+        @Test
+        @DisplayName("account search filter converter -> email LIKE matches converted email column")
+        void accountSearchFilterConverterShouldQueryByPartialEmail() {
+            String localPart = "partial" + UUID.randomUUID().toString().replace("-", "");
+            AccountEntity target = inTransaction(() -> accountRepository.saveAndFlush(account(localPart + "@example.com", "Partial Email Target")));
+            inTransaction(() -> accountRepository.saveAndFlush(account(uniqueEmail(), "Other Account Spec")));
+
+            Specification<AccountEntity> specification = accountSearchFilterConverter.convert(new SearchDTO(
+                    List.of(new SpecificationFilterDTO("email", localPart.substring(0, 12), ComparationMethods.LIKE))
+            ));
 
             List<AccountEntity> results = inTransaction(() -> accountRepository.findAll(specification));
 
@@ -103,9 +127,9 @@ class SpecificationPersistenceIT extends PostgreSQLIntegrationTest {
             MemberEntity active = saveMemberWithAccount(MemberStatus.ACTIVE);
             saveMemberWithAccount(MemberStatus.PENDENT);
 
-            List<SpecificationFilter> filters = convert("memberSpecificationFilterConverter",
-                    List.of(new SpecificationFilterDTO("status", "ACTIVE", ComparationMethods.EQUALS)));
-            Specification<MemberEntity> specification = SpecificationBuilder.build(filters);
+            Specification<MemberEntity> specification = memberSearchFilterConverter.convert(new SearchDTO(
+                    List.of(new SpecificationFilterDTO("status", "ACTIVE", ComparationMethods.EQUALS))
+            ));
 
             List<MemberEntity> results = inTransaction(() -> memberRepository.findAll(specification));
 
@@ -115,6 +139,39 @@ class SpecificationPersistenceIT extends PostgreSQLIntegrationTest {
             assertThat(results)
                     .extracting(MemberEntity::getStatus)
                     .containsOnly(MemberStatus.ACTIVE);
+        }
+
+        @Test
+        @DisplayName("member search filter converter -> public name LIKE matches first and surname")
+        void memberSearchFilterConverterShouldQueryByPublicNameAlias() {
+            MemberEntity target = saveMemberWithAccount(MemberStatus.ACTIVE);
+
+            Specification<MemberEntity> specification = memberSearchFilterConverter.convert(new SearchDTO(
+                    List.of(new SpecificationFilterDTO("name", "souza", ComparationMethods.LIKE))
+            ));
+
+            List<MemberEntity> results = inTransaction(() -> memberRepository.findAll(specification));
+
+            assertThat(results)
+                    .extracting(MemberEntity::getId)
+                    .contains(target.getId());
+        }
+
+        @Test
+        @DisplayName("member search filter converter -> phoneNumber LIKE matches converted phone column")
+        void memberSearchFilterConverterShouldQueryByPartialPhoneNumber() {
+            MemberEntity target = saveMemberWithAccount(MemberStatus.ACTIVE, "+5511987654321");
+            saveMemberWithAccount(MemberStatus.ACTIVE, "+5511912345678");
+
+            Specification<MemberEntity> specification = memberSearchFilterConverter.convert(new SearchDTO(
+                    List.of(new SpecificationFilterDTO("phoneNumber", "9876", ComparationMethods.LIKE))
+            ));
+
+            List<MemberEntity> results = inTransaction(() -> memberRepository.findAll(specification));
+
+            assertThat(results)
+                    .extracting(MemberEntity::getId)
+                    .containsExactly(target.getId());
         }
 
         @Test
@@ -164,9 +221,9 @@ class SpecificationPersistenceIT extends PostgreSQLIntegrationTest {
             EventEntity target = inTransaction(() -> eventRepository.saveAndFlush(event("Target Without Location", null)));
             EventEntity other = inTransaction(() -> eventRepository.saveAndFlush(event("Other Without Location", null)));
 
-            List<SpecificationFilter> filters = convert("eventSpecificationFilterConverter",
-                    List.of(new SpecificationFilterDTO("id", target.getId().toString(), ComparationMethods.EQUALS)));
-            Specification<EventEntity> specification = SpecificationBuilder.build(filters);
+            Specification<EventEntity> specification = eventSearchFilterConverter.convert(new SearchDTO(
+                    List.of(new SpecificationFilterDTO("id", target.getId().toString(), ComparationMethods.EQUALS))
+            ));
 
             List<EventEntity> results = inTransaction(() -> eventRepository.findAll(specification));
 
@@ -177,15 +234,14 @@ class SpecificationPersistenceIT extends PostgreSQLIntegrationTest {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private List<SpecificationFilter> convert(String beanName, List<SpecificationFilterDTO> filters) {
-        Object converter = applicationContext.getBean(beanName);
-        return (List<SpecificationFilter>) ReflectionTestUtils.invokeMethod(converter, "convert", filters);
-    }
-
     private MemberEntity saveMemberWithAccount(MemberStatus status) {
         AccountEntity account = inTransaction(() -> accountRepository.saveAndFlush(account(uniqueEmail(), "Member " + status)));
-        return inTransaction(() -> memberRepository.saveAndFlush(member(account, status)));
+        return inTransaction(() -> memberRepository.saveAndFlush(member(account, status, "+5511912345678")));
+    }
+
+    private MemberEntity saveMemberWithAccount(MemberStatus status, String phoneNumber) {
+        AccountEntity account = inTransaction(() -> accountRepository.saveAndFlush(account(uniqueEmail(), "Member " + status)));
+        return inTransaction(() -> memberRepository.saveAndFlush(member(account, status, phoneNumber)));
     }
 
     private AccountEntity account(String email, String displayName) {
@@ -193,13 +249,13 @@ class SpecificationPersistenceIT extends PostgreSQLIntegrationTest {
         return accountMapper.domainToEntity(account);
     }
 
-    private MemberEntity member(AccountEntity account, MemberStatus status) {
+    private MemberEntity member(AccountEntity account, MemberStatus status, String phoneNumber) {
         MemberEntity member = new MemberEntity();
         member.setId(UUIDGenerator.generateUUIDV7());
         member.setAccount(account);
         member.setName(new Name("Ian", "Souza"));
         member.setBirthDate(LocalDate.of(1998, 3, 20));
-        member.setPhoneNumber(MyPhoneNumber.fromString("+5511912345678"));
+        member.setPhoneNumber(MyPhoneNumber.fromString(phoneNumber));
         member.setStatus(status);
         return member;
     }

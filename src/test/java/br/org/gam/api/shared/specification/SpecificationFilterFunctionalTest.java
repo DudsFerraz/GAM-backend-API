@@ -2,9 +2,12 @@ package br.org.gam.api.shared.specification;
 
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -47,30 +50,12 @@ class SpecificationFilterFunctionalTest {
     }
 
     @Test
-    @DisplayName("EP - null DTO list -> empty filters")
-    void nullDtoListShouldReturnEmptyFilters() {
-        List<SpecificationFilter> filters = GenericSpecificationFilterConverter.convert(null, Map.of());
+    @DisplayName("EP - null DTO list -> empty specification")
+    void nullDtoListShouldReturnEmptySpecification() {
+        org.springframework.data.jpa.domain.Specification<Object> specification =
+                ResourceSearchFilterConverter.convert(new SearchDTO(null), Map.of());
 
-        assertThat(filters).isEmpty();
-    }
-
-    @Test
-    @DisplayName("EP - known filter field -> typed specification filter")
-    void knownFilterFieldShouldReturnTypedSpecificationFilter() {
-        SpecificationFilterDTO dto = new SpecificationFilterDTO("age", "18", ComparationMethods.GREATER_THAN_OR_EQUAL);
-
-        List<SpecificationFilter> filters = GenericSpecificationFilterConverter.convert(
-                List.of(dto),
-                Map.of("age", Integer::valueOf)
-        );
-
-        assertThat(filters)
-                .singleElement()
-                .satisfies(filter -> {
-                    assertThat(filter.field()).isEqualTo("age");
-                    assertThat(filter.value()).isEqualTo(18);
-                    assertThat(filter.comparationMethod()).isEqualTo(ComparationMethods.GREATER_THAN_OR_EQUAL);
-                });
+        assertThat(specification).isNotNull();
     }
 
     @Test
@@ -78,19 +63,79 @@ class SpecificationFilterFunctionalTest {
     void unknownFilterFieldShouldReturnValidationError() {
         SpecificationFilterDTO dto = new SpecificationFilterDTO("unknown", "value", ComparationMethods.EQUALS);
 
-        assertThatThrownBy(() -> GenericSpecificationFilterConverter.convert(List.of(dto), Map.of()))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Campo de filtro desconhecido: unknown");
+        assertThatThrownBy(() -> ResourceSearchFilterConverter.convert(new SearchDTO(List.of(dto)), Map.of()))
+                .isInstanceOf(InvalidSearchFilterException.class)
+                .hasMessage("Unknown filter field unknown.");
+    }
+
+    @Test
+    @DisplayName("EP - unsupported filter method -> validation error")
+    void unsupportedFilterMethodShouldReturnValidationError() {
+        SpecificationFilterDTO dto = new SpecificationFilterDTO("id", UUID.randomUUID().toString(), ComparationMethods.LIKE);
+        SearchFilterDefinition<Object> definition = SearchFilterDefinition.path(
+                "id",
+                "id",
+                Set.of(ComparationMethods.EQUALS),
+                Map.of(ComparationMethods.EQUALS, SearchValueParsers::uuid)
+        );
+
+        assertThatThrownBy(() -> ResourceSearchFilterConverter.convert(new SearchDTO(List.of(dto)), Map.of("id", definition)))
+                .isInstanceOf(InvalidSearchFilterException.class)
+                .hasMessage("Unsupported comparison method LIKE for field id.");
     }
 
     @Test
     @DisplayName("EP - invalid typed filter value -> validation error")
     void invalidTypedFilterValueShouldReturnValidationError() {
-        SpecificationFilterDTO dto = new SpecificationFilterDTO("age", "not-a-number", ComparationMethods.EQUALS);
+        SpecificationFilterDTO dto = new SpecificationFilterDTO("id", "not-a-uuid", ComparationMethods.EQUALS);
+        SearchFilterDefinition<Object> definition = SearchFilterDefinition.path(
+                "id",
+                "id",
+                Set.of(ComparationMethods.EQUALS),
+                Map.of(ComparationMethods.EQUALS, SearchValueParsers::uuid)
+        );
 
-        assertThatThrownBy(() -> GenericSpecificationFilterConverter.convert(List.of(dto), Map.of("age", Integer::valueOf)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Valor inv");
+        assertThatThrownBy(() -> ResourceSearchFilterConverter.convert(new SearchDTO(List.of(dto)), Map.of("id", definition)))
+                .isInstanceOf(InvalidSearchFilterException.class)
+                .hasMessage("Invalid filter value for id.");
+    }
+
+    @Test
+    @DisplayName("EP - IN array value -> parsed collection")
+    void inArrayValueShouldReturnParsedCollection() {
+        UUID firstId = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+        var array = JsonNodeFactory.instance.arrayNode()
+                .add(firstId.toString())
+                .add(secondId.toString());
+
+        Object parsed = SearchValueParsers.in(SearchValueParsers::uuid).apply(array);
+
+        assertThat(parsed).isEqualTo(List.of(firstId, secondId));
+    }
+
+    @Test
+    @DisplayName("EP - scalar value for IN -> validation error")
+    void scalarValueForInShouldReturnValidationError() {
+        assertThatThrownBy(() -> SearchValueParsers.in(SearchValueParsers::uuid)
+                .apply(JsonNodeFactory.instance.textNode(UUID.randomUUID().toString())))
+                .isInstanceOf(InvalidSearchFilterException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"ab", "@gmail", "gmail.com", "x@example.com"})
+    @DisplayName("EP - invalid email LIKE value -> validation error")
+    void invalidEmailLikeValueShouldReturnValidationError(String value) {
+        assertThatThrownBy(() -> SearchValueParsers.emailLike(JsonNodeFactory.instance.textNode(value)))
+                .isInstanceOf(InvalidSearchFilterException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"123", "12-3", "(11)"})
+    @DisplayName("EP - invalid phone LIKE value -> validation error")
+    void invalidPhoneLikeValueShouldReturnValidationError(String value) {
+        assertThatThrownBy(() -> SearchValueParsers.phoneNumberLike(JsonNodeFactory.instance.textNode(value)))
+                .isInstanceOf(InvalidSearchFilterException.class);
     }
 
     @Test
@@ -106,7 +151,7 @@ class SpecificationFilterFunctionalTest {
     void greaterThanOrEqualWithNonComparableValueShouldReturnValidationError() {
         assertThatThrownBy(() -> ComparationMethods.GREATER_THAN_OR_EQUAL.create("metadata", new Object()))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Valor para 'GREATER_THAN_OR_EQUAL' deve ser Comparable (ex: OffsetDateTime, Integer, Double).");
+                .hasMessage("Valor para 'GREATER_THAN_OR_EQUAL' deve ser Comparable (ex: Instant, LocalDate, Integer, Double).");
     }
 
     @Test

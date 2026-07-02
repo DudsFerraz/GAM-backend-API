@@ -2,12 +2,12 @@ package br.org.gam.api.member.application.useCases;
 
 import br.org.gam.api.member.application.MemberMapper;
 import br.org.gam.api.member.application.MemberRDTO;
+import br.org.gam.api.member.application.search.MemberSearchFilterConverter;
 import br.org.gam.api.member.domain.MemberStatus;
 import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.persistence.MemberRepository;
 import br.org.gam.api.security.SecurityUtils;
-import br.org.gam.api.shared.specification.ComparationMethods;
-import br.org.gam.api.shared.specification.SpecificationFilter;
+import br.org.gam.api.shared.specification.SearchDTO;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.time.LocalDate;
@@ -50,6 +50,9 @@ class SearchMembersTest {
     @Mock
     private SecurityUtils securityUtils;
 
+    @Mock
+    private MemberSearchFilterConverter searchFilterConverter;
+
     @InjectMocks
     private SearchMembers searchMembers;
 
@@ -61,9 +64,8 @@ class SearchMembersTest {
         @Test
         @DisplayName("EP - valid filters and pageable -> mapped member page")
         void validFiltersAndPageableShouldReturnMappedMemberPage() {
-            List<SpecificationFilter> filters = List.of(
-                    new SpecificationFilter("status", MemberStatus.ACTIVE, ComparationMethods.EQUALS)
-            );
+            SearchDTO searchDTO = new SearchDTO(List.of());
+            Specification<MemberEntity> searchSpecification = Specification.allOf(List.of());
             Pageable pageable = PageRequest.of(0, 10);
             MemberEntity firstEntity = new MemberEntity();
             MemberEntity secondEntity = new MemberEntity();
@@ -71,12 +73,13 @@ class SearchMembersTest {
             MemberRDTO secondResponse = response(UUID.randomUUID(), "Ruy Santos");
 
             when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of());
+            when(searchFilterConverter.convert(searchDTO)).thenReturn(searchSpecification);
             when(memberRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(new PageImpl<>(List.of(firstEntity, secondEntity), pageable, 2));
             when(memberMapper.entityToRDTO(firstEntity)).thenReturn(firstResponse);
             when(memberMapper.entityToRDTO(secondEntity)).thenReturn(secondResponse);
 
-            Page<MemberRDTO> response = searchMembers.search(filters, pageable);
+            Page<MemberRDTO> response = searchMembers.search(searchDTO, pageable);
 
             assertThat(response.getContent()).containsExactly(firstResponse, secondResponse);
             assertThat(response.getTotalElements()).isEqualTo(2);
@@ -85,6 +88,7 @@ class SearchMembersTest {
             verify(memberRepo).findAll(specificationCaptor.capture(), eq(pageable));
             assertThat(specificationCaptor.getValue()).isNotNull();
             verify(securityUtils).getLoggedUserAuthorities();
+            verify(searchFilterConverter).convert(searchDTO);
             verify(memberMapper).entityToRDTO(firstEntity);
             verify(memberMapper).entityToRDTO(secondEntity);
         }
@@ -92,39 +96,44 @@ class SearchMembersTest {
         @Test
         @DisplayName("EP - empty filters -> mapped member page")
         void emptyFiltersShouldReturnMappedMemberPage() {
+            SearchDTO searchDTO = new SearchDTO(List.of());
+            Specification<MemberEntity> searchSpecification = Specification.allOf(List.of());
             Pageable pageable = PageRequest.of(0, 10);
             MemberEntity entity = new MemberEntity();
             MemberRDTO expectedResponse = response(UUID.randomUUID(), "Ana Silva");
 
             when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of("MEMBER_GET_NON_ACTIVE"));
+            when(searchFilterConverter.convert(searchDTO)).thenReturn(searchSpecification);
             when(memberRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(new PageImpl<>(List.of(entity), pageable, 1));
             when(memberMapper.entityToRDTO(entity)).thenReturn(expectedResponse);
 
-            Page<MemberRDTO> response = searchMembers.search(List.of(), pageable);
+            Page<MemberRDTO> response = searchMembers.search(searchDTO, pageable);
 
             assertThat(response.getContent()).containsExactly(expectedResponse);
             verify(securityUtils).getLoggedUserAuthorities();
+            verify(searchFilterConverter).convert(searchDTO);
             verify(memberRepo).findAll(any(Specification.class), eq(pageable));
             verify(memberMapper).entityToRDTO(entity);
         }
 
         @Test
-        @DisplayName("EP - invalid filter value -> filter is ignored")
-        void invalidFilterValueShouldBeIgnored() {
+        @DisplayName("EP - no matching records -> empty page")
+        void noMatchingRecordsShouldReturnEmptyPage() {
+            SearchDTO searchDTO = new SearchDTO(List.of());
+            Specification<MemberEntity> searchSpecification = Specification.allOf(List.of());
             Pageable pageable = PageRequest.of(0, 10);
-            List<SpecificationFilter> filters = List.of(
-                    new SpecificationFilter("name.firstName", " ", ComparationMethods.EQUALS)
-            );
 
             when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of());
+            when(searchFilterConverter.convert(searchDTO)).thenReturn(searchSpecification);
             when(memberRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(Page.empty(pageable));
 
-            Page<MemberRDTO> response = searchMembers.search(filters, pageable);
+            Page<MemberRDTO> response = searchMembers.search(searchDTO, pageable);
 
             assertThat(response.getContent()).isEmpty();
             verify(securityUtils).getLoggedUserAuthorities();
+            verify(searchFilterConverter).convert(searchDTO);
             verify(memberRepo).findAll(any(Specification.class), eq(pageable));
             verifyNoInteractions(memberMapper);
         }

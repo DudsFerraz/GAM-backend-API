@@ -11,12 +11,9 @@ import br.org.gam.api.presence.application.PresenceRDTO;
 import br.org.gam.api.presence.application.useCases.GetPresence;
 import br.org.gam.api.rbac.Permission.domain.PermissionEnum;
 import br.org.gam.api.shared.specification.SearchDTO;
-import br.org.gam.api.shared.specification.SpecificationFilter;
 import jakarta.validation.Valid;
 import java.net.URI;
-import java.util.List;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -30,19 +27,16 @@ public class MemberController {
 
     private final RegisterMember registerMember;
     private final GetMember getMember;
-    private final SpecificationFilterConverter specificationFilterConverter;
     private final SearchMembers searchMembers;
     private final Activation activation;
     private final GetPresence getPresence;
 
     public MemberController(RegisterMember registerMember, GetMember getMember, SearchMembers searchMembers,
-                            @Qualifier("memberSpecificationFilterConverter") SpecificationFilterConverter specificationFilterConverter,
                             Activation activation, GetPresence getPresence
     ) {
 
         this.registerMember = registerMember;
         this.getMember = getMember;
-        this.specificationFilterConverter = specificationFilterConverter;
         this.searchMembers = searchMembers;
         this.activation = activation;
         this.getPresence = getPresence;
@@ -73,10 +67,8 @@ public class MemberController {
     public ResponseEntity<Page<MemberRDTO>> searchMembers(@RequestBody @Valid SearchDTO searchDTO,
                                                           Pageable pageable) {
 
-        List<SpecificationFilter> filters = specificationFilterConverter.convert(searchDTO.filters());
-
         return ResponseEntity.ok(
-                searchMembers.search(filters, pageable)
+                searchMembers.search(searchDTO, pageable)
         );
     }
 

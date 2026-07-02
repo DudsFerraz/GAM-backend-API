@@ -2,12 +2,12 @@ package br.org.gam.api.account.application.useCases;
 
 import br.org.gam.api.account.application.AccountMapper;
 import br.org.gam.api.account.application.AccountRDTO;
+import br.org.gam.api.account.application.search.AccountSearchFilterConverter;
 import br.org.gam.api.account.domain.MyEmail;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.account.persistence.AccountRepository;
 import br.org.gam.api.rbac.AccountRole.application.AccountRolesRDTO;
-import br.org.gam.api.shared.specification.ComparationMethods;
-import br.org.gam.api.shared.specification.SpecificationFilter;
+import br.org.gam.api.shared.specification.SearchDTO;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.util.List;
@@ -45,6 +45,9 @@ class SearchAccountsTest {
     @Mock
     private AccountMapper accountMapper;
 
+    @Mock
+    private AccountSearchFilterConverter searchFilterConverter;
+
     @InjectMocks
     private SearchAccounts searchAccounts;
 
@@ -56,21 +59,21 @@ class SearchAccountsTest {
         @Test
         @DisplayName("EP - valid filters and pageable -> mapped account page")
         void validFiltersAndPageableShouldReturnMappedAccountPage() {
-            List<SpecificationFilter> filters = List.of(
-                    new SpecificationFilter("email", MyEmail.of("user@example.com"), ComparationMethods.EQUALS)
-            );
+            SearchDTO searchDTO = new SearchDTO(List.of());
+            Specification<AccountEntity> searchSpecification = Specification.allOf(List.of());
             Pageable pageable = PageRequest.of(0, 10);
             AccountEntity firstEntity = new AccountEntity();
             AccountEntity secondEntity = new AccountEntity();
             AccountRDTO firstResponse = response(UUID.randomUUID(), "first@example.com", "First");
             AccountRDTO secondResponse = response(UUID.randomUUID(), "second@example.com", "Second");
 
+            when(searchFilterConverter.convert(searchDTO)).thenReturn(searchSpecification);
             when(accountRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(new PageImpl<>(List.of(firstEntity, secondEntity), pageable, 2));
             when(accountMapper.entityToRDTO(firstEntity)).thenReturn(firstResponse);
             when(accountMapper.entityToRDTO(secondEntity)).thenReturn(secondResponse);
 
-            Page<AccountRDTO> response = searchAccounts.search(filters, pageable);
+            Page<AccountRDTO> response = searchAccounts.search(searchDTO, pageable);
 
             assertThat(response.getContent()).containsExactly(firstResponse, secondResponse);
             assertThat(response.getTotalElements()).isEqualTo(2);
@@ -78,6 +81,7 @@ class SearchAccountsTest {
             ArgumentCaptor<Specification<AccountEntity>> specificationCaptor = ArgumentCaptor.forClass(Specification.class);
             verify(accountRepo).findAll(specificationCaptor.capture(), eq(pageable));
             assertThat(specificationCaptor.getValue()).isNotNull();
+            verify(searchFilterConverter).convert(searchDTO);
             verify(accountMapper).entityToRDTO(firstEntity);
             verify(accountMapper).entityToRDTO(secondEntity);
         }
@@ -85,35 +89,40 @@ class SearchAccountsTest {
         @Test
         @DisplayName("EP - empty filters -> mapped account page")
         void emptyFiltersShouldReturnMappedAccountPage() {
+            SearchDTO searchDTO = new SearchDTO(List.of());
+            Specification<AccountEntity> searchSpecification = Specification.allOf(List.of());
             Pageable pageable = PageRequest.of(0, 10);
             AccountEntity entity = new AccountEntity();
             AccountRDTO expectedResponse = response(UUID.randomUUID(), "user@example.com", "User");
 
+            when(searchFilterConverter.convert(searchDTO)).thenReturn(searchSpecification);
             when(accountRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(new PageImpl<>(List.of(entity), pageable, 1));
             when(accountMapper.entityToRDTO(entity)).thenReturn(expectedResponse);
 
-            Page<AccountRDTO> response = searchAccounts.search(List.of(), pageable);
+            Page<AccountRDTO> response = searchAccounts.search(searchDTO, pageable);
 
             assertThat(response.getContent()).containsExactly(expectedResponse);
+            verify(searchFilterConverter).convert(searchDTO);
             verify(accountRepo).findAll(any(Specification.class), eq(pageable));
             verify(accountMapper).entityToRDTO(entity);
         }
 
         @Test
-        @DisplayName("EP - invalid filter value -> filter is ignored")
-        void invalidFilterValueShouldBeIgnored() {
+        @DisplayName("EP - no matching records -> empty page")
+        void noMatchingRecordsShouldReturnEmptyPage() {
+            SearchDTO searchDTO = new SearchDTO(List.of());
+            Specification<AccountEntity> searchSpecification = Specification.allOf(List.of());
             Pageable pageable = PageRequest.of(0, 10);
-            List<SpecificationFilter> filters = List.of(
-                    new SpecificationFilter("email", " ", ComparationMethods.EQUALS)
-            );
 
+            when(searchFilterConverter.convert(searchDTO)).thenReturn(searchSpecification);
             when(accountRepo.findAll(any(Specification.class), eq(pageable)))
                     .thenReturn(Page.empty(pageable));
 
-            Page<AccountRDTO> response = searchAccounts.search(filters, pageable);
+            Page<AccountRDTO> response = searchAccounts.search(searchDTO, pageable);
 
             assertThat(response.getContent()).isEmpty();
+            verify(searchFilterConverter).convert(searchDTO);
             verify(accountRepo).findAll(any(Specification.class), eq(pageable));
             verifyNoInteractions(accountMapper);
         }

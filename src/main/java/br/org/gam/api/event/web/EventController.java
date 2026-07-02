@@ -10,12 +10,9 @@ import br.org.gam.api.presence.application.PresenceRDTO;
 import br.org.gam.api.presence.application.useCases.GetPresence;
 import br.org.gam.api.rbac.Permission.domain.PermissionEnum;
 import br.org.gam.api.shared.specification.SearchDTO;
-import br.org.gam.api.shared.specification.SpecificationFilter;
 import jakarta.validation.Valid;
 import java.net.URI;
-import java.util.List;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -29,19 +26,16 @@ public class EventController {
     private final CreateEvent createEvent;
     private final GetEvent getEvent;
     private final SearchEvents searchEvent;
-    private final SpecificationFilterConverter specificationFilterConverter;
     private final GetPresence getPresence;
 
     public EventController(CreateEvent createEvent,
                            GetEvent getEvent,
                            SearchEvents searchEvent,
-                           @Qualifier("eventSpecificationFilterConverter") SpecificationFilterConverter specificationFilterConverter,
                            GetPresence getPresence) {
 
         this.createEvent = createEvent;
         this.getEvent = getEvent;
         this.searchEvent = searchEvent;
-        this.specificationFilterConverter = specificationFilterConverter;
         this.getPresence = getPresence;
     }
 
@@ -71,10 +65,8 @@ public class EventController {
     public ResponseEntity<Page<EventRDTO>> searchEvents(@RequestBody @Valid SearchDTO searchDTO,
                                                         Pageable pageable){
 
-        List<SpecificationFilter> filters = specificationFilterConverter.convert(searchDTO.filters());
-
         return ResponseEntity.ok(
-                searchEvent.search(filters, pageable)
+                searchEvent.search(searchDTO, pageable)
         );
     }
 
