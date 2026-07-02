@@ -1,17 +1,19 @@
 package br.org.gam.api.api;
 
-import br.org.gam.api.Entities.RBAC.permission.PermissionEnum;
+import br.org.gam.api.event.domain.Event;
+import br.org.gam.api.location.domain.Location;
+import br.org.gam.api.rbac.Permission.domain.Permission;
+import br.org.gam.api.rbac.Permission.domain.PermissionEnum;
 import br.org.gam.api.testing.annotation.ApiTest;
 import br.org.gam.api.testing.annotation.IntegrationTest;
 import br.org.gam.api.testing.annotation.SecurityTest;
 import br.org.gam.api.testing.integration.BaseApiIntegrationTest;
 import io.restassured.response.ExtractableResponse;
 import io.restassured.response.Response;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;

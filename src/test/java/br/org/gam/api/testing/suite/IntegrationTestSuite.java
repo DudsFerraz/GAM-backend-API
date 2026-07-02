@@ -1,5 +1,6 @@
 package br.org.gam.api.testing.suite;
 
+import br.org.gam.api.testing.annotation.IntegrationTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.platform.suite.api.IncludeTags;
 import org.junit.platform.suite.api.SelectPackages;

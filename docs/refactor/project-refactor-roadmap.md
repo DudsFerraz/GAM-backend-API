@@ -77,7 +77,16 @@ br.org.gam.api
   account
   member
   event
+    Missa
+    Oratorio
+  location
+  oratoriano
+  presence
   rbac
+    AccountRole
+    Permission
+    Role
+    RolePermission
   security
   shared
 ```
@@ -87,6 +96,12 @@ This differs from a tangled monolith because each feature has clear internal bou
 ## 4. Package Organization
 
 The package structure must move toward feature-oriented packages with internal layer folders:
+
+- feature packages use `application`, `domain`, `persistence`, and `web` layer folders when those layers exist;
+- application use cases are grouped under `application/useCases/<UseCaseName>`;
+- specialized event behavior lives under `event.Missa` and `event.Oratorio`;
+- RBAC is split into `rbac.AccountRole`, `rbac.Permission`, `rbac.Role`, and `rbac.RolePermission`;
+- cross-feature infrastructure moves to `security` or `shared`.
 
 Detailed refactor instructions for this subject are defined in [`package-organization.md`](package-organization.md).
 

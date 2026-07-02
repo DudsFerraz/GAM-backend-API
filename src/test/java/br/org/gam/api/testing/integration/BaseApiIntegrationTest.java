@@ -1,24 +1,35 @@
 package br.org.gam.api.testing.integration;
 
-import br.org.gam.api.Entities.RBAC.accountRole.persistence.AccountRoleEntity;
-import br.org.gam.api.Entities.RBAC.accountRole.persistence.AccountRoleRepository;
-import br.org.gam.api.Entities.RBAC.permission.PermissionEnum;
-import br.org.gam.api.Entities.RBAC.permission.persistence.PermissionEntity;
-import br.org.gam.api.Entities.RBAC.permission.persistence.PermissionRepository;
-import br.org.gam.api.Entities.RBAC.role.persistence.RoleEntity;
-import br.org.gam.api.Entities.RBAC.role.persistence.RoleRepository;
-import br.org.gam.api.Entities.account.myEmail.MyEmail;
-import br.org.gam.api.Entities.account.persistence.AccountEntity;
-import br.org.gam.api.Entities.account.persistence.AccountRepository;
-import br.org.gam.api.Entities.events.generic.persistence.EventRepository;
-import br.org.gam.api.Entities.location.persistence.LocationRepository;
-import br.org.gam.api.common.auth.refreshToken.RefreshTokenRepository;
-import br.org.gam.api.common.persistence.UUIDGenerator;
-import io.restassured.RestAssured;
+import br.org.gam.api.account.domain.MyEmail;
+import br.org.gam.api.account.persistence.AccountEntity;
+import br.org.gam.api.account.persistence.AccountRepository;
+import br.org.gam.api.event.persistence.EventRepository;
+import br.org.gam.api.location.persistence.LocationRepository;
+import br.org.gam.api.rbac.AccountRole.domain.AccountRole;
+import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleEntity;
+import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleRepository;
+import br.org.gam.api.rbac.Permission.domain.Permission;
+import br.org.gam.api.rbac.Permission.domain.PermissionEnum;
+import br.org.gam.api.rbac.Permission.persistence.PermissionEntity;
+import br.org.gam.api.rbac.Permission.persistence.PermissionRepository;
+import br.org.gam.api.rbac.Role.domain.Role;
+import br.org.gam.api.rbac.Role.persistence.RoleEntity;
+import br.org.gam.api.rbac.Role.persistence.RoleRepository;
+import br.org.gam.api.security.refreshtoken.persistence.RefreshTokenRepository;
+import br.org.gam.api.shared.persistence.UUIDGenerator;
+import br.org.gam.api.testing.annotation.ApiTest;
 import io.restassured.http.ContentType;
 import io.restassured.response.ExtractableResponse;
 import io.restassured.response.Response;
+import io.restassured.RestAssured;
 import io.restassured.specification.RequestSpecification;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,14 +41,6 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
-
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
 
 @ActiveProfiles("test")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

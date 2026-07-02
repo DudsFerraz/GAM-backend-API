@@ -1,15 +1,15 @@
 package br.org.gam.api.api;
 
+import br.org.gam.api.location.domain.Location;
 import br.org.gam.api.testing.annotation.ApiTest;
 import br.org.gam.api.testing.annotation.IntegrationTest;
 import br.org.gam.api.testing.annotation.SecurityTest;
 import br.org.gam.api.testing.integration.BaseApiIntegrationTest;
 import io.restassured.response.ExtractableResponse;
 import io.restassured.response.Response;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;

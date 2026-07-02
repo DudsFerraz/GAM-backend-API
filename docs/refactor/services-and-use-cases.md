@@ -12,14 +12,14 @@ The current codebase already has action-oriented names such as `RegisterMember`,
 
 Use these naming decisions:
 
-| Objective | Suffix | Example |
-| --- | --- | --- |
-| Represent an application workflow that performs an action | none | `RegisterMember` |
-| Represent a read operation that intentionally does not mutate state | none | `SearchMembers` |
+| Objective                                                               | Suffix         | Example              |
+|-------------------------------------------------------------------------|----------------|----------------------|
+| Represent an application workflow that performs an action               | none           | `RegisterMember`     |
+| Represent a read operation that intentionally does not mutate state     | none           | `SearchMembers`      |
 | Centralize repeated "load this required domain object or fail" behavior | `DomainLoader` | `MemberDomainLoader` |
-| Centralize repeated "load this required JPA entity or fail" behavior | `EntityLoader` | `MemberEntityLoader` |
-| Represent input data received by an application operation | `DTO` | `RegisterMemberDTO` |
-| Represent output data returned by an application operation | `RDTO` | `RegisterMemberRDTO` |
+| Centralize repeated "load this required JPA entity or fail" behavior    | `EntityLoader` | `MemberEntityLoader` |
+| Represent input data received by an application operation               | `DTO`          | `RegisterMemberDTO`  |
+| Represent output data returned by an application operation              | `RDTO`         | `RegisterMemberRDTO` |
 
 Do not introduce `UseCase`, `Query`, `Lookup`, `Policy`, `Command`, or `Criteria` as default suffixes.
 
@@ -68,10 +68,10 @@ RefreshToken
 Example target shape:
 
 ```text
-member/application/RegisterMember.java
-member/application/ActivateMember.java
-event/application/CreateEvent.java
-presence/application/RegisterPresence.java
+member/application/useCases/RegisterMember/RegisterMember.java
+member/application/useCases/Activation/Activation.java
+event/application/useCases/CreateEvent/CreateEvent.java
+presence/application/useCases/RegisterPresence/RegisterPresence.java
 ```
 
 ## 4. Read Operation Classes
@@ -116,10 +116,10 @@ GetRolePermissions
 Example target shape:
 
 ```text
-member/application/GetMember.java
-member/application/SearchMembers.java
-event/application/GetEventPresences.java
-rbac/application/GetRolePermissions.java
+member/application/useCases/GetMember/GetMember.java
+member/application/useCases/SearchMembers/SearchMembers.java
+event/application/useCases/GetEventPresences/GetEventPresences.java
+rbac/Role/application/useCases/GetRolePermissions/GetRolePermissions.java
 ```
 
 ## 5. Loaders
@@ -361,19 +361,24 @@ A member application package should move toward this style:
 
 ```text
 member/application
-  RegisterMember.java
-  ActivateMember.java
-  GetMember.java
-  SearchMembers.java
   MemberDomainLoader.java
   MemberEntityLoader.java
-  RegisterMemberDTO.java
-  RegisterMemberRDTO.java
   MemberRDTO.java
-  SearchMembersDTO.java
+  useCases
+    RegisterMember
+      RegisterMember.java
+      RegisterMemberDTO.java
+      RegisterMemberRDTO.java
+    Activation
+      Activation.java
+    GetMember
+      GetMember.java
+    SearchMembers
+      SearchMembers.java
+      SearchMembersDTO.java
 ```
 
-This keeps operation names direct, removes redundant suffixes, separates domain/entity loading explicitly, and preserves the existing `DTO` / `RDTO` convention.
+This keeps operation names direct, groups operation-specific files by use case, separates domain/entity loading explicitly, and preserves the existing `DTO` / `RDTO` convention.
 
 ## 10. Refactor Order
 

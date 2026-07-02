@@ -1,8 +1,8 @@
 package br.org.gam.api;
 
-import br.org.gam.api.common.persistence.DefaultBaseRepository;
-import org.springframework.boot.SpringApplication;
+import br.org.gam.api.shared.persistence.DefaultBaseRepository;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.SpringApplication;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;

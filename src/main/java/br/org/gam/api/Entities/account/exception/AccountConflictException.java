@@ -1,7 +1,0 @@
-package br.org.gam.api.Entities.account.exception;
-
-public class AccountConflictException extends RuntimeException {
-    public AccountConflictException(String message) {
-        super(message);
-    }
-}

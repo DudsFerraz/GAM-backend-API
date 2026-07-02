@@ -1,11 +1,8 @@
 package br.org.gam.api.db.migration;
 
-import br.org.gam.api.Entities.RBAC.permission.PermissionEnum;
-import br.org.gam.api.common.persistence.UUIDGenerator;
-import org.flywaydb.core.api.migration.BaseJavaMigration;
-import org.flywaydb.core.api.migration.Context;
-import org.springframework.stereotype.Component;
-
+import br.org.gam.api.rbac.Permission.domain.Permission;
+import br.org.gam.api.rbac.Permission.domain.PermissionEnum;
+import br.org.gam.api.shared.persistence.UUIDGenerator;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -14,8 +11,11 @@ import java.time.Instant;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.UUID;
+import org.flywaydb.core.api.migration.BaseJavaMigration;
+import org.flywaydb.core.api.migration.Context;
+import org.springframework.stereotype.Component;
 
-import static br.org.gam.api.Entities.RBAC.permission.PermissionEnum.*;
+import static br.org.gam.api.rbac.Permission.domain.PermissionEnum.*;
 
 @Component
 public class R__SeedPermissionsAndRoles extends BaseJavaMigration {

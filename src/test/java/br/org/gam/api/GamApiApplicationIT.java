@@ -1,10 +1,10 @@
 package br.org.gam.api;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import br.org.gam.api.testing.integration.PostgreSQLIntegrationTest;
 import br.org.gam.api.testing.annotation.IntegrationTest;
 import br.org.gam.api.testing.annotation.PersistenceTest;
+import br.org.gam.api.testing.integration.PostgreSQLIntegrationTest;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 @IntegrationTest
 @PersistenceTest

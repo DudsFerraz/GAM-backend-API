@@ -65,22 +65,38 @@ br.org.gam.api.member
 
 Do not create empty layer folders just to satisfy the structure. A folder exists only when it contains meaningful code.
 
+Application workflows and their operation-specific DTO/RDTO classes must be grouped by use case:
+
+```text
+br.org.gam.api.member
+  application
+    useCases
+      RegisterMember
+      Activation
+      GetMember
+      SearchMembers
+```
+
+Shared application helpers for the feature, such as mappers, common RDTOs, feature-owned security helpers, and temporary feature exceptions, may remain directly under `application` until later roadmap topics simplify them.
+
 ## 4. Layer Responsibilities
 
 ### 4.1. application
 
 The `application` package contains application workflows, read operations, loaders, and operation-specific input/output objects.
 
+Operation-specific application files must live under `application/useCases/<UseCaseName>`.
+
 Examples:
 
 ```text
-member/application/RegisterMember.java
-member/application/ActivateMember.java
-member/application/SearchMembers.java
+member/application/useCases/RegisterMember/RegisterMember.java
+member/application/useCases/Activation/Activation.java
+member/application/useCases/SearchMembers/SearchMembers.java
 member/application/MemberDomainLoader.java
 member/application/MemberEntityLoader.java
-member/application/RegisterMemberDTO.java
-member/application/RegisterMemberRDTO.java
+member/application/useCases/RegisterMember/RegisterMemberDTO.java
+member/application/useCases/RegisterMember/RegisterMemberRDTO.java
 ```
 
 The naming rules for this layer are defined in [`services-and-use-cases.md`](services-and-use-cases.md).
@@ -170,13 +186,16 @@ Use this current-to-target mapping:
 | `Entities.account` | `account` |
 | `Entities.member` | `member` |
 | `Entities.events.generic` | `event` |
-| `Entities.events.missa` | `event` or `event.missa` |
-| `Entities.events.oratorio` | `event` or `event.oratorio` |
+| `Entities.events.missa` | `event.Missa` |
+| `Entities.events.oratorio` | `event.Oratorio` |
 | `Entities.location` | `location` |
 | `Entities.oratoriano` | `oratoriano` |
 | `Entities.presence` | `presence` |
-| `Entities.RBAC` | `rbac` |
-| `common.auth` | `security` or `auth` |
+| `Entities.RBAC.accountRole` | `rbac.AccountRole` |
+| `Entities.RBAC.permission` | `rbac.Permission` |
+| `Entities.RBAC.role` | `rbac.Role` |
+| `Entities.RBAC.rolePermission` | `rbac.RolePermission` |
+| `common.auth` | `security` |
 | `common.security` | `security` |
 | `common.auditing` | `shared.auditing` |
 | `common.persistence` | `shared.persistence` |
@@ -193,9 +212,9 @@ Entities.events.missa
 Entities.events.oratorio
 ```
 
-The target must keep event-related concepts close together.
+The target must keep event-related concepts close together while giving specialized event types their own package structure.
 
-Two acceptable shapes exist:
+Generic event behavior uses:
 
 ```text
 event
@@ -205,16 +224,23 @@ event
   web
 ```
 
-or:
+Specialized event behavior uses dedicated subfeature packages:
 
 ```text
 event
-  generic
-  missa
-  oratorio
+  Missa
+    application
+      useCases
+    domain
+    persistence
+  Oratorio
+    application
+      useCases
+    domain
+    persistence
 ```
 
-Use the first shape while the event feature remains manageable. Use subpackages like `event.missa` and `event.oratorio` only if the specialized event workflows become large enough to justify their own internal structure.
+Do not introduce `event.missa` or `event.oratorio` lowercase package names in this refactor. The accepted package segments for the specialized event subfeatures are `event.Missa` and `event.Oratorio`.
 
 ## 7. RBAC Package Decision
 
@@ -228,10 +254,26 @@ Target shape:
 
 ```text
 rbac
-  application
-  domain
-  persistence
-  web
+  AccountRole
+    application
+      useCases
+    domain
+    persistence
+  Permission
+    application
+      useCases
+    domain
+    persistence
+  Role
+    application
+      useCases
+    domain
+    persistence
+    web
+  RolePermission
+    application
+    domain
+    persistence
 ```
 
 Do not keep `RBAC` as an uppercase Java package segment.
@@ -241,6 +283,7 @@ Do not keep `RBAC` as an uppercase Java package segment.
 Apply these package naming rules:
 
 - Use lowercase package names.
+- Exception: package segments that intentionally mirror domain subfeatures may use the exact approved segment names `Missa`, `Oratorio`, `AccountRole`, `Permission`, `Role`, and `RolePermission`.
 - Do not use `Entities` as a grouping package.
 - Do not include framework names like `Spring` in package names.
 - Do not organize packages around implementation suffixes.
@@ -256,7 +299,7 @@ For each feature:
 
 1. Create the target feature package.
 2. Move controllers into `web`.
-3. Move application workflows, read operations, loaders, DTOs, and RDTOs into `application`.
+3. Move application workflows, read operations, and their operation-specific DTOs/RDTOs into `application/useCases/<UseCaseName>`.
 4. Move rich domain models into `domain`.
 5. Move JPA entities, repositories, and specifications into `persistence`.
 6. Update imports.
