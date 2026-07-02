@@ -6,9 +6,9 @@ import br.org.gam.api.event.domain.EventStatus;
 import br.org.gam.api.event.domain.EventType;
 import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.event.persistence.EventRepository;
-import br.org.gam.api.location.application.useCases.GetLocationInstance.GetLocationInstance;
+import br.org.gam.api.location.application.LocationEntityLoader;
 import br.org.gam.api.location.persistence.LocationEntity;
-import br.org.gam.api.rbac.Permission.application.useCases.GetPermissionInstance.GetPermissionInstance;
+import br.org.gam.api.rbac.Permission.application.PermissionEntityLoader;
 import br.org.gam.api.rbac.Permission.persistence.PermissionEntity;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
@@ -37,13 +37,13 @@ class CreateEventTest {
     private EventRepository eventRepository;
 
     @Mock
-    private GetLocationInstance getLocationInstanceService;
+    private LocationEntityLoader getLocationInstanceService;
 
     @Mock
     private EventMapper eventMapper;
 
     @Mock
-    private GetPermissionInstance getPermissionInstance;
+    private PermissionEntityLoader getPermissionInstance;
 
     @InjectMocks
     private CreateEvent createEvent;
@@ -67,8 +67,8 @@ class CreateEventTest {
             EventEntity savedEntity = new EventEntity();
             CreateEventRDTO expectedResponse = new CreateEventRDTO(UUID.randomUUID());
 
-            when(getLocationInstanceService.entityById(locationId)).thenReturn(location);
-            when(getPermissionInstance.entityById(permissionId)).thenReturn(permission);
+            when(getLocationInstanceService.requiredById(locationId)).thenReturn(location);
+            when(getPermissionInstance.requiredById(permissionId)).thenReturn(permission);
             when(eventMapper.domainToEntity(any(Event.class))).thenReturn(mappedEntity);
             when(eventRepository.save(mappedEntity)).thenReturn(savedEntity);
             when(eventMapper.entityToCreateEventRDTO(savedEntity)).thenReturn(expectedResponse);

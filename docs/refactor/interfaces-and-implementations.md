@@ -12,7 +12,7 @@ Topic 7 implementation note:
 
 - Application-service interfaces with one implementation were removed.
 - `Spring*` application-service implementations were renamed to the operation class name.
-- `GetXInstance` names were intentionally kept for this topic; loader naming belongs to topic 6, Services and Use Cases.
+- `GetXInstance` names were intentionally kept for topic 7 and replaced later by topic 6, Services and Use Cases.
 
 ## 2. Main Rule
 

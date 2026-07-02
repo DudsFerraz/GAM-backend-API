@@ -1,14 +1,14 @@
 package br.org.gam.api.member.web;
 
 import br.org.gam.api.member.application.MemberRDTO;
-import br.org.gam.api.member.application.useCases.Activation.Activation;
-import br.org.gam.api.member.application.useCases.GetMember.GetMember;
+import br.org.gam.api.member.application.useCases.Activation;
+import br.org.gam.api.member.application.useCases.GetMember;
 import br.org.gam.api.member.application.useCases.RegisterMember.RegisterMember;
 import br.org.gam.api.member.application.useCases.RegisterMember.RegisterMemberDTO;
 import br.org.gam.api.member.application.useCases.RegisterMember.RegisterMemberRDTO;
-import br.org.gam.api.member.application.useCases.SearchMembers.SearchMembers;
+import br.org.gam.api.member.application.useCases.SearchMembers;
 import br.org.gam.api.presence.application.PresenceRDTO;
-import br.org.gam.api.presence.application.useCases.GetPresence.GetPresence;
+import br.org.gam.api.presence.application.useCases.GetPresence;
 import br.org.gam.api.rbac.Permission.domain.PermissionEnum;
 import br.org.gam.api.shared.specification.SearchDTO;
 import br.org.gam.api.shared.specification.SpecificationFilter;

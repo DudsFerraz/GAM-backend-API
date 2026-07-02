@@ -1,6 +1,6 @@
 package br.org.gam.api.member.application;
 
-import br.org.gam.api.member.application.useCases.GetMemberInstance.GetMemberInstance;
+import br.org.gam.api.member.application.MemberEntityLoader;
 import br.org.gam.api.member.domain.MemberStatus;
 import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.rbac.Permission.domain.PermissionEnum;
@@ -16,9 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Component("memberSecurity")
 public class MemberSecurity {
-    private final GetMemberInstance getMemberInstance;
+    private final MemberEntityLoader getMemberInstance;
     private final SecurityUtils securityUtils;
-    public MemberSecurity(GetMemberInstance getMemberInstance, SecurityUtils securityUtils) {
+    public MemberSecurity(MemberEntityLoader getMemberInstance, SecurityUtils securityUtils) {
         this.getMemberInstance = getMemberInstance;
         this.securityUtils = securityUtils;
     }
@@ -35,7 +35,7 @@ public class MemberSecurity {
         AccountDetails accountDetails = (AccountDetails) authentication.getPrincipal();
         UUID loggedAccountId = accountDetails.getId();
 
-        MemberEntity memberEntity = getMemberInstance.entityById(targetMemberId);
+        MemberEntity memberEntity = getMemberInstance.requiredById(targetMemberId);
         return memberEntity.getAccount().getId().equals(loggedAccountId);
     }
 

@@ -1,6 +1,6 @@
 package br.org.gam.api.member.application.useCases.RegisterMember;
 
-import br.org.gam.api.account.application.useCases.GetAccountInstance.GetAccountInstance;
+import br.org.gam.api.account.application.AccountDomainLoader;
 import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.member.application.MemberAccountConflictException;
 import br.org.gam.api.member.application.MemberMapper;
@@ -17,9 +17,9 @@ public class RegisterMember {
     private final MemberRepository memberRepo;
 
     private final MemberMapper memberMapper;
-    private final GetAccountInstance getAccountInstance;
+    private final AccountDomainLoader getAccountInstance;
 
-    public RegisterMember(MemberRepository memberRepo, MemberMapper memberMapper, GetAccountInstance getAccountInstance) {
+    public RegisterMember(MemberRepository memberRepo, MemberMapper memberMapper, AccountDomainLoader getAccountInstance) {
         this.memberRepo = memberRepo;
         this.memberMapper = memberMapper;
         this.getAccountInstance = getAccountInstance;
@@ -31,7 +31,7 @@ public class RegisterMember {
             throw new MemberAccountConflictException("A member is already linked to this account.");
         }
 
-        Account relatedAccount = getAccountInstance.domainById(dto.accountId());
+        Account relatedAccount = getAccountInstance.requiredById(dto.accountId());
 
         Name name = new Name(dto.firstName(), dto.surname());
 

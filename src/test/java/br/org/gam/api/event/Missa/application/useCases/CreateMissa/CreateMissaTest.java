@@ -3,14 +3,14 @@ package br.org.gam.api.event.Missa.application.useCases.CreateMissa;
 import br.org.gam.api.event.application.useCases.CreateEvent.CreateEvent;
 import br.org.gam.api.event.application.useCases.CreateEvent.CreateEventDTO;
 import br.org.gam.api.event.application.useCases.CreateEvent.CreateEventRDTO;
-import br.org.gam.api.event.application.useCases.GetEventInstance.GetEventInstance;
+import br.org.gam.api.event.application.EventDomainLoader;
 import br.org.gam.api.event.domain.Event;
 import br.org.gam.api.event.domain.EventType;
 import br.org.gam.api.event.Missa.application.MissaMapper;
 import br.org.gam.api.event.Missa.domain.Missa;
 import br.org.gam.api.event.Missa.persistence.MissaEntity;
 import br.org.gam.api.event.Missa.persistence.MissaRepository;
-import br.org.gam.api.member.application.useCases.GetMemberInstance.GetMemberInstance;
+import br.org.gam.api.member.application.MemberDomainLoader;
 import br.org.gam.api.member.domain.Member;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
@@ -41,10 +41,10 @@ class CreateMissaTest {
     private CreateEvent createEventService;
 
     @Mock
-    private GetEventInstance getEventInstanceService;
+    private EventDomainLoader getEventInstanceService;
 
     @Mock
-    private GetMemberInstance getMemberInstanceService;
+    private MemberDomainLoader getMemberInstanceService;
 
     @Mock
     private MissaMapper missaMapper;
@@ -75,9 +75,9 @@ class CreateMissaTest {
             CreateMissaRDTO expectedResponse = new CreateMissaRDTO(eventId);
 
             when(createEventService.create(dto.event())).thenReturn(new CreateEventRDTO(eventId));
-            when(getEventInstanceService.domainById(eventId)).thenReturn(event);
-            when(getMemberInstanceService.domainById(comentariosId)).thenReturn(comentarios);
-            when(getMemberInstanceService.domainsById(dto.acolhidaMembersIds())).thenReturn(Set.of(acolhida));
+            when(getEventInstanceService.requiredById(eventId)).thenReturn(event);
+            when(getMemberInstanceService.requiredById(comentariosId)).thenReturn(comentarios);
+            when(getMemberInstanceService.requiredByIds(dto.acolhidaMembersIds())).thenReturn(Set.of(acolhida));
             when(missaMapper.domainToEntity(any(Missa.class))).thenReturn(mappedEntity);
             when(missaRepo.save(mappedEntity)).thenReturn(savedEntity);
             when(missaMapper.entityToCreateMissaRDTO(savedEntity)).thenReturn(expectedResponse);

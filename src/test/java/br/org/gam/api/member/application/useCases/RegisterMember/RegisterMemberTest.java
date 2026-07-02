@@ -1,6 +1,6 @@
 package br.org.gam.api.member.application.useCases.RegisterMember;
 
-import br.org.gam.api.account.application.useCases.GetAccountInstance.GetAccountInstance;
+import br.org.gam.api.account.application.AccountDomainLoader;
 import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.account.domain.MyEmail;
 import br.org.gam.api.member.application.MemberAccountConflictException;
@@ -43,7 +43,7 @@ class RegisterMemberTest {
     private MemberMapper memberMapper;
 
     @Mock
-    private GetAccountInstance getAccountInstance;
+    private AccountDomainLoader getAccountInstance;
 
     @InjectMocks
     private RegisterMember registerMember;
@@ -65,7 +65,7 @@ class RegisterMemberTest {
             RegisterMemberRDTO expectedResponse = new RegisterMemberRDTO(UUID.randomUUID());
 
             when(memberRepo.existsByAccountId(accountId)).thenReturn(false);
-            when(getAccountInstance.domainById(accountId)).thenReturn(account);
+            when(getAccountInstance.requiredById(accountId)).thenReturn(account);
             when(memberMapper.domainToEntity(any(Member.class))).thenReturn(mappedEntity);
             when(memberRepo.save(mappedEntity)).thenReturn(savedEntity);
             when(memberMapper.entityToRegisterMemberRDTO(savedEntity)).thenReturn(expectedResponse);

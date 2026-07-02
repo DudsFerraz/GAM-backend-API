@@ -1,10 +1,10 @@
 package br.org.gam.api.presence.application.useCases.RegisterPresence;
 
 import br.org.gam.api.event.application.EventNotFoundException;
-import br.org.gam.api.event.application.useCases.GetEventInstance.GetEventInstance;
+import br.org.gam.api.event.application.EventEntityLoader;
 import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.member.application.MemberNotFoundException;
-import br.org.gam.api.member.application.useCases.GetMemberInstance.GetMemberInstance;
+import br.org.gam.api.member.application.MemberEntityLoader;
 import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.presence.application.PresenceConflictException;
 import br.org.gam.api.presence.application.PresenceMapper;
@@ -42,10 +42,10 @@ class RegisterPresenceTest {
     private PresenceMapper presenceMapper;
 
     @Mock
-    private GetMemberInstance getMemberInstance;
+    private MemberEntityLoader getMemberInstance;
 
     @Mock
-    private GetEventInstance getEventInstance;
+    private EventEntityLoader getEventInstance;
 
     @InjectMocks
     private RegisterPresence registerPresence;
@@ -67,8 +67,8 @@ class RegisterPresenceTest {
             RegisterPresenceRDTO expectedResponse = new RegisterPresenceRDTO(UUID.randomUUID());
 
             when(presenceRepo.existsByMember_IdAndEvent_Id(memberId, eventId)).thenReturn(false);
-            when(getMemberInstance.entityById(memberId)).thenReturn(member);
-            when(getEventInstance.entityById(eventId)).thenReturn(event);
+            when(getMemberInstance.requiredById(memberId)).thenReturn(member);
+            when(getEventInstance.requiredById(eventId)).thenReturn(event);
             when(presenceRepo.save(anyPresenceEntity())).thenReturn(savedEntity);
             when(presenceMapper.entityToRegisterPresenceRDTO(savedEntity)).thenReturn(expectedResponse);
 
@@ -112,7 +112,7 @@ class RegisterPresenceTest {
             RegisterPresenceDTO dto = new RegisterPresenceDTO(eventId, memberId, null);
 
             when(presenceRepo.existsByMember_IdAndEvent_Id(memberId, eventId)).thenReturn(false);
-            when(getMemberInstance.entityById(memberId))
+            when(getMemberInstance.requiredById(memberId))
                     .thenThrow(new MemberNotFoundException("Could not find member with id " + memberId));
 
             assertThatThrownBy(() -> registerPresence.register(dto))
@@ -132,8 +132,8 @@ class RegisterPresenceTest {
             MemberEntity member = new MemberEntity();
 
             when(presenceRepo.existsByMember_IdAndEvent_Id(memberId, eventId)).thenReturn(false);
-            when(getMemberInstance.entityById(memberId)).thenReturn(member);
-            when(getEventInstance.entityById(eventId))
+            when(getMemberInstance.requiredById(memberId)).thenReturn(member);
+            when(getEventInstance.requiredById(eventId))
                     .thenThrow(new EventNotFoundException("Could not find event with id " + eventId));
 
             assertThatThrownBy(() -> registerPresence.register(dto))

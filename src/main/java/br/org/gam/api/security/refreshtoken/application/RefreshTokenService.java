@@ -1,6 +1,6 @@
 package br.org.gam.api.security.refreshtoken.application;
 
-import br.org.gam.api.account.application.useCases.GetAccountInstance.GetAccountInstance;
+import br.org.gam.api.account.application.AccountDomainLoader;
 import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.account.domain.MyEmail;
 import br.org.gam.api.account.persistence.AccountEntity;
@@ -25,13 +25,13 @@ import org.springframework.stereotype.Service;
 public class RefreshTokenService {
     private final Long refreshTokenDurationMs;
     private final RefreshTokenRepository refreshTokenRepository;
-    private final GetAccountInstance getAccountInstance;
+    private final AccountDomainLoader getAccountInstance;
     private final RefreshTokenMapper refreshTokenMapper;
     private final JwtService jwtService;
     private final UserDetailsService accountDetailsService;
 
     public RefreshTokenService(@Value("${jwt.refresh-expiration-ms}") Long refreshTokenExpiration,
-                               RefreshTokenRepository refreshTokenRepository, GetAccountInstance getAccountInstance,
+                               RefreshTokenRepository refreshTokenRepository, AccountDomainLoader getAccountInstance,
                                RefreshTokenMapper refreshTokenMapper, JwtService jwtService, UserDetailsService accountDetailsService) {
         this.refreshTokenRepository = refreshTokenRepository;
         this.getAccountInstance = getAccountInstance;
@@ -58,7 +58,7 @@ public class RefreshTokenService {
 
         UUID token = UUIDGenerator.generateUUIDV4();
         Instant expiryDate = Instant.now().plusMillis(refreshTokenDurationMs);
-        Account account = getAccountInstance.domainByEmail(email);
+        Account account = getAccountInstance.requiredByEmail(email);
 
         RefreshToken newRefreshToken = RefreshToken.register(token, expiryDate, account);
         RefreshTokenEntity newRefreshTokenEntity = refreshTokenMapper.domainToEntity(newRefreshToken);

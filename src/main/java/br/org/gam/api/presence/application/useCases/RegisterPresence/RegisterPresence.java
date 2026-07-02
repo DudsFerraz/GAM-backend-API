@@ -1,8 +1,8 @@
 package br.org.gam.api.presence.application.useCases.RegisterPresence;
 
-import br.org.gam.api.event.application.useCases.GetEventInstance.GetEventInstance;
+import br.org.gam.api.event.application.EventEntityLoader;
 import br.org.gam.api.event.persistence.EventEntity;
-import br.org.gam.api.member.application.useCases.GetMemberInstance.GetMemberInstance;
+import br.org.gam.api.member.application.MemberEntityLoader;
 import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.presence.application.PresenceConflictException;
 import br.org.gam.api.presence.application.PresenceMapper;
@@ -16,10 +16,10 @@ import org.springframework.stereotype.Service;
 public class RegisterPresence {
     private final PresenceRepository presenceRepo;
     private final PresenceMapper presenceMapper;
-    private final GetMemberInstance getMemberInstance;
-    private final GetEventInstance getEventInstance;
+    private final MemberEntityLoader getMemberInstance;
+    private final EventEntityLoader getEventInstance;
 
-    public RegisterPresence(PresenceRepository presenceRepo, PresenceMapper presenceMapper, GetMemberInstance getMemberInstance, GetEventInstance getEventInstance) {
+    public RegisterPresence(PresenceRepository presenceRepo, PresenceMapper presenceMapper, MemberEntityLoader getMemberInstance, EventEntityLoader getEventInstance) {
         this.presenceRepo = presenceRepo;
         this.presenceMapper = presenceMapper;
         this.getMemberInstance = getMemberInstance;
@@ -30,8 +30,8 @@ public class RegisterPresence {
             throw new PresenceConflictException("Presence already registered");
         }
 
-        MemberEntity presentMember = getMemberInstance.entityById(dto.memberId());
-        EventEntity relatedEvent = getEventInstance.entityById(dto.eventId());
+        MemberEntity presentMember = getMemberInstance.requiredById(dto.memberId());
+        EventEntity relatedEvent = getEventInstance.requiredById(dto.eventId());
 
         Objects.requireNonNull(presentMember, "Present member must not be null");
         Objects.requireNonNull(relatedEvent, "Presence event must not be null");

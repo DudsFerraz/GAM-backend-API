@@ -4,9 +4,9 @@ import br.org.gam.api.event.application.EventMapper;
 import br.org.gam.api.event.domain.Event;
 import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.event.persistence.EventRepository;
-import br.org.gam.api.location.application.useCases.GetLocationInstance.GetLocationInstance;
+import br.org.gam.api.location.application.LocationEntityLoader;
 import br.org.gam.api.location.persistence.LocationEntity;
-import br.org.gam.api.rbac.Permission.application.useCases.GetPermissionInstance.GetPermissionInstance;
+import br.org.gam.api.rbac.Permission.application.PermissionEntityLoader;
 import br.org.gam.api.rbac.Permission.persistence.PermissionEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,10 +16,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class CreateEvent {
 
     private final EventRepository eventRepository;
-    private final GetLocationInstance getLocationInstanceService;
+    private final LocationEntityLoader getLocationInstanceService;
     private final EventMapper eventMapper;
-    private final GetPermissionInstance getPermissionInstance;
-    public CreateEvent(EventRepository eventRepository, GetLocationInstance getLocationInstanceService, EventMapper eventMapper, GetPermissionInstance getPermissionInstance) {
+    private final PermissionEntityLoader getPermissionInstance;
+    public CreateEvent(EventRepository eventRepository, LocationEntityLoader getLocationInstanceService, EventMapper eventMapper, PermissionEntityLoader getPermissionInstance) {
         this.eventRepository = eventRepository;
         this.getLocationInstanceService = getLocationInstanceService;
         this.eventMapper = eventMapper;
@@ -29,8 +29,8 @@ public class CreateEvent {
     @Transactional
     public CreateEventRDTO create(CreateEventDTO dto) {
 
-        LocationEntity eventLocation = getLocationInstanceService.entityById(dto.locationId());
-        PermissionEntity requiredPermission = getPermissionInstance.entityById(dto.requiredPermissionId());
+        LocationEntity eventLocation = getLocationInstanceService.requiredById(dto.locationId());
+        PermissionEntity requiredPermission = getPermissionInstance.requiredById(dto.requiredPermissionId());
 
         Event newEvent = Event.register(dto.title(), dto.description(), dto.beginDate(), dto.endDate(), dto.type());
 

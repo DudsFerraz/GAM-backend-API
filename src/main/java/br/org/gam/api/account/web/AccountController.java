@@ -1,8 +1,8 @@
 package br.org.gam.api.account.web;
 
 import br.org.gam.api.account.application.AccountRDTO;
-import br.org.gam.api.account.application.useCases.GetAccount.GetAccount;
-import br.org.gam.api.account.application.useCases.SearchAccounts.SearchAccounts;
+import br.org.gam.api.account.application.useCases.GetAccount;
+import br.org.gam.api.account.application.useCases.SearchAccounts;
 import br.org.gam.api.rbac.Permission.domain.PermissionEnum;
 import br.org.gam.api.shared.specification.SearchDTO;
 import br.org.gam.api.shared.specification.SpecificationFilter;

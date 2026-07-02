@@ -8,7 +8,7 @@ This document defines how application workflow classes, read operation classes, 
 
 The codebase already has action-oriented names such as `RegisterMember`, `CreateEvent`, and `SearchMembers`. That direction is good. The problem is not the action name itself; the problem was the surrounding ceremony, especially one interface plus one Spring implementation for many single-implementation operations.
 
-Topic 7 removed the single-implementation application-service interfaces and `Spring*` implementation names. This topic still owns the later `GetXInstance` to `DomainLoader` / `EntityLoader` naming cleanup.
+Topic 7 removed the single-implementation application-service interfaces and `Spring*` implementation names. Topic 6 then replaced `GetXInstance` loaders with explicit `DomainLoader` and `EntityLoader` classes.
 
 ## 2. Final Naming Decisions
 
@@ -71,10 +71,12 @@ Example target shape:
 
 ```text
 member/application/useCases/RegisterMember/RegisterMember.java
-member/application/useCases/Activation/Activation.java
+member/application/useCases/Activation.java
 event/application/useCases/CreateEvent/CreateEvent.java
 presence/application/useCases/RegisterPresence/RegisterPresence.java
 ```
+
+Create a use-case subdirectory only when the use case has at least two co-located files, such as an implementation class plus DTO/RDTO files. Single-file action classes live directly under `application/useCases`.
 
 ## 4. Read Operation Classes
 
@@ -118,11 +120,13 @@ GetRolePermissions
 Example target shape:
 
 ```text
-member/application/useCases/GetMember/GetMember.java
-member/application/useCases/SearchMembers/SearchMembers.java
-event/application/useCases/GetEventPresences/GetEventPresences.java
+member/application/useCases/GetMember.java
+member/application/useCases/SearchMembers.java
+event/application/useCases/GetEventPresences.java
 rbac/Role/application/useCases/GetRolePermissions/GetRolePermissions.java
 ```
+
+The same directory rule applies to read operations: use a dedicated subdirectory only when the read use case owns at least two co-located files.
 
 ## 5. Loaders
 
@@ -326,7 +330,7 @@ Not:
 
 ```text
 MemberLookup
-GetMemberInstance
+GetMemberInstance (former naming)
 ```
 
 ### Policy
@@ -371,24 +375,20 @@ member/application
       RegisterMember.java
       RegisterMemberDTO.java
       RegisterMemberRDTO.java
-    Activation
-      Activation.java
-    GetMember
-      GetMember.java
-    SearchMembers
-      SearchMembers.java
-      SearchMembersDTO.java
+    Activation.java
+    GetMember.java
+    SearchMembers.java
 ```
 
-This keeps operation names direct, groups operation-specific files by use case, separates domain/entity loading explicitly, and preserves the existing `DTO` / `RDTO` convention.
+This keeps operation names direct, uses subdirectories only when they group multiple operation-specific files, separates domain/entity loading explicitly, and preserves the existing `DTO` / `RDTO` convention.
 
 ## 10. Refactor Order
 
-Apply this subject in small slices:
+Topic 6 implementation followed this order:
 
 1. Pick one feature package, preferably `member`.
-2. Replace interface/implementation pairs with one concrete action/read class.
-3. Rename `SpringX` implementations to the operation name.
-4. Replace `GetXInstance` with the strictly necessary `DomainLoader` or `EntityLoader`.
+2. Keep the concrete action/read classes created by topic 7.
+3. Replace `GetXInstance` with the strictly necessary `DomainLoader` or `EntityLoader`.
+4. Update workflows and tests to depend on the specific loader shape they need.
 5. Keep existing `DTO` and `RDTO` suffixes.
 6. Repeat the pattern in the next feature only after the first feature is clear.

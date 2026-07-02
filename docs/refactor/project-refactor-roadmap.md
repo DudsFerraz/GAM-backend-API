@@ -29,7 +29,7 @@ The application is a Spring Boot 3.5 / Java 21 REST API using:
 - Custom soft-delete repository behavior.
 - Custom dynamic search specifications.
 
-At a high level, most features follow this shape:
+Before the interface and loader cleanup, most features followed this shape:
 
 ```text
 Controller
@@ -98,7 +98,7 @@ This differs from a tangled monolith because each feature has clear internal bou
 The package structure must move toward feature-oriented packages with internal layer folders:
 
 - feature packages use `application`, `domain`, `persistence`, and `web` layer folders when those layers exist;
-- application use cases are grouped under `application/useCases/<UseCaseName>`;
+- single-file application use cases live directly under `application/useCases`; use `application/useCases/<UseCaseName>` only when the use case has at least two co-located files;
 - specialized event behavior lives under `event.Missa` and `event.Oratorio`;
 - RBAC is split into `rbac.AccountRole`, `rbac.Permission`, `rbac.Role`, and `rbac.RolePermission`;
 - cross-feature infrastructure moves to `security` or `shared`.
@@ -117,7 +117,7 @@ Detailed refactor instructions for this subject are defined in [`domain-vs-jpa-e
 
 The current design uses small use-case services, often one package per operation.
 
-Application services must keep expressive action/read names without unnecessary suffixes. Repeated required loading must be handled by explicit domain/entity loaders instead of vague `GetXInstance` classes.
+Application services must keep expressive action/read names without unnecessary suffixes. Repeated required loading is handled by explicit domain/entity loaders instead of vague former `GetXInstance` classes.
 
 Detailed refactor instructions for this subject are defined in [`services-and-use-cases.md`](services-and-use-cases.md).
 

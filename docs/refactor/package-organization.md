@@ -65,16 +65,19 @@ br.org.gam.api.member
 
 Do not create empty layer folders just to satisfy the structure. A folder exists only when it contains meaningful code.
 
-Application workflows and their operation-specific DTO/RDTO classes must be grouped by use case:
+Application workflows live under `application/useCases`. Create a use-case subdirectory only when the use case has at least two co-located files, such as an implementation class plus DTO/RDTO files:
 
 ```text
 br.org.gam.api.member
   application
     useCases
       RegisterMember
-      Activation
-      GetMember
-      SearchMembers
+        RegisterMember.java
+        RegisterMemberDTO.java
+        RegisterMemberRDTO.java
+      Activation.java
+      GetMember.java
+      SearchMembers.java
 ```
 
 Shared application helpers for the feature, such as mappers, common RDTOs, feature-owned security helpers, and temporary feature exceptions, may remain directly under `application` until later roadmap topics simplify them.
@@ -85,14 +88,14 @@ Shared application helpers for the feature, such as mappers, common RDTOs, featu
 
 The `application` package contains application workflows, read operations, loaders, and operation-specific input/output objects.
 
-Operation-specific application files must live under `application/useCases/<UseCaseName>`.
+Single-file operation classes live directly under `application/useCases`. Operation-specific application files live under `application/useCases/<UseCaseName>` only when that use case owns at least two co-located files.
 
 Examples:
 
 ```text
 member/application/useCases/RegisterMember/RegisterMember.java
-member/application/useCases/Activation/Activation.java
-member/application/useCases/SearchMembers/SearchMembers.java
+member/application/useCases/Activation.java
+member/application/useCases/SearchMembers.java
 member/application/MemberDomainLoader.java
 member/application/MemberEntityLoader.java
 member/application/useCases/RegisterMember/RegisterMemberDTO.java
@@ -299,7 +302,7 @@ For each feature:
 
 1. Create the target feature package.
 2. Move controllers into `web`.
-3. Move application workflows, read operations, and their operation-specific DTOs/RDTOs into `application/useCases/<UseCaseName>`.
+3. Move application workflows and read operations into `application/useCases`; create `application/useCases/<UseCaseName>` only when the use case has at least two co-located files, such as an implementation class plus DTO/RDTO files.
 4. Move rich domain models into `domain`.
 5. Move JPA entities, repositories, and specifications into `persistence`.
 6. Update imports.

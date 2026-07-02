@@ -3,7 +3,7 @@ package br.org.gam.api.member.application;
 import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.account.domain.MyEmail;
 import br.org.gam.api.account.persistence.AccountEntity;
-import br.org.gam.api.member.application.useCases.GetMemberInstance.GetMemberInstance;
+import br.org.gam.api.member.application.MemberEntityLoader;
 import br.org.gam.api.member.domain.Member;
 import br.org.gam.api.member.domain.MemberStatus;
 import br.org.gam.api.member.persistence.MemberEntity;
@@ -36,7 +36,7 @@ import static org.mockito.Mockito.when;
 class MemberSecurityTest {
 
     @Mock
-    private GetMemberInstance getMemberInstance;
+    private MemberEntityLoader getMemberInstance;
 
     @Mock
     private SecurityUtils securityUtils;
@@ -112,7 +112,7 @@ class MemberSecurityTest {
             UUID targetMemberId = UUID.randomUUID();
             AccountDetails accountDetails = accountDetails(loggedAccountId, List.of());
             SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(accountDetails, "password", accountDetails.getAuthorities()));
-            when(getMemberInstance.entityById(targetMemberId)).thenReturn(member(MemberStatus.ACTIVE, loggedAccountId));
+            when(getMemberInstance.requiredById(targetMemberId)).thenReturn(member(MemberStatus.ACTIVE, loggedAccountId));
 
             assertThat(memberSecurity.canGetMemberPresences(targetMemberId)).isTrue();
         }
@@ -124,7 +124,7 @@ class MemberSecurityTest {
             UUID targetMemberId = UUID.randomUUID();
             AccountDetails accountDetails = accountDetails(UUID.randomUUID(), List.of());
             SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(accountDetails, "password", accountDetails.getAuthorities()));
-            when(getMemberInstance.entityById(targetMemberId)).thenReturn(member(MemberStatus.ACTIVE, UUID.randomUUID()));
+            when(getMemberInstance.requiredById(targetMemberId)).thenReturn(member(MemberStatus.ACTIVE, UUID.randomUUID()));
 
             assertThat(memberSecurity.canGetMemberPresences(targetMemberId)).isFalse();
         }

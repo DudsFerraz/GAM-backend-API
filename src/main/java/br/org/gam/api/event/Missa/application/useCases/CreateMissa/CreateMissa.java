@@ -2,13 +2,13 @@ package br.org.gam.api.event.Missa.application.useCases.CreateMissa;
 
 import br.org.gam.api.event.application.useCases.CreateEvent.CreateEvent;
 import br.org.gam.api.event.application.useCases.CreateEvent.CreateEventRDTO;
-import br.org.gam.api.event.application.useCases.GetEventInstance.GetEventInstance;
+import br.org.gam.api.event.application.EventDomainLoader;
 import br.org.gam.api.event.domain.Event;
 import br.org.gam.api.event.Missa.application.MissaMapper;
 import br.org.gam.api.event.Missa.domain.Missa;
 import br.org.gam.api.event.Missa.persistence.MissaEntity;
 import br.org.gam.api.event.Missa.persistence.MissaRepository;
-import br.org.gam.api.member.application.useCases.GetMemberInstance.GetMemberInstance;
+import br.org.gam.api.member.application.MemberDomainLoader;
 import br.org.gam.api.member.domain.Member;
 import jakarta.transaction.Transactional;
 import java.util.Set;
@@ -19,11 +19,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class CreateMissa {
     private final CreateEvent createEventService;
-    private final GetEventInstance getEventInstanceService;
-    private final GetMemberInstance getMemberInstanceService;
+    private final EventDomainLoader getEventInstanceService;
+    private final MemberDomainLoader getMemberInstanceService;
     private final MissaMapper missaMapper;
     private final MissaRepository missaRepo;
-    public CreateMissa(CreateEvent createEventService, GetEventInstance getEventInstanceService, GetMemberInstance getMemberInstanceService, MissaMapper missaMapper, MissaRepository missaRepo) {
+    public CreateMissa(CreateEvent createEventService, EventDomainLoader getEventInstanceService, MemberDomainLoader getMemberInstanceService, MissaMapper missaMapper, MissaRepository missaRepo) {
         this.createEventService = createEventService;
         this.getEventInstanceService = getEventInstanceService;
         this.getMemberInstanceService = getMemberInstanceService;
@@ -34,7 +34,7 @@ public class CreateMissa {
     @Transactional
     public CreateMissaRDTO createMissa(CreateMissaDTO dto) {
         CreateEventRDTO newEventRdto = createEventService.create(dto.event());
-        Event newEvent = getEventInstanceService.domainById(newEventRdto.id());
+        Event newEvent = getEventInstanceService.requiredById(newEventRdto.id());
 
 
         Member comentariosMember = resolveMember(dto.comentariosMemberId());
@@ -42,7 +42,7 @@ public class CreateMissa {
         Member salmoMember = resolveMember(dto.salmoMemberId());
         Member leitura2Member = resolveMember(dto.leitura2MemberId());
         Member precesMember = resolveMember(dto.precesMemberId());
-        Set<Member> acolhidaMembers = getMemberInstanceService.domainsById(dto.acolhidaMembersIds());
+        Set<Member> acolhidaMembers = getMemberInstanceService.requiredByIds(dto.acolhidaMembersIds());
 
         Missa newMissa = Missa.register(newEvent, comentariosMember, leitura1Member, salmoMember,  leitura2Member, precesMember, acolhidaMembers);
 
@@ -54,7 +54,7 @@ public class CreateMissa {
 
     private Member resolveMember(UUID memberId) {
         if (memberId == null) return null;
-        return getMemberInstanceService.domainById(memberId);
+        return getMemberInstanceService.requiredById(memberId);
     }
 
 }

@@ -3,16 +3,16 @@ package br.org.gam.api.event.Oratorio.application.useCases.CreateOratorio;
 import br.org.gam.api.event.application.useCases.CreateEvent.CreateEvent;
 import br.org.gam.api.event.application.useCases.CreateEvent.CreateEventDTO;
 import br.org.gam.api.event.application.useCases.CreateEvent.CreateEventRDTO;
-import br.org.gam.api.event.application.useCases.GetEventInstance.GetEventInstance;
+import br.org.gam.api.event.application.EventDomainLoader;
 import br.org.gam.api.event.domain.Event;
 import br.org.gam.api.event.domain.EventType;
 import br.org.gam.api.event.Oratorio.application.OratorioMapper;
 import br.org.gam.api.event.Oratorio.domain.Oratorio;
 import br.org.gam.api.event.Oratorio.persistence.OratorioEntity;
 import br.org.gam.api.event.Oratorio.persistence.OratorioRepository;
-import br.org.gam.api.member.application.useCases.GetMemberInstance.GetMemberInstance;
+import br.org.gam.api.member.application.MemberDomainLoader;
 import br.org.gam.api.member.domain.Member;
-import br.org.gam.api.oratoriano.application.useCases.GetOratorianoInstance.GetOratorianoInstance;
+import br.org.gam.api.oratoriano.application.OratorianoDomainLoader;
 import br.org.gam.api.oratoriano.domain.Oratoriano;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
@@ -46,13 +46,13 @@ class CreateOratorioTest {
     private CreateEvent createEventService;
 
     @Mock
-    private GetEventInstance getEventInstanceService;
+    private EventDomainLoader getEventInstanceService;
 
     @Mock
-    private GetMemberInstance getMemberInstanceService;
+    private MemberDomainLoader getMemberInstanceService;
 
     @Mock
-    private GetOratorianoInstance getOratorianoInstanceService;
+    private OratorianoDomainLoader getOratorianoInstanceService;
 
     @Mock
     private OratorioMapper oratorioMapper;
@@ -80,11 +80,11 @@ class CreateOratorioTest {
             CreateOratorioRDTO expectedResponse = new CreateOratorioRDTO(eventId);
 
             when(createEventService.create(dto.event())).thenReturn(new CreateEventRDTO(eventId));
-            when(getEventInstanceService.domainById(eventId)).thenReturn(event);
-            when(getMemberInstanceService.domainsById(dto.lancheMembersIds())).thenReturn(Set.of(lanche));
-            when(getMemberInstanceService.domainsById(dto.btJovensMembersIds())).thenReturn(Set.of());
-            when(getMemberInstanceService.domainsById(dto.btCriancasMembersIds())).thenReturn(Set.of());
-            when(getOratorianoInstanceService.domainsbyId(dto.oratorianosIds())).thenReturn(Set.of(oratoriano));
+            when(getEventInstanceService.requiredById(eventId)).thenReturn(event);
+            when(getMemberInstanceService.requiredByIds(dto.lancheMembersIds())).thenReturn(Set.of(lanche));
+            when(getMemberInstanceService.requiredByIds(dto.btJovensMembersIds())).thenReturn(Set.of());
+            when(getMemberInstanceService.requiredByIds(dto.btCriancasMembersIds())).thenReturn(Set.of());
+            when(getOratorianoInstanceService.requiredByIds(dto.oratorianosIds())).thenReturn(Set.of(oratoriano));
             when(oratorioMapper.domainToEntity(any(Oratorio.class))).thenReturn(mappedEntity);
             when(oratorioRepo.save(mappedEntity)).thenReturn(savedEntity);
             when(oratorioMapper.entityToCreateOratorioRDTO(savedEntity)).thenReturn(expectedResponse);
