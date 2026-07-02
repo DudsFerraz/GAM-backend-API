@@ -7,9 +7,9 @@ import br.org.gam.api.event.domain.EventType;
 import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.event.persistence.EventRepository;
 import br.org.gam.api.location.application.useCases.GetLocationInstance.GetLocationInstance;
-import br.org.gam.api.location.domain.Location;
+import br.org.gam.api.location.persistence.LocationEntity;
 import br.org.gam.api.rbac.Permission.application.useCases.GetPermissionInstance.GetPermissionInstance;
-import br.org.gam.api.rbac.Permission.domain.Permission;
+import br.org.gam.api.rbac.Permission.persistence.PermissionEntity;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.time.Instant;
@@ -25,7 +25,6 @@ import org.mockito.Mock;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -62,14 +61,14 @@ class SpringCreateEventTest {
             Instant beginDate = Instant.now().plusSeconds(3600);
             Instant endDate = beginDate.plusSeconds(3600);
             CreateEventDTO dto = new CreateEventDTO("  Sunday Mass  ", null, locationId, permissionId, beginDate, endDate, EventType.MISSA);
-            Location location = mock(Location.class);
-            Permission permission = mock(Permission.class);
+            LocationEntity location = new LocationEntity();
+            PermissionEntity permission = new PermissionEntity();
             EventEntity mappedEntity = new EventEntity();
             EventEntity savedEntity = new EventEntity();
             CreateEventRDTO expectedResponse = new CreateEventRDTO(UUID.randomUUID());
 
-            when(getLocationInstanceService.domainById(locationId)).thenReturn(location);
-            when(getPermissionInstance.domainById(permissionId)).thenReturn(permission);
+            when(getLocationInstanceService.entityById(locationId)).thenReturn(location);
+            when(getPermissionInstance.entityById(permissionId)).thenReturn(permission);
             when(eventMapper.domainToEntity(any(Event.class))).thenReturn(mappedEntity);
             when(eventRepository.save(mappedEntity)).thenReturn(savedEntity);
             when(eventMapper.entityToCreateEventRDTO(savedEntity)).thenReturn(expectedResponse);
@@ -85,12 +84,12 @@ class SpringCreateEventTest {
             assertThat(event.getId().version()).isEqualTo(7);
             assertThat(event.getTitle()).isEqualTo("Sunday Mass");
             assertThat(event.getDescription()).isEmpty();
-            assertThat(event.getLocation()).isSameAs(location);
-            assertThat(event.getRequiredPermission()).isSameAs(permission);
             assertThat(event.getBeginDate()).isEqualTo(beginDate);
             assertThat(event.getEndDate()).isEqualTo(endDate);
             assertThat(event.getType()).isEqualTo(EventType.MISSA);
             assertThat(event.getStatus()).isEqualTo(EventStatus.SCHEDULED);
+            assertThat(mappedEntity.getLocation()).isSameAs(location);
+            assertThat(mappedEntity.getRequiredPermission()).isSameAs(permission);
             verify(eventRepository).save(mappedEntity);
         }
     }

@@ -1,6 +1,5 @@
 package br.org.gam.api.rbac.Permission.persistence;
 
-import br.org.gam.api.rbac.Permission.domain.Permission;
 import br.org.gam.api.shared.auditing.FullAuditableEntity;
 import jakarta.persistence.*;
 import java.util.UUID;

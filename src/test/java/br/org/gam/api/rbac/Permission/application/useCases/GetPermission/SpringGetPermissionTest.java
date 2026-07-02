@@ -4,7 +4,6 @@ import br.org.gam.api.rbac.Permission.application.PermissionMapper;
 import br.org.gam.api.rbac.Permission.application.PermissionNotFoundException;
 import br.org.gam.api.rbac.Permission.application.PermissionRDTO;
 import br.org.gam.api.rbac.Permission.application.useCases.GetPermissionInstance.GetPermissionInstance;
-import br.org.gam.api.rbac.Permission.domain.Permission;
 import br.org.gam.api.rbac.Permission.persistence.PermissionEntity;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;

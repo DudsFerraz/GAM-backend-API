@@ -1,7 +1,6 @@
 package br.org.gam.api.location.application.useCases.CreateLocation;
 
 import br.org.gam.api.location.application.LocationMapper;
-import br.org.gam.api.location.domain.Location;
 import br.org.gam.api.location.persistence.LocationEntity;
 import br.org.gam.api.location.persistence.LocationRepository;
 import br.org.gam.api.testing.annotation.FunctionalTest;
@@ -18,7 +17,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.Mock;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -56,21 +54,19 @@ class SpringCreateLocationTest {
                     latitude,
                     longitude
             );
-            LocationEntity mappedEntity = new LocationEntity();
             LocationEntity savedEntity = new LocationEntity();
             CreateLocationRDTO expectedResponse = new CreateLocationRDTO(UUID.randomUUID());
 
-            when(locationMapper.domainToEntity(any(Location.class))).thenReturn(mappedEntity);
-            when(locationRepo.save(mappedEntity)).thenReturn(savedEntity);
+            when(locationRepo.save(anyLocationEntity())).thenReturn(savedEntity);
             when(locationMapper.entityToCreateLocationRDTO(savedEntity)).thenReturn(expectedResponse);
 
             CreateLocationRDTO response = createLocation.create(dto);
 
             assertThat(response).isSameAs(expectedResponse);
 
-            ArgumentCaptor<Location> locationCaptor = ArgumentCaptor.forClass(Location.class);
-            verify(locationMapper).domainToEntity(locationCaptor.capture());
-            Location location = locationCaptor.getValue();
+            ArgumentCaptor<LocationEntity> locationCaptor = ArgumentCaptor.forClass(LocationEntity.class);
+            verify(locationRepo).save(locationCaptor.capture());
+            LocationEntity location = locationCaptor.getValue();
 
             assertThat(location.getId()).isNotNull();
             assertThat(location.getId().version()).isEqualTo(7);
@@ -82,7 +78,10 @@ class SpringCreateLocationTest {
             assertThat(location.getCountryCode()).isEqualTo("BRA");
             assertThat(location.getLatitude()).isSameAs(latitude);
             assertThat(location.getLongitude()).isSameAs(longitude);
-            verify(locationRepo).save(mappedEntity);
         }
+    }
+
+    private static LocationEntity anyLocationEntity() {
+        return org.mockito.ArgumentMatchers.any(LocationEntity.class);
     }
 }

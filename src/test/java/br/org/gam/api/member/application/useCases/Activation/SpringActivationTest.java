@@ -10,7 +10,6 @@ import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.persistence.MemberRepository;
 import br.org.gam.api.rbac.AccountRole.application.useCases.AddAccountRole.AddAccountRole;
 import br.org.gam.api.rbac.AccountRole.application.useCases.DropAccountRole.DropAccountRole;
-import br.org.gam.api.rbac.AccountRole.domain.AccountRole;
 import br.org.gam.api.shared.domain.Name;
 import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
 import br.org.gam.api.testing.annotation.FunctionalTest;

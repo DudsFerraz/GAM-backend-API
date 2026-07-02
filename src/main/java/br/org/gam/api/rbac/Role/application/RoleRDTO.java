@@ -1,6 +1,5 @@
 package br.org.gam.api.rbac.Role.application;
 
-import br.org.gam.api.rbac.Role.domain.Role;
 import java.util.UUID;
 
 public record RoleRDTO(

@@ -4,7 +4,6 @@ import br.org.gam.api.rbac.Role.application.RoleMapper;
 import br.org.gam.api.rbac.Role.application.RoleNotFoundException;
 import br.org.gam.api.rbac.Role.application.RoleRDTO;
 import br.org.gam.api.rbac.Role.application.useCases.GetRoleInstance.GetRoleInstance;
-import br.org.gam.api.rbac.Role.domain.Role;
 import br.org.gam.api.rbac.Role.persistence.RoleEntity;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;

@@ -1,6 +1,5 @@
 package br.org.gam.api.rbac.AccountRole.application;
 
-import br.org.gam.api.rbac.AccountRole.domain.AccountRole;
 import br.org.gam.api.rbac.Role.application.RoleRDTO;
 import java.util.ArrayList;
 import java.util.List;

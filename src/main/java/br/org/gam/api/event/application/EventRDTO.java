@@ -4,7 +4,6 @@ import br.org.gam.api.event.domain.EventStatus;
 import br.org.gam.api.event.domain.EventType;
 import br.org.gam.api.location.application.LocationRDTO;
 import br.org.gam.api.rbac.Permission.application.PermissionRDTO;
-import br.org.gam.api.rbac.Permission.domain.Permission;
 import java.time.Instant;
 import java.util.UUID;
 

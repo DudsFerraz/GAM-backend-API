@@ -7,7 +7,6 @@ import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.presence.application.PresenceMapper;
 import br.org.gam.api.presence.application.PresenceNotFoundException;
 import br.org.gam.api.presence.application.PresenceRDTO;
-import br.org.gam.api.presence.domain.Presence;
 import br.org.gam.api.presence.persistence.PresenceEntity;
 import br.org.gam.api.presence.persistence.PresenceRepository;
 import br.org.gam.api.testing.annotation.FunctionalTest;

@@ -2,19 +2,15 @@ package br.org.gam.api.shared.mapper;
 
 import br.org.gam.api.location.application.LocationMapper;
 import br.org.gam.api.location.application.LocationRDTO;
-import br.org.gam.api.location.domain.Location;
 import br.org.gam.api.location.persistence.LocationEntity;
 import br.org.gam.api.rbac.Permission.application.PermissionMapper;
 import br.org.gam.api.rbac.Permission.application.PermissionRDTO;
-import br.org.gam.api.rbac.Permission.domain.Permission;
 import br.org.gam.api.rbac.Permission.persistence.PermissionEntity;
 import br.org.gam.api.rbac.Role.application.RoleMapper;
 import br.org.gam.api.rbac.Role.application.RoleRDTO;
-import br.org.gam.api.rbac.Role.domain.Role;
 import br.org.gam.api.rbac.Role.persistence.RoleEntity;
 import br.org.gam.api.testing.annotation.StructuralTest;
 import br.org.gam.api.testing.annotation.UnitTest;
-import java.math.BigDecimal;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -37,18 +33,6 @@ class CoreMapperStructuralTest {
     class Structural {
 
         @Test
-        @DisplayName("permission domain -> entity")
-        void permissionDomainShouldMapToEntity() {
-            Permission permission = Permission.register("MEMBER_GET", "View active members");
-
-            PermissionEntity entity = permissionMapper.domainToEntity(permission);
-
-            assertThat(entity.getId()).isEqualTo(permission.getId());
-            assertThat(entity.getName()).isEqualTo("MEMBER_GET");
-            assertThat(entity.getDescription()).isEqualTo("View active members");
-        }
-
-        @Test
         @DisplayName("permission entity -> response DTO")
         void permissionEntityShouldMapToResponseDto() {
             PermissionEntity entity = permissionEntity(UUID.randomUUID(), "MEMBER_GET", "View active members");
@@ -58,18 +42,6 @@ class CoreMapperStructuralTest {
             assertThat(dto.id()).isEqualTo(entity.getId());
             assertThat(dto.name()).isEqualTo("MEMBER_GET");
             assertThat(dto.description()).isEqualTo("View active members");
-        }
-
-        @Test
-        @DisplayName("role domain -> entity")
-        void roleDomainShouldMapToEntity() {
-            Role role = Role.register("ADMIN", "System administrator");
-
-            RoleEntity entity = roleMapper.domainToEntity(role);
-
-            assertThat(entity.getId()).isEqualTo(role.getId());
-            assertThat(entity.getName()).isEqualTo("ADMIN");
-            assertThat(entity.getDescription()).isEqualTo("System administrator");
         }
 
         @Test
@@ -85,26 +57,6 @@ class CoreMapperStructuralTest {
         }
 
         @Test
-        @DisplayName("location domain -> entity")
-        void locationDomainShouldMapToEntity() {
-            BigDecimal latitude = new BigDecimal("-22.90684670");
-            BigDecimal longitude = new BigDecimal("-47.06158810");
-            Location location = Location.register("Parish Hall", "Street", "Campinas", "SP", "13000-000", "BRA", latitude, longitude);
-
-            LocationEntity entity = locationMapper.domainToEntity(location);
-
-            assertThat(entity.getId()).isEqualTo(location.getId());
-            assertThat(entity.getName()).isEqualTo("Parish Hall");
-            assertThat(entity.getStreet()).isEqualTo("Street");
-            assertThat(entity.getCity()).isEqualTo("Campinas");
-            assertThat(entity.getState()).isEqualTo("SP");
-            assertThat(entity.getPostalCode()).isEqualTo("13000-000");
-            assertThat(entity.getCountryCode()).isEqualTo("BRA");
-            assertThat(entity.getLatitude()).isEqualTo(latitude);
-            assertThat(entity.getLongitude()).isEqualTo(longitude);
-        }
-
-        @Test
         @DisplayName("location entity -> response DTO")
         void locationEntityShouldMapToResponseDto() {
             LocationEntity entity = new LocationEntity();
@@ -115,8 +67,8 @@ class CoreMapperStructuralTest {
             entity.setState("SP");
             entity.setPostalCode("13000-000");
             entity.setCountryCode("BRA");
-            entity.setLatitude(new BigDecimal("-22.90684670"));
-            entity.setLongitude(new BigDecimal("-47.06158810"));
+            entity.setLatitude(new java.math.BigDecimal("-22.90684670"));
+            entity.setLongitude(new java.math.BigDecimal("-47.06158810"));
 
             LocationRDTO dto = locationMapper.entityToLocationRDTO(entity);
 

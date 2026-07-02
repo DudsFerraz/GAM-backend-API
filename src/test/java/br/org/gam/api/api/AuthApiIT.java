@@ -1,6 +1,5 @@
 package br.org.gam.api.api;
 
-import br.org.gam.api.location.domain.Location;
 import br.org.gam.api.testing.annotation.ApiTest;
 import br.org.gam.api.testing.annotation.IntegrationTest;
 import br.org.gam.api.testing.annotation.SecurityTest;

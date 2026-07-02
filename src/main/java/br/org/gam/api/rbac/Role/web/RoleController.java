@@ -2,7 +2,6 @@ package br.org.gam.api.rbac.Role.web;
 
 import br.org.gam.api.rbac.Role.application.useCases.GetRolePermissions.GetRolePermissions;
 import br.org.gam.api.rbac.Role.application.useCases.GetRolePermissions.GetRolePermissionsRDTO;
-import br.org.gam.api.rbac.Role.domain.Role;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;

@@ -2,13 +2,12 @@ package br.org.gam.api.event.application.useCases.CreateEvent;
 
 import br.org.gam.api.event.application.EventMapper;
 import br.org.gam.api.event.domain.Event;
-import br.org.gam.api.event.domain.EventType;
 import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.event.persistence.EventRepository;
 import br.org.gam.api.location.application.useCases.GetLocationInstance.GetLocationInstance;
-import br.org.gam.api.location.domain.Location;
+import br.org.gam.api.location.persistence.LocationEntity;
 import br.org.gam.api.rbac.Permission.application.useCases.GetPermissionInstance.GetPermissionInstance;
-import br.org.gam.api.rbac.Permission.domain.Permission;
+import br.org.gam.api.rbac.Permission.persistence.PermissionEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,13 +30,15 @@ public class SpringCreateEvent implements CreateEvent {
     @Override
     public CreateEventRDTO create(CreateEventDTO dto) {
 
-        Location eventLocation = getLocationInstanceService.domainById(dto.locationId());
-        Permission requiredPermission = getPermissionInstance.domainById(dto.requiredPermissionId());
+        LocationEntity eventLocation = getLocationInstanceService.entityById(dto.locationId());
+        PermissionEntity requiredPermission = getPermissionInstance.entityById(dto.requiredPermissionId());
 
-        Event newEvent = Event.register(dto.title(), dto.description(), eventLocation, requiredPermission,
-                                      dto.beginDate(), dto.endDate(), dto.type());
+        Event newEvent = Event.register(dto.title(), dto.description(), dto.beginDate(), dto.endDate(), dto.type());
 
         EventEntity newEventEntity = eventMapper.domainToEntity(newEvent);
+        newEventEntity.setLocation(eventLocation);
+        newEventEntity.setRequiredPermission(requiredPermission);
+
         EventEntity savedEventEntity = eventRepository.save(newEventEntity);
 
         return eventMapper.entityToCreateEventRDTO(savedEventEntity);

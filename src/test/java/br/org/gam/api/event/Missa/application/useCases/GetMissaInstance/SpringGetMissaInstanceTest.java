@@ -114,7 +114,7 @@ class SpringGetMissaInstanceTest {
 
     private static Missa missa() {
         Instant beginDate = Instant.now().plusSeconds(3600);
-        Event event = Event.register("Missa", null, null, null, beginDate, beginDate.plusSeconds(3600), EventType.MISSA);
+        Event event = Event.register("Missa", null, beginDate, beginDate.plusSeconds(3600), EventType.MISSA);
         return Missa.register(event, null, null, null, null, null, Set.of());
     }
 }

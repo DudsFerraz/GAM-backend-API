@@ -1,6 +1,5 @@
 package br.org.gam.api.rbac.RolePermission.persistence;
 
-import br.org.gam.api.rbac.RolePermission.domain.RolePermission;
 import jakarta.persistence.criteria.JoinType;
 import java.util.UUID;
 import org.springframework.data.jpa.domain.Specification;

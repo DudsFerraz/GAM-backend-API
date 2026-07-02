@@ -9,7 +9,6 @@ import br.org.gam.api.member.application.useCases.RegisterMember.RegisterMemberR
 import br.org.gam.api.member.application.useCases.SearchMembers.SearchMembers;
 import br.org.gam.api.presence.application.PresenceRDTO;
 import br.org.gam.api.presence.application.useCases.GetPresence.GetPresence;
-import br.org.gam.api.rbac.Permission.domain.Permission;
 import br.org.gam.api.rbac.Permission.domain.PermissionEnum;
 import br.org.gam.api.shared.specification.SearchDTO;
 import br.org.gam.api.shared.specification.SpecificationFilter;

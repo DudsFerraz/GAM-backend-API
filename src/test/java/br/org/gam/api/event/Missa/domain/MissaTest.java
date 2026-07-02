@@ -104,6 +104,6 @@ class MissaTest {
 
     private static Event event() {
         Instant beginDate = Instant.now().plusSeconds(3600);
-        return Event.register("Missa", null, null, null, beginDate, beginDate.plusSeconds(3600), EventType.MISSA);
+        return Event.register("Missa", null, beginDate, beginDate.plusSeconds(3600), EventType.MISSA);
     }
 }

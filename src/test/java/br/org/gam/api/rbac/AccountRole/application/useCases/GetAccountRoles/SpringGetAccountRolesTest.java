@@ -2,12 +2,10 @@ package br.org.gam.api.rbac.AccountRole.application.useCases.GetAccountRoles;
 
 import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.rbac.AccountRole.application.AccountRolesRDTO;
-import br.org.gam.api.rbac.AccountRole.domain.AccountRole;
 import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleEntity;
 import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleRepository;
 import br.org.gam.api.rbac.Role.application.RoleMapper;
 import br.org.gam.api.rbac.Role.application.RoleRDTO;
-import br.org.gam.api.rbac.Role.domain.Role;
 import br.org.gam.api.rbac.Role.persistence.RoleEntity;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.StructuralTest;

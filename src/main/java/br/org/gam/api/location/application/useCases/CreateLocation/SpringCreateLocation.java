@@ -1,10 +1,11 @@
 package br.org.gam.api.location.application.useCases.CreateLocation;
 
 import br.org.gam.api.location.application.LocationMapper;
-import br.org.gam.api.location.domain.Location;
 import br.org.gam.api.location.persistence.LocationEntity;
 import br.org.gam.api.location.persistence.LocationRepository;
+import br.org.gam.api.shared.persistence.UUIDGenerator;
 import jakarta.transaction.Transactional;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -22,9 +23,22 @@ public class SpringCreateLocation implements CreateLocation {
     @Override
     public CreateLocationRDTO create(CreateLocationDTO dto) {
 
-        Location newLocation = Location.register(dto.name(), dto.street(), dto.city(), dto.state(), dto.postalCode(),
-                                                dto.countryCode(), dto.latitude(), dto.longitude());
-        LocationEntity locationEntity = locationMapper.domainToEntity(newLocation);
+        Objects.requireNonNull(dto.name(), "Name cannot be null");
+        Objects.requireNonNull(dto.city(), "City cannot be null");
+        Objects.requireNonNull(dto.state(), "State cannot be null");
+        Objects.requireNonNull(dto.countryCode(), "CountryCode cannot be null");
+
+        LocationEntity locationEntity = new LocationEntity();
+        locationEntity.setId(UUIDGenerator.generateUUIDV7());
+        locationEntity.setName(dto.name().trim());
+        locationEntity.setStreet(dto.street() == null ? "" : dto.street().trim());
+        locationEntity.setCity(dto.city().trim());
+        locationEntity.setState(dto.state().trim());
+        locationEntity.setPostalCode(dto.postalCode() == null ? "" : dto.postalCode().trim());
+        locationEntity.setCountryCode(dto.countryCode().trim());
+        locationEntity.setLatitude(dto.latitude());
+        locationEntity.setLongitude(dto.longitude());
+
         LocationEntity savedLocationEntity = locationRepo.save(locationEntity);
 
         return locationMapper.entityToCreateLocationRDTO(savedLocationEntity);

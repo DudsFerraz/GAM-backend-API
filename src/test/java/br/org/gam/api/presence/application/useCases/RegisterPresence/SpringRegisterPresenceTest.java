@@ -2,13 +2,12 @@ package br.org.gam.api.presence.application.useCases.RegisterPresence;
 
 import br.org.gam.api.event.application.EventNotFoundException;
 import br.org.gam.api.event.application.useCases.GetEventInstance.GetEventInstance;
-import br.org.gam.api.event.domain.Event;
+import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.member.application.MemberNotFoundException;
 import br.org.gam.api.member.application.useCases.GetMemberInstance.GetMemberInstance;
-import br.org.gam.api.member.domain.Member;
+import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.presence.application.PresenceConflictException;
 import br.org.gam.api.presence.application.PresenceMapper;
-import br.org.gam.api.presence.domain.Presence;
 import br.org.gam.api.presence.persistence.PresenceEntity;
 import br.org.gam.api.presence.persistence.PresenceRepository;
 import br.org.gam.api.testing.annotation.FunctionalTest;
@@ -26,7 +25,6 @@ import org.mockito.Mock;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -63,33 +61,30 @@ class SpringRegisterPresenceTest {
             UUID memberId = UUID.randomUUID();
             UUID eventId = UUID.randomUUID();
             RegisterPresenceDTO dto = new RegisterPresenceDTO(eventId, memberId, "  Present at entrance  ");
-            Member member = mock(Member.class);
-            Event event = mock(Event.class);
-            PresenceEntity mappedEntity = new PresenceEntity();
+            MemberEntity member = new MemberEntity();
+            EventEntity event = new EventEntity();
             PresenceEntity savedEntity = new PresenceEntity();
             RegisterPresenceRDTO expectedResponse = new RegisterPresenceRDTO(UUID.randomUUID());
 
             when(presenceRepo.existsByMember_IdAndEvent_Id(memberId, eventId)).thenReturn(false);
-            when(getMemberInstance.domainById(memberId)).thenReturn(member);
-            when(getEventInstance.domainById(eventId)).thenReturn(event);
-            when(presenceMapper.domainToEntity(any(Presence.class))).thenReturn(mappedEntity);
-            when(presenceRepo.save(mappedEntity)).thenReturn(savedEntity);
+            when(getMemberInstance.entityById(memberId)).thenReturn(member);
+            when(getEventInstance.entityById(eventId)).thenReturn(event);
+            when(presenceRepo.save(anyPresenceEntity())).thenReturn(savedEntity);
             when(presenceMapper.entityToRegisterPresenceRDTO(savedEntity)).thenReturn(expectedResponse);
 
             RegisterPresenceRDTO response = registerPresence.register(dto);
 
             assertThat(response).isSameAs(expectedResponse);
 
-            ArgumentCaptor<Presence> presenceCaptor = ArgumentCaptor.forClass(Presence.class);
-            verify(presenceMapper).domainToEntity(presenceCaptor.capture());
-            Presence presence = presenceCaptor.getValue();
+            ArgumentCaptor<PresenceEntity> presenceCaptor = ArgumentCaptor.forClass(PresenceEntity.class);
+            verify(presenceRepo).save(presenceCaptor.capture());
+            PresenceEntity presence = presenceCaptor.getValue();
 
             assertThat(presence.getId()).isNotNull();
             assertThat(presence.getId().version()).isEqualTo(7);
             assertThat(presence.getMember()).isSameAs(member);
             assertThat(presence.getEvent()).isSameAs(event);
             assertThat(presence.getObservations()).isEqualTo("Present at entrance");
-            verify(presenceRepo).save(mappedEntity);
         }
 
         @Test
@@ -117,7 +112,7 @@ class SpringRegisterPresenceTest {
             RegisterPresenceDTO dto = new RegisterPresenceDTO(eventId, memberId, null);
 
             when(presenceRepo.existsByMember_IdAndEvent_Id(memberId, eventId)).thenReturn(false);
-            when(getMemberInstance.domainById(memberId))
+            when(getMemberInstance.entityById(memberId))
                     .thenThrow(new MemberNotFoundException("Could not find member with id " + memberId));
 
             assertThatThrownBy(() -> registerPresence.register(dto))
@@ -134,11 +129,11 @@ class SpringRegisterPresenceTest {
             UUID memberId = UUID.randomUUID();
             UUID eventId = UUID.randomUUID();
             RegisterPresenceDTO dto = new RegisterPresenceDTO(eventId, memberId, null);
-            Member member = mock(Member.class);
+            MemberEntity member = new MemberEntity();
 
             when(presenceRepo.existsByMember_IdAndEvent_Id(memberId, eventId)).thenReturn(false);
-            when(getMemberInstance.domainById(memberId)).thenReturn(member);
-            when(getEventInstance.domainById(eventId))
+            when(getMemberInstance.entityById(memberId)).thenReturn(member);
+            when(getEventInstance.entityById(eventId))
                     .thenThrow(new EventNotFoundException("Could not find event with id " + eventId));
 
             assertThatThrownBy(() -> registerPresence.register(dto))
@@ -148,5 +143,9 @@ class SpringRegisterPresenceTest {
             verifyNoInteractions(presenceMapper);
             verify(presenceRepo, never()).save(any());
         }
+    }
+
+    private static PresenceEntity anyPresenceEntity() {
+        return org.mockito.ArgumentMatchers.any(PresenceEntity.class);
     }
 }

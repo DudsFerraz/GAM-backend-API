@@ -1,7 +1,6 @@
 package br.org.gam.api.account.persistence;
 
 import br.org.gam.api.account.domain.MyEmail;
-import br.org.gam.api.rbac.AccountRole.domain.AccountRole;
 import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleEntity;
 import br.org.gam.api.shared.auditing.FullAuditableEntity;
 import jakarta.persistence.*;

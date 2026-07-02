@@ -113,7 +113,7 @@ class SpringGetOratorioInstanceTest {
 
     private static Oratorio oratorio() {
         Instant beginDate = Instant.now().plusSeconds(3600);
-        Event event = Event.register("Oratorio", null, null, null, beginDate, beginDate.plusSeconds(3600), EventType.ORATORIO);
+        Event event = Event.register("Oratorio", null, beginDate, beginDate.plusSeconds(3600), EventType.ORATORIO);
         return Oratorio.register(event, null, null, null, null);
     }
 }

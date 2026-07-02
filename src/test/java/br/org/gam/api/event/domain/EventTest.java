@@ -28,7 +28,7 @@ class EventTest {
             Instant beginDate = Instant.now().plusSeconds(3600);
             Instant endDate = beginDate.plusSeconds(3600);
 
-            Event event = Event.register("  Sunday Mass  ", "  Main celebration  ", null, null, beginDate, endDate, EventType.MISSA);
+            Event event = Event.register("  Sunday Mass  ", "  Main celebration  ", beginDate, endDate, EventType.MISSA);
 
             assertThat(event.getId()).isNotNull();
             assertThat(event.getId().version()).isEqualTo(7);
@@ -46,7 +46,7 @@ class EventTest {
             Instant beginDate = Instant.now().minusSeconds(7200);
             Instant endDate = Instant.now().minusSeconds(3600);
 
-            Event event = Event.register("Past event", null, null, null, beginDate, endDate, EventType.ORATORIO);
+            Event event = Event.register("Past event", null, beginDate, endDate, EventType.ORATORIO);
 
             assertThat(event.getDescription()).isEmpty();
             assertThat(event.getStatus()).isEqualTo(EventStatus.COMPLETED);
@@ -57,7 +57,7 @@ class EventTest {
         void endDateEqualToBeginDateShouldReturnValidationError() {
             Instant date = Instant.now().plusSeconds(3600);
 
-            assertThatThrownBy(() -> Event.register("Event", null, null, null, date, date, EventType.MISSA))
+            assertThatThrownBy(() -> Event.register("Event", null, date, date, EventType.MISSA))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessage("endDate must be after beginDate.");
         }
@@ -68,7 +68,7 @@ class EventTest {
             Instant beginDate = Instant.now().plusSeconds(3600);
             Instant endDate = beginDate.minusSeconds(1);
 
-            assertThatThrownBy(() -> Event.register("Event", null, null, null, beginDate, endDate, EventType.MISSA))
+            assertThatThrownBy(() -> Event.register("Event", null, beginDate, endDate, EventType.MISSA))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessage("endDate must be after beginDate.");
         }
@@ -81,7 +81,7 @@ class EventTest {
             Instant endDate = beginDate.plusSeconds(3600);
 
             assertThatNullPointerException()
-                    .isThrownBy(() -> Event.register(title, null, null, null, beginDate, endDate, EventType.MISSA))
+                    .isThrownBy(() -> Event.register(title, null, beginDate, endDate, EventType.MISSA))
                     .withMessage("Title cannot be null");
         }
 
@@ -92,7 +92,7 @@ class EventTest {
             Instant endDate = Instant.now().plusSeconds(3600);
 
             assertThatNullPointerException()
-                    .isThrownBy(() -> Event.register("Event", null, null, null, beginDate, endDate, EventType.MISSA))
+                    .isThrownBy(() -> Event.register("Event", null, beginDate, endDate, EventType.MISSA))
                     .withMessage("Begin date cannot be null");
         }
 
@@ -103,7 +103,7 @@ class EventTest {
             Instant beginDate = Instant.now().plusSeconds(3600);
 
             assertThatNullPointerException()
-                    .isThrownBy(() -> Event.register("Event", null, null, null, beginDate, endDate, EventType.MISSA))
+                    .isThrownBy(() -> Event.register("Event", null, beginDate, endDate, EventType.MISSA))
                     .withMessage("End date cannot be null");
         }
 
@@ -115,7 +115,7 @@ class EventTest {
             Instant endDate = beginDate.plusSeconds(3600);
 
             assertThatNullPointerException()
-                    .isThrownBy(() -> Event.register("Event", null, null, null, beginDate, endDate, type))
+                    .isThrownBy(() -> Event.register("Event", null, beginDate, endDate, type))
                     .withMessage("Event type cannot be null");
         }
 
@@ -124,7 +124,7 @@ class EventTest {
         void cancelEventShouldSetCancelledStatus() {
             Instant beginDate = Instant.now().plusSeconds(3600);
             Instant endDate = beginDate.plusSeconds(3600);
-            Event event = Event.register("Event", null, null, null, beginDate, endDate, EventType.MISSA);
+            Event event = Event.register("Event", null, beginDate, endDate, EventType.MISSA);
 
             event.cancel();
 

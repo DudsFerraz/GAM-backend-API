@@ -1,6 +1,5 @@
 package br.org.gam.api.db.migration;
 
-import br.org.gam.api.rbac.Permission.domain.Permission;
 import br.org.gam.api.rbac.Permission.domain.PermissionEnum;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
 import java.sql.Connection;

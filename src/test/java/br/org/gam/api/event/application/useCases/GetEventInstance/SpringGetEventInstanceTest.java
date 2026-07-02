@@ -112,6 +112,6 @@ class SpringGetEventInstanceTest {
 
     private static Event event() {
         Instant beginDate = Instant.now().plusSeconds(3600);
-        return Event.register("Event", null, null, null, beginDate, beginDate.plusSeconds(3600), EventType.MISSA);
+        return Event.register("Event", null, beginDate, beginDate.plusSeconds(3600), EventType.MISSA);
     }
 }

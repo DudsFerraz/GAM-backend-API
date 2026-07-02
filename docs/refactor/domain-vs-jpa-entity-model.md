@@ -46,6 +46,7 @@ For simplified models:
 
 - Remove the separated domain class when it only duplicates entity fields.
 - Use the JPA entity directly in persistence-oriented workflows.
+- Keep JPA entities simple. Construct and populate simplified entities directly in the application layer instead of adding rich factory methods to the entity.
 - Keep business rules in an application service or policy when a rich domain object is not justified.
 - Remove domain-to-entity mapper methods that exist only to support the deleted domain class.
 - Avoid mapping `Entity -> Domain -> Entity` when no domain behavior is used.
@@ -230,7 +231,7 @@ Refactor instructions:
 - Remove the separated `Role` domain class if it remains only a name/description wrapper.
 - Use `RoleEntity` directly for role persistence.
 - Keep role management rules in an RBAC application service or policy.
-- Preserve the hybrid RBAC model defined in `project-architecture.md`.
+- Preserve the hybrid RBAC model defined in [`project-refactor-roadmap.md`](project-refactor-roadmap.md), [`security-and-rbac.md`](security-and-rbac.md), and this document.
 
 ### 5.4. Permission
 

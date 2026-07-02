@@ -1,7 +1,6 @@
 package br.org.gam.api.rbac.AccountRole.persistence;
 
 import br.org.gam.api.account.persistence.AccountEntity;
-import br.org.gam.api.rbac.AccountRole.domain.AccountRole;
 import br.org.gam.api.rbac.Role.persistence.RoleEntity;
 import br.org.gam.api.shared.auditing.JunctionAuditableEntity;
 import jakarta.persistence.*;

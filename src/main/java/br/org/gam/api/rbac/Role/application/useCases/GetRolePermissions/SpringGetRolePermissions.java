@@ -2,10 +2,7 @@ package br.org.gam.api.rbac.Role.application.useCases.GetRolePermissions;
 
 import br.org.gam.api.rbac.Permission.application.PermissionMapper;
 import br.org.gam.api.rbac.Permission.application.PermissionRDTO;
-import br.org.gam.api.rbac.Permission.domain.Permission;
 import br.org.gam.api.rbac.Permission.persistence.PermissionEntity;
-import br.org.gam.api.rbac.Role.domain.Role;
-import br.org.gam.api.rbac.RolePermission.domain.RolePermission;
 import br.org.gam.api.rbac.RolePermission.persistence.RolePermissionEntity;
 import br.org.gam.api.rbac.RolePermission.persistence.RolePermissionRepository;
 import br.org.gam.api.rbac.RolePermission.persistence.RolePermissionSpecifications;

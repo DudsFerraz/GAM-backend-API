@@ -6,7 +6,6 @@ import br.org.gam.api.account.domain.MyEmail;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.account.persistence.AccountRepository;
 import br.org.gam.api.rbac.AccountRole.application.AccountRolesRDTO;
-import br.org.gam.api.rbac.AccountRole.domain.AccountRole;
 import br.org.gam.api.shared.specification.ComparationMethods;
 import br.org.gam.api.shared.specification.SpecificationFilter;
 import br.org.gam.api.testing.annotation.FunctionalTest;

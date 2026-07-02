@@ -1,14 +1,15 @@
 package br.org.gam.api.presence.application.useCases.RegisterPresence;
 
 import br.org.gam.api.event.application.useCases.GetEventInstance.GetEventInstance;
-import br.org.gam.api.event.domain.Event;
+import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.member.application.useCases.GetMemberInstance.GetMemberInstance;
-import br.org.gam.api.member.domain.Member;
+import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.presence.application.PresenceConflictException;
 import br.org.gam.api.presence.application.PresenceMapper;
-import br.org.gam.api.presence.domain.Presence;
 import br.org.gam.api.presence.persistence.PresenceEntity;
 import br.org.gam.api.presence.persistence.PresenceRepository;
+import br.org.gam.api.shared.persistence.UUIDGenerator;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -31,11 +32,18 @@ public class SpringRegisterPresence implements RegisterPresence {
             throw new PresenceConflictException("Presence already registered");
         }
 
-        Member presentMember = getMemberInstance.domainById(dto.memberId());
-        Event relatedEvent = getEventInstance.domainById(dto.eventId());
+        MemberEntity presentMember = getMemberInstance.entityById(dto.memberId());
+        EventEntity relatedEvent = getEventInstance.entityById(dto.eventId());
 
-        Presence newPresence = Presence.register(presentMember, relatedEvent, dto.observations());
-        PresenceEntity newPresenceEntity = presenceMapper.domainToEntity(newPresence);
+        Objects.requireNonNull(presentMember, "Present member must not be null");
+        Objects.requireNonNull(relatedEvent, "Presence event must not be null");
+
+        PresenceEntity newPresenceEntity = new PresenceEntity();
+        newPresenceEntity.setId(UUIDGenerator.generateUUIDV7());
+        newPresenceEntity.setMember(presentMember);
+        newPresenceEntity.setEvent(relatedEvent);
+        newPresenceEntity.setObservations(dto.observations() == null ? "" : dto.observations().trim());
+
         PresenceEntity savedPresenceEntity = presenceRepo.save(newPresenceEntity);
 
         return presenceMapper.entityToRegisterPresenceRDTO(savedPresenceEntity);

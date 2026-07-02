@@ -1,9 +1,7 @@
 package br.org.gam.api.rbac.AccountRole.application.useCases.GetAccountRoleInstance;
 
-import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.rbac.AccountRole.application.AccountRoleDTO;
 import br.org.gam.api.rbac.AccountRole.application.AccountRoleNotFoundException;
-import br.org.gam.api.rbac.AccountRole.domain.AccountRole;
 import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleEntity;
 import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleRepository;
 import org.springframework.stereotype.Service;

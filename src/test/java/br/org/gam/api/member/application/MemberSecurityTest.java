@@ -7,7 +7,6 @@ import br.org.gam.api.member.application.useCases.GetMemberInstance.GetMemberIns
 import br.org.gam.api.member.domain.Member;
 import br.org.gam.api.member.domain.MemberStatus;
 import br.org.gam.api.member.persistence.MemberEntity;
-import br.org.gam.api.rbac.Permission.domain.Permission;
 import br.org.gam.api.rbac.Permission.domain.PermissionEnum;
 import br.org.gam.api.security.application.AccountDetails;
 import br.org.gam.api.security.SecurityUtils;

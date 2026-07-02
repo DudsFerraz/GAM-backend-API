@@ -5,7 +5,6 @@ import br.org.gam.api.event.domain.Event;
 import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.location.application.LocationMapper;
 import br.org.gam.api.rbac.Permission.application.PermissionMapper;
-import br.org.gam.api.rbac.Permission.domain.Permission;
 import br.org.gam.api.shared.auditing.IgnoreFullAuditFields;
 import org.mapstruct.Mapper;
 

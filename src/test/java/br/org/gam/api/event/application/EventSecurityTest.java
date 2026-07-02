@@ -2,7 +2,6 @@ package br.org.gam.api.event.application;
 
 import br.org.gam.api.event.domain.Event;
 import br.org.gam.api.event.persistence.EventEntity;
-import br.org.gam.api.rbac.Permission.domain.Permission;
 import br.org.gam.api.rbac.Permission.persistence.PermissionEntity;
 import br.org.gam.api.security.SecurityUtils;
 import br.org.gam.api.testing.annotation.StructuralTest;

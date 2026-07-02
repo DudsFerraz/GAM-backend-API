@@ -7,7 +7,6 @@ import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.persistence.MemberRepository;
 import br.org.gam.api.rbac.AccountRole.application.useCases.AddAccountRole.AddAccountRole;
 import br.org.gam.api.rbac.AccountRole.application.useCases.DropAccountRole.DropAccountRole;
-import br.org.gam.api.rbac.AccountRole.domain.AccountRole;
 import jakarta.transaction.Transactional;
 import java.util.function.Consumer;
 import java.util.UUID;

@@ -4,7 +4,6 @@ import br.org.gam.api.location.application.LocationMapper;
 import br.org.gam.api.location.application.LocationNotFoundException;
 import br.org.gam.api.location.application.LocationRDTO;
 import br.org.gam.api.location.application.useCases.GetLocationInstance.GetLocationInstance;
-import br.org.gam.api.location.domain.Location;
 import br.org.gam.api.location.persistence.LocationEntity;
 import br.org.gam.api.location.persistence.LocationRepository;
 import br.org.gam.api.testing.annotation.FunctionalTest;

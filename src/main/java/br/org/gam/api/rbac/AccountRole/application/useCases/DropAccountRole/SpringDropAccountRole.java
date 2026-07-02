@@ -2,7 +2,6 @@ package br.org.gam.api.rbac.AccountRole.application.useCases.DropAccountRole;
 
 import br.org.gam.api.rbac.AccountRole.application.AccountRoleDTO;
 import br.org.gam.api.rbac.AccountRole.application.useCases.GetAccountRoleInstance.GetAccountRoleInstance;
-import br.org.gam.api.rbac.AccountRole.domain.AccountRole;
 import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleEntity;
 import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleRepository;
 import br.org.gam.api.rbac.Role.application.useCases.GetRoleInstance.GetRoleInstance;

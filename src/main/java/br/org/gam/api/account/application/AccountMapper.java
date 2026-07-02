@@ -4,11 +4,9 @@ import br.org.gam.api.account.application.useCases.RegisterAccount.RegisterAccou
 import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.rbac.AccountRole.application.AccountRolesRDTO;
-import br.org.gam.api.rbac.AccountRole.domain.AccountRole;
 import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleEntity;
 import br.org.gam.api.rbac.Role.application.RoleMapper;
 import br.org.gam.api.rbac.Role.application.RoleRDTO;
-import br.org.gam.api.rbac.Role.domain.Role;
 import br.org.gam.api.shared.auditing.IgnoreFullAuditFields;
 import java.util.Collection;
 import java.util.List;

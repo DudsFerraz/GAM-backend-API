@@ -1,6 +1,5 @@
 package br.org.gam.api.rbac.AccountRole.persistence;
 
-import br.org.gam.api.rbac.AccountRole.domain.AccountRole;
 import br.org.gam.api.shared.persistence.BaseRepository;
 import java.util.List;
 import java.util.Optional;

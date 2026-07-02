@@ -3,7 +3,6 @@ package br.org.gam.api.event.persistence;
 import br.org.gam.api.event.domain.EventStatus;
 import br.org.gam.api.event.domain.EventType;
 import br.org.gam.api.location.persistence.LocationEntity;
-import br.org.gam.api.rbac.Permission.domain.Permission;
 import br.org.gam.api.rbac.Permission.persistence.PermissionEntity;
 import br.org.gam.api.shared.auditing.FullAuditableEntity;
 import jakarta.persistence.*;
