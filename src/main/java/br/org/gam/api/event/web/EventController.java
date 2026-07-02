@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 @RestController
-@RequestMapping("/event")
+@RequestMapping("/events")
 public class EventController {
     private final CreateEvent createEvent;
     private final GetEvent getEvent;

@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 @RestController
-@RequestMapping("/member")
+@RequestMapping("/members")
 public class MemberController {
 
     private final RegisterMember registerMember;
@@ -82,7 +82,7 @@ public class MemberController {
 
     @PreAuthorize("hasAuthority('" + PermissionEnum.Code.MEMBER_ACTIVATION + "')")
     @PatchMapping("/{id}/activate")
-    public ResponseEntity activate(@PathVariable UUID id) {
+    public ResponseEntity<Void> activate(@PathVariable UUID id) {
 
         activation.activate(id);
         return ResponseEntity.ok().build();
@@ -90,7 +90,7 @@ public class MemberController {
 
     @PreAuthorize("hasAuthority('" + PermissionEnum.Code.MEMBER_ACTIVATION + "')")
     @PatchMapping("/{id}/deactivate")
-    public ResponseEntity deactivate(@PathVariable UUID id) {
+    public ResponseEntity<Void> deactivate(@PathVariable UUID id) {
 
         activation.deactivate(id);
         return ResponseEntity.ok().build();

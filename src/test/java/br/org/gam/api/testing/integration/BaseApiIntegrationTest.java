@@ -235,7 +235,7 @@ public abstract class BaseApiIntegrationTest {
     protected UUID createLocation(AuthSession session, String name) {
         ExtractableResponse<Response> response = authenticatedJsonRequest(session)
                 .body(locationPayload(name))
-                .post("/location")
+                .post("/locations")
                 .then()
                 .statusCode(201)
                 .extract();

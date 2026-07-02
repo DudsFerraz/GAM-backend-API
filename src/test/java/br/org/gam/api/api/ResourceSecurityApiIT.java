@@ -28,7 +28,7 @@ class ResourceSecurityApiIT extends BaseApiIntegrationTest {
     @DisplayName("protected endpoint without token -> HTTP 401")
     void protectedEndpointWithoutTokenShouldReturnUnauthorized() {
         jsonRequest()
-                .get("/account/{id}", UUID.randomUUID())
+                .get("/accounts/{id}", UUID.randomUUID())
                 .then()
                 .statusCode(401)
                 .body("status", equalTo(401))
@@ -44,7 +44,7 @@ class ResourceSecurityApiIT extends BaseApiIntegrationTest {
 
         authenticatedJsonRequest(member)
                 .body(eventPayload("Forbidden Event", locationId, requiredPermissionId))
-                .post("/event")
+                .post("/events")
                 .then()
                 .statusCode(403)
                 .body("status", equalTo(403))
@@ -57,7 +57,7 @@ class ResourceSecurityApiIT extends BaseApiIntegrationTest {
         AuthSession coord = registerAndLogin("COORD");
 
         authenticatedJsonRequest(coord)
-                .get("/account/{id}", UUID.randomUUID())
+                .get("/accounts/{id}", UUID.randomUUID())
                 .then()
                 .statusCode(404)
                 .body("status", equalTo(404))
@@ -71,10 +71,10 @@ class ResourceSecurityApiIT extends BaseApiIntegrationTest {
 
         ExtractableResponse<Response> response = authenticatedJsonRequest(member)
                 .body(locationPayload("API Location"))
-                .post("/location")
+                .post("/locations")
                 .then()
                 .statusCode(201)
-                .header("Location", containsString("/location/"))
+                .header("Location", containsString("/locations/"))
                 .body("id", notNullValue())
                 .extract();
 
@@ -92,10 +92,10 @@ class ResourceSecurityApiIT extends BaseApiIntegrationTest {
 
         ExtractableResponse<Response> response = authenticatedJsonRequest(coord)
                 .body(eventPayload("API Event", locationId, requiredPermissionId))
-                .post("/event")
+                .post("/events")
                 .then()
                 .statusCode(201)
-                .header("Location", containsString("/event/"))
+                .header("Location", containsString("/events/"))
                 .body("id", notNullValue())
                 .extract();
 
@@ -116,7 +116,7 @@ class ResourceSecurityApiIT extends BaseApiIntegrationTest {
 
         authenticatedJsonRequest(coord)
                 .body(payload)
-                .post("/event")
+                .post("/events")
                 .then()
                 .statusCode(400)
                 .body("status", equalTo(400))

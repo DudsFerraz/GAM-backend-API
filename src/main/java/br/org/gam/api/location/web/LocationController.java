@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 @RestController
-@RequestMapping("/location")
+@RequestMapping("/locations")
 public class LocationController {
 
     private final CreateLocation createLocation;

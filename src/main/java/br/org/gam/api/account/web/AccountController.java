@@ -17,7 +17,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/account")
+@RequestMapping("/accounts")
 public class AccountController {
 
     private final GetAccount getAccount;

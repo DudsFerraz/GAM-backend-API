@@ -118,21 +118,7 @@ GET /events/{id}/presences
 GET /roles/{id}/permissions
 ```
 
-## 5. Versioning
-
-Introduce API versioning when endpoint contracts are intentionally changed.
-
-Target shape:
-
-```text
-/api/v1/members
-/api/v1/accounts
-/api/v1/events
-```
-
-Versioning is especially relevant if the frontend or another client already consumes the current API.
-
-## 6. Search Endpoints
+## 5. Search Endpoints
 
 `POST /search` is valid when the endpoint receives a structured search body.
 
@@ -156,7 +142,7 @@ GET /members?status=ACTIVE
 
 Do not force complex structured filters into query parameters.
 
-## 7. Search Concern Boundary
+## 6. Search Concern Boundary
 
 The main problem with the current search endpoints is not the HTTP method.
 
@@ -170,7 +156,7 @@ That concern belongs to the dynamic search specification refactor, not to the co
 
 Controllers may receive the search DTO, but the allowed filters, field aliases, parser rules, and specification construction must live outside the controller.
 
-## 8. ResponseEntity Usage
+## 7. ResponseEntity Usage
 
 Use typed `ResponseEntity` declarations.
 
@@ -227,28 +213,28 @@ If an authorization decision depends on domain state, use a dedicated security c
 Member routes should move toward:
 
 ```text
-POST   /api/v1/members
-GET    /api/v1/members/{id}
-POST   /api/v1/members/search
-PATCH  /api/v1/members/{id}/activate
-PATCH  /api/v1/members/{id}/deactivate
-GET    /api/v1/members/{id}/presences
+POST   /members
+GET    /members/{id}
+POST   /members/search
+PATCH  /members/{id}/activate
+PATCH  /members/{id}/deactivate
+GET    /members/{id}/presences
 ```
 
 Account routes should move toward:
 
 ```text
-GET    /api/v1/accounts/{id}
-POST   /api/v1/accounts/search
+GET    /accounts/{id}
+POST   /accounts/search
 ```
 
 Event routes should move toward:
 
 ```text
-POST   /api/v1/events
-GET    /api/v1/events/{id}
-POST   /api/v1/events/search
-GET    /api/v1/events/{id}/presences
+POST   /events
+GET    /events/{id}
+POST   /events/search
+GET    /events/{id}/presences
 ```
 
 ## 12. Refactor Instructions
@@ -257,7 +243,7 @@ For each controller:
 
 1. Move the controller into the feature `web` package.
 2. Change singular resource paths to plural paths.
-3. Add `/api/v1` when the API contract is intentionally versioned.
+3. Do not add `/api/v1` in this refactor.
 4. Keep controller methods thin.
 5. Delegate workflows to application classes.
 6. Keep structured search endpoints as `POST /search`.
@@ -278,4 +264,3 @@ Apply this subject feature by feature:
 6. `auth`
 
 Start with `member` because it contains creation, retrieval, search, activation/deactivation commands, nested presence routes, validation, pagination, and authorization.
-
