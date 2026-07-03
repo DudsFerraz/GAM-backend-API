@@ -32,6 +32,9 @@ public class RoleEntity extends FullAuditableEntity {
     @Column(name = "description", nullable = false)
     private String description;
 
+    @Column(name = "system_managed", nullable = false)
+    private boolean systemManaged;
+
     @OneToMany(mappedBy = "role", fetch = FetchType.LAZY)
     private Set<AccountRoleEntity> accountRoles = new HashSet<>();
 

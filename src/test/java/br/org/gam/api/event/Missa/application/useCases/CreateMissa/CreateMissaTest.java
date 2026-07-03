@@ -12,6 +12,7 @@ import br.org.gam.api.event.Missa.persistence.MissaEntity;
 import br.org.gam.api.event.Missa.persistence.MissaRepository;
 import br.org.gam.api.member.application.MemberDomainLoader;
 import br.org.gam.api.member.domain.Member;
+import br.org.gam.api.shared.activitylog.ActivityLogger;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.time.Instant;
@@ -52,6 +53,9 @@ class CreateMissaTest {
     @Mock
     private MissaRepository missaRepo;
 
+    @Mock
+    private ActivityLogger activityLogger;
+
     @InjectMocks
     private CreateMissa createMissa;
 
@@ -74,7 +78,7 @@ class CreateMissaTest {
             MissaEntity savedEntity = new MissaEntity();
             CreateMissaRDTO expectedResponse = new CreateMissaRDTO(eventId);
 
-            when(createEventService.create(dto.event())).thenReturn(new CreateEventRDTO(eventId));
+            when(createEventService.create(dto.event(), false)).thenReturn(new CreateEventRDTO(eventId));
             when(getEventInstanceService.requiredById(eventId)).thenReturn(event);
             when(getMemberInstanceService.requiredById(comentariosId)).thenReturn(comentarios);
             when(getMemberInstanceService.requiredByIds(dto.acolhidaMembersIds())).thenReturn(Set.of(acolhida));

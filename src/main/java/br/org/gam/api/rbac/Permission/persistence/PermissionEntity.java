@@ -25,4 +25,7 @@ public class PermissionEntity extends FullAuditableEntity {
 
     @Column(name = "description", nullable = false)
     private String description;
+
+    @Column(name = "system_managed", nullable = false)
+    private boolean systemManaged;
 }

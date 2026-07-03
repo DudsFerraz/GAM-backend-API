@@ -12,12 +12,14 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.type.SqlTypes;
 
 @Setter
 @Entity
 @Getter
 @NoArgsConstructor
+@SQLRestriction("deleted_at IS NULL")
 @Table(name = "events")
 public class EventEntity extends FullAuditableEntity {
 
@@ -45,6 +47,9 @@ public class EventEntity extends FullAuditableEntity {
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "status", nullable = false)
     private EventStatus status;
+
+    @Column(name = "cancellation_reason", columnDefinition = "TEXT")
+    private String cancellationReason;
 
     @Column(name = "begin_date", nullable = false)
     private Instant beginDate;

@@ -126,9 +126,10 @@ class EventTest {
             Instant endDate = beginDate.plusSeconds(3600);
             Event event = Event.register("Event", null, beginDate, endDate, EventType.MISSA);
 
-            event.cancel();
+            event.cancel("Weather issue");
 
             assertThat(event.getStatus()).isEqualTo(EventStatus.CANCELLED);
+            assertThat(event.getCancellationReason()).isEqualTo("Weather issue");
         }
     }
 }

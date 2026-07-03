@@ -101,6 +101,8 @@ public abstract class BaseApiIntegrationTest {
 
     @AfterEach
     void cleanupApiFixtures() {
+        jdbcTemplate.update("DELETE FROM activity_logs");
+
         for (int i = createdEventIds.size() - 1; i >= 0; i--) {
             jdbcTemplate.update("DELETE FROM events WHERE id = ?", createdEventIds.get(i));
         }

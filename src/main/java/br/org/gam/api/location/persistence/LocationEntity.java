@@ -7,11 +7,13 @@ import java.util.UUID;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 @Setter
 @Getter
 @NoArgsConstructor
 @Entity
+@SQLRestriction("deleted_at IS NULL")
 @Table(name = "locations")
 public class LocationEntity extends FullAuditableEntity {
 

@@ -14,6 +14,7 @@ import br.org.gam.api.member.application.MemberDomainLoader;
 import br.org.gam.api.member.domain.Member;
 import br.org.gam.api.oratoriano.application.OratorianoDomainLoader;
 import br.org.gam.api.oratoriano.domain.Oratoriano;
+import br.org.gam.api.shared.activitylog.ActivityLogger;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.time.Instant;
@@ -57,6 +58,9 @@ class CreateOratorioTest {
     @Mock
     private OratorioMapper oratorioMapper;
 
+    @Mock
+    private ActivityLogger activityLogger;
+
     @InjectMocks
     private CreateOratorio createOratorio;
 
@@ -79,7 +83,7 @@ class CreateOratorioTest {
             OratorioEntity savedEntity = new OratorioEntity();
             CreateOratorioRDTO expectedResponse = new CreateOratorioRDTO(eventId);
 
-            when(createEventService.create(dto.event())).thenReturn(new CreateEventRDTO(eventId));
+            when(createEventService.create(dto.event(), false)).thenReturn(new CreateEventRDTO(eventId));
             when(getEventInstanceService.requiredById(eventId)).thenReturn(event);
             when(getMemberInstanceService.requiredByIds(dto.lancheMembersIds())).thenReturn(Set.of(lanche));
             when(getMemberInstanceService.requiredByIds(dto.btJovensMembersIds())).thenReturn(Set.of());

@@ -10,6 +10,7 @@ import br.org.gam.api.location.application.LocationEntityLoader;
 import br.org.gam.api.location.persistence.LocationEntity;
 import br.org.gam.api.rbac.Permission.application.PermissionEntityLoader;
 import br.org.gam.api.rbac.Permission.persistence.PermissionEntity;
+import br.org.gam.api.shared.activitylog.ActivityLogger;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.time.Instant;
@@ -44,6 +45,9 @@ class CreateEventTest {
 
     @Mock
     private PermissionEntityLoader getPermissionInstance;
+
+    @Mock
+    private ActivityLogger activityLogger;
 
     @InjectMocks
     private CreateEvent createEvent;

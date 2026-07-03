@@ -10,6 +10,7 @@ import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.persistence.MemberRepository;
 import br.org.gam.api.rbac.AccountRole.application.useCases.AddAccountRole;
 import br.org.gam.api.rbac.AccountRole.application.useCases.DropAccountRole;
+import br.org.gam.api.shared.activitylog.ActivityLogger;
 import br.org.gam.api.shared.domain.Name;
 import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
 import br.org.gam.api.testing.annotation.FunctionalTest;
@@ -50,6 +51,9 @@ class ActivationTest {
     @Mock
     private DropAccountRole dropAccountRole;
 
+    @Mock
+    private ActivityLogger activityLogger;
+
     @InjectMocks
     private Activation activation;
 
@@ -74,8 +78,8 @@ class ActivationTest {
             ArgumentCaptor<Member> memberCaptor = ArgumentCaptor.forClass(Member.class);
             verify(memberMapper).domainToEntity(memberCaptor.capture());
             assertThat(memberCaptor.getValue().getStatus()).isEqualTo(MemberStatus.ACTIVE);
-            verify(addAccountRole).byRoleName("MEMBER", account.getId());
-            verify(dropAccountRole).byRoleName("VISITOR", account.getId());
+            verify(addAccountRole).byRoleName("MEMBER", account.getId(), false);
+            verify(dropAccountRole).byRoleName("VISITOR", account.getId(), false);
             verify(memberRepo).save(mappedEntity);
         }
 
@@ -96,8 +100,8 @@ class ActivationTest {
             ArgumentCaptor<Member> memberCaptor = ArgumentCaptor.forClass(Member.class);
             verify(memberMapper).domainToEntity(memberCaptor.capture());
             assertThat(memberCaptor.getValue().getStatus()).isEqualTo(MemberStatus.INACTIVE);
-            verify(addAccountRole).byRoleName("VISITOR", account.getId());
-            verify(dropAccountRole).byRoleName("MEMBER", account.getId());
+            verify(addAccountRole).byRoleName("VISITOR", account.getId(), false);
+            verify(dropAccountRole).byRoleName("MEMBER", account.getId(), false);
             verify(memberRepo).save(mappedEntity);
         }
     }

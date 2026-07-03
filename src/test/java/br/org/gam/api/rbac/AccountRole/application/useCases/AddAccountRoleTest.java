@@ -14,6 +14,7 @@ import br.org.gam.api.rbac.Role.application.RoleNotFoundException;
 import br.org.gam.api.rbac.Role.application.RoleRDTO;
 import br.org.gam.api.rbac.Role.application.RoleEntityLoader;
 import br.org.gam.api.rbac.Role.persistence.RoleEntity;
+import br.org.gam.api.shared.activitylog.ActivityLogger;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.util.UUID;
@@ -50,6 +51,9 @@ class AddAccountRoleTest {
 
     @Mock
     private AccountRoleMapper accountRoleMapper;
+
+    @Mock
+    private ActivityLogger activityLogger;
 
     @InjectMocks
     private AddAccountRole addAccountRole;

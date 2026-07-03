@@ -10,6 +10,7 @@ import br.org.gam.api.presence.application.PresenceConflictException;
 import br.org.gam.api.presence.application.PresenceMapper;
 import br.org.gam.api.presence.persistence.PresenceEntity;
 import br.org.gam.api.presence.persistence.PresenceRepository;
+import br.org.gam.api.shared.activitylog.ActivityLogger;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.util.UUID;
@@ -46,6 +47,9 @@ class RegisterPresenceTest {
 
     @Mock
     private EventEntityLoader getEventInstance;
+
+    @Mock
+    private ActivityLogger activityLogger;
 
     @InjectMocks
     private RegisterPresence registerPresence;

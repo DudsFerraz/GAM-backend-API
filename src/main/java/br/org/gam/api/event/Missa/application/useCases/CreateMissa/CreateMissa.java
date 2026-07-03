@@ -10,7 +10,11 @@ import br.org.gam.api.event.Missa.persistence.MissaEntity;
 import br.org.gam.api.event.Missa.persistence.MissaRepository;
 import br.org.gam.api.member.application.MemberDomainLoader;
 import br.org.gam.api.member.domain.Member;
+import br.org.gam.api.shared.activitylog.ActivityAction;
+import br.org.gam.api.shared.activitylog.ActivityLogger;
+import br.org.gam.api.shared.activitylog.ActivityTargetType;
 import jakarta.transaction.Transactional;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -23,17 +27,22 @@ public class CreateMissa {
     private final MemberDomainLoader getMemberInstanceService;
     private final MissaMapper missaMapper;
     private final MissaRepository missaRepo;
-    public CreateMissa(CreateEvent createEventService, EventDomainLoader getEventInstanceService, MemberDomainLoader getMemberInstanceService, MissaMapper missaMapper, MissaRepository missaRepo) {
+    private final ActivityLogger activityLogger;
+
+    public CreateMissa(CreateEvent createEventService, EventDomainLoader getEventInstanceService,
+                       MemberDomainLoader getMemberInstanceService, MissaMapper missaMapper,
+                       MissaRepository missaRepo, ActivityLogger activityLogger) {
         this.createEventService = createEventService;
         this.getEventInstanceService = getEventInstanceService;
         this.getMemberInstanceService = getMemberInstanceService;
         this.missaMapper = missaMapper;
         this.missaRepo = missaRepo;
+        this.activityLogger = activityLogger;
     }
 
     @Transactional
     public CreateMissaRDTO createMissa(CreateMissaDTO dto) {
-        CreateEventRDTO newEventRdto = createEventService.create(dto.event());
+        CreateEventRDTO newEventRdto = createEventService.create(dto.event(), false);
         Event newEvent = getEventInstanceService.requiredById(newEventRdto.id());
 
 
@@ -48,6 +57,18 @@ public class CreateMissa {
 
         MissaEntity newEntity = missaMapper.domainToEntity(newMissa);
         MissaEntity savedEntity = missaRepo.save(newEntity);
+
+        activityLogger.log(
+                ActivityAction.MISSA_CREATED,
+                ActivityTargetType.MISSA,
+                newMissa.getId(),
+                null,
+                "Missa created for event " + newEvent.getId(),
+                Map.of(
+                        "missaId", newMissa.getId(),
+                        "eventId", newEvent.getId()
+                )
+        );
 
         return missaMapper.entityToCreateMissaRDTO(savedEntity);
     }

@@ -8,11 +8,13 @@ import java.util.UUID;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 @Setter
 @Entity
 @Getter
 @NoArgsConstructor
+@SQLRestriction("deleted_at IS NULL")
 @Table(name = "presences")
 public class PresenceEntity extends FullAuditableEntity {
 

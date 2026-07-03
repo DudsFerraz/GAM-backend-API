@@ -13,12 +13,14 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.SQLRestriction;
 
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @Setter
 @Getter
 @Entity
 @NoArgsConstructor
+@SQLRestriction("deleted_at IS NULL")
 @Table(name = "oratorios")
 public class OratorioEntity extends FullAuditableEntity {
 
@@ -27,7 +29,7 @@ public class OratorioEntity extends FullAuditableEntity {
     private UUID id;
 
     @OneToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "event_id", referencedColumnName = "id", unique = true)
+    @JoinColumn(name = "event_id", referencedColumnName = "id")
     private EventEntity event;
 
     @Column(name = "cancellation_reason", columnDefinition = "TEXT")

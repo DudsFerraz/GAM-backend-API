@@ -498,6 +498,65 @@ Developer maintenance tooling may use separate native queries or dedicated inter
 
 ## 23. Refactor Instructions
 
+Resolved implementation decisions:
+
+1. Developer-only maintenance is implemented as command-line/admin tooling outside the public API.
+2. Re-adding a previously removed `AccountRole` or `RolePermission` creates a new row, preserving each assignment period separately.
+3. `Missa` and `Oratorio` `event_id` uniqueness must allow recreation after soft delete by using partial unique indexes.
+4. Event lock/finalization is modeled explicitly.
+5. The event correction window must be configurable when event correction workflows are implemented. The default must be 15 minutes.
+6. Event cancellation reason belongs on the generic `Event` model/table.
+7. Seeded roles and permissions are protected with a shared `system_managed` column on both tables.
+
+Maintenance command usage:
+
+The maintenance job is intentionally command-line only. It runs under the `maintenance` Spring profile, performs one operation, writes a developer maintenance activity log, and exits the application.
+
+Inspect soft-deleted rows:
+
+```powershell
+mvn spring-boot:run "-Dspring-boot.run.profiles=maintenance" "-Dspring-boot.run.arguments=--maintenance.action=inspect-soft-deleted --maintenance.table=members"
+```
+
+Restore one soft-deleted row:
+
+```powershell
+mvn spring-boot:run "-Dspring-boot.run.profiles=maintenance" "-Dspring-boot.run.arguments=--maintenance.action=restore --maintenance.table=members --maintenance.id=<uuid> --maintenance.reason=""Restored after developer review"""
+```
+
+Hard-delete one soft-deleted row:
+
+```powershell
+mvn spring-boot:run "-Dspring-boot.run.profiles=maintenance" "-Dspring-boot.run.arguments=--maintenance.action=hard-delete --maintenance.table=members --maintenance.id=<uuid> --maintenance.reason=""Exceptional legal cleanup"""
+```
+
+This maintenance runner must not be exposed through controllers.
+
+Allowed tables:
+
+```text
+accounts
+roles
+permissions
+account_roles
+role_permissions
+locations
+events
+members
+presences
+oratorios
+missas
+oratorianos
+```
+
+When event correction workflows are added, define the runtime property as:
+
+```properties
+app.event.correction-window=15m
+```
+
+Spring Boot can bind duration values such as `15m`, `30m`, `1h`, or ISO-8601 values such as `PT15M`.
+
 Apply this subject in the following order:
 
 1. Decide and implement a consistent soft-delete visibility mechanism for all soft-deletable entities.

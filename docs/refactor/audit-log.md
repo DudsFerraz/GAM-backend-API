@@ -318,6 +318,15 @@ Rationale:
 
 ## 16. Refactor Instructions
 
+Resolved implementation decisions:
+
+1. The first implementation uses an append-only `activity_logs` table and an application-level `ActivityLogger`.
+2. The logger is called by workflows, not repositories.
+3. `MEMBER_ACTIVATED` and `MEMBER_DEACTIVATED` are high-level activities; account-role changes caused by activation are metadata on the member activity.
+4. Direct account-role changes still emit `ACCOUNT_ROLE_ADDED` and `ACCOUNT_ROLE_REMOVED`.
+5. `EVENT_CREATED`, `MISSA_CREATED`, `ORATORIO_CREATED`, and `PRESENCE_REGISTERED` are emitted during their application workflows.
+6. Developer restore, hard delete, and soft-deleted record inspection are audited by the maintenance command-line job, not by public API endpoints.
+
 Implement the activity log as an application-level service.
 
 For each audited workflow:

@@ -16,6 +16,12 @@ public record EventRDTO(
         Instant beginDate,
         Instant endDate,
         EventType type,
-        EventStatus status
+        EventStatus status,
+        String cancellationReason
 ) {
+    public EventRDTO(UUID id, String title, String description, LocationRDTO location,
+                     PermissionRDTO requiredPermission, Instant beginDate, Instant endDate,
+                     EventType type, EventStatus status) {
+        this(id, title, description, location, requiredPermission, beginDate, endDate, type, status, null);
+    }
 }

@@ -11,14 +11,15 @@ import java.util.UUID;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.Formula;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.type.SqlTypes;
 
 @Setter
 @Getter
 @NoArgsConstructor
 @Entity
+@SQLRestriction("deleted_at IS NULL")
 @Table(name = "members")
 public class MemberEntity extends FullAuditableEntity {
 

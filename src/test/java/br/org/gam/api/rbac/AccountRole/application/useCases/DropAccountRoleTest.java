@@ -9,6 +9,7 @@ import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleRepository;
 import br.org.gam.api.rbac.Role.application.RoleNotFoundException;
 import br.org.gam.api.rbac.Role.application.RoleEntityLoader;
 import br.org.gam.api.rbac.Role.persistence.RoleEntity;
+import br.org.gam.api.shared.activitylog.ActivityLogger;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.util.UUID;
@@ -39,6 +40,9 @@ class DropAccountRoleTest {
 
     @Mock
     private RoleEntityLoader getRoleInstance;
+
+    @Mock
+    private ActivityLogger activityLogger;
 
     @InjectMocks
     private DropAccountRole dropAccountRole;

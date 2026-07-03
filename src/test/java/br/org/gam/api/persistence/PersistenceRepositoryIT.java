@@ -24,6 +24,7 @@ import br.org.gam.api.testing.integration.PostgreSQLIntegrationTest;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -86,7 +87,7 @@ class PersistenceRepositoryIT extends PostgreSQLIntegrationTest {
 
             AccountEntity replacement = inTransaction(() -> accountRepository.findByEmail(MyEmail.of(email)).orElseThrow());
             assertThat(replacement.getId()).isEqualTo(replacementId);
-            assertThat(accountRepository.findAllDeleted())
+            assertThat(deletedAccountIds())
                     .extracting(AccountEntity::getId)
                     .contains(originalId);
         }
@@ -152,7 +153,7 @@ class PersistenceRepositoryIT extends PostgreSQLIntegrationTest {
             });
 
             assertThat(inTransaction(() -> accountRepository.findById(accountId))).isEmpty();
-            assertThat(accountRepository.findAllDeleted())
+            assertThat(deletedAccountIds())
                     .extracting(AccountEntity::getId)
                     .contains(accountId);
         }
@@ -205,6 +206,12 @@ class PersistenceRepositoryIT extends PostgreSQLIntegrationTest {
 
     private String uniqueEmail() {
         return "it-" + UUID.randomUUID() + "@example.com";
+    }
+
+    private List<AccountEntity> deletedAccountIds() {
+        return entityManager
+                .createNativeQuery("SELECT * FROM accounts WHERE deleted_at IS NOT NULL", AccountEntity.class)
+                .getResultList();
     }
 
     private <T> T inTransaction(TransactionCallback<T> callback) {

@@ -160,11 +160,11 @@ class SpecificationPersistenceIT extends PostgreSQLIntegrationTest {
         @Test
         @DisplayName("member search filter converter -> phoneNumber LIKE matches converted phone column")
         void memberSearchFilterConverterShouldQueryByPartialPhoneNumber() {
-            MemberEntity target = saveMemberWithAccount(MemberStatus.ACTIVE, "+5511987654321");
-            saveMemberWithAccount(MemberStatus.ACTIVE, "+5511912345678");
+            MemberEntity target = saveMemberWithAccount(MemberStatus.ACTIVE, "+5511988880001");
+            saveMemberWithAccount(MemberStatus.ACTIVE, "+5511977770002");
 
             Specification<MemberEntity> specification = memberSearchFilterConverter.convert(new SearchDTO(
-                    List.of(new SpecificationFilterDTO("phoneNumber", "9876", ComparationMethods.LIKE))
+                    List.of(new SpecificationFilterDTO("phoneNumber", "88880001", ComparationMethods.LIKE))
             ));
 
             List<MemberEntity> results = inTransaction(() -> memberRepository.findAll(specification));

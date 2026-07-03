@@ -11,6 +11,7 @@ public class Event {
     private String description;
     private EventType type;
     private EventStatus status;
+    private String cancellationReason;
     private Instant beginDate;
     private Instant endDate;
 
@@ -18,7 +19,8 @@ public class Event {
      * @deprecated Constructor for internal mapper usage. Prefer {@link #register(String, String, Instant, Instant, EventType)}.
      */
     @Deprecated
-    public Event(UUID id, String title, String description, Instant beginDate, Instant endDate, EventType type, EventStatus status) {
+    public Event(UUID id, String title, String description, Instant beginDate, Instant endDate, EventType type,
+                 EventStatus status, String cancellationReason) {
         this.id = id;
         this.title = title;
         this.description = description;
@@ -26,6 +28,7 @@ public class Event {
         this.endDate = endDate;
         this.type = type;
         this.status = status;
+        this.cancellationReason = cancellationReason;
     }
 
     public static Event register(String title, String description, Instant beginDate, Instant endDate, EventType type) {
@@ -45,11 +48,29 @@ public class Event {
 
         UUID id = UUIDGenerator.generateUUIDV7();
 
-        return new Event(id, title, description, beginDate, endDate, type, status);
+        return new Event(id, title, description, beginDate, endDate, type, status, null);
     }
 
-    public void cancel() {
+    public void cancel(String reason) {
+        Objects.requireNonNull(reason, "Cancellation reason cannot be null");
+        reason = reason.trim();
+        if (reason.isBlank()) throw new IllegalArgumentException("Cancellation reason cannot be blank.");
         this.status = EventStatus.CANCELLED;
+        this.cancellationReason = reason;
+    }
+
+    public void lock() {
+        if (this.status == EventStatus.CANCELLED) {
+            throw new IllegalStateException("Cancelled events cannot be locked.");
+        }
+        this.status = EventStatus.LOCKED;
+    }
+
+    public void finalizeEvent() {
+        if (this.status == EventStatus.CANCELLED) {
+            throw new IllegalStateException("Cancelled events cannot be finalized.");
+        }
+        this.status = EventStatus.FINALIZED;
     }
 
     public UUID getId() {
@@ -78,5 +99,9 @@ public class Event {
 
     public EventStatus getStatus() {
         return status;
+    }
+
+    public String getCancellationReason() {
+        return cancellationReason;
     }
 }

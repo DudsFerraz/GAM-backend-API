@@ -51,7 +51,7 @@ public class R__SeedPermissionsAndRoles extends BaseJavaMigration {
         UUID visitorId = getRoleIdByName(connection, "VISITOR");
 
         String selectPermSql = "SELECT id FROM permissions WHERE name = ?";
-        String insertPermSql = "INSERT INTO permissions (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)";
+        String insertPermSql = "INSERT INTO permissions (id, name, description, system_managed, created_at, updated_at) VALUES (?, ?, ?, TRUE, ?, ?)";
 
         String checkRolePermSql = "SELECT 1 FROM role_permissions WHERE role_id = ? AND permission_id = ?";
         String insertRolePermSql = "INSERT INTO role_permissions (id, role_id, permission_id, created_at) VALUES (?, ?, ?, ?)";

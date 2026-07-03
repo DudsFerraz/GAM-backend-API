@@ -8,6 +8,10 @@ import br.org.gam.api.location.application.LocationEntityLoader;
 import br.org.gam.api.location.persistence.LocationEntity;
 import br.org.gam.api.rbac.Permission.application.PermissionEntityLoader;
 import br.org.gam.api.rbac.Permission.persistence.PermissionEntity;
+import br.org.gam.api.shared.activitylog.ActivityAction;
+import br.org.gam.api.shared.activitylog.ActivityLogger;
+import br.org.gam.api.shared.activitylog.ActivityTargetType;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,15 +23,25 @@ public class CreateEvent {
     private final LocationEntityLoader getLocationInstanceService;
     private final EventMapper eventMapper;
     private final PermissionEntityLoader getPermissionInstance;
-    public CreateEvent(EventRepository eventRepository, LocationEntityLoader getLocationInstanceService, EventMapper eventMapper, PermissionEntityLoader getPermissionInstance) {
+    private final ActivityLogger activityLogger;
+
+    public CreateEvent(EventRepository eventRepository, LocationEntityLoader getLocationInstanceService,
+                       EventMapper eventMapper, PermissionEntityLoader getPermissionInstance,
+                       ActivityLogger activityLogger) {
         this.eventRepository = eventRepository;
         this.getLocationInstanceService = getLocationInstanceService;
         this.eventMapper = eventMapper;
         this.getPermissionInstance = getPermissionInstance;
+        this.activityLogger = activityLogger;
     }
 
     @Transactional
     public CreateEventRDTO create(CreateEventDTO dto) {
+        return create(dto, true);
+    }
+
+    @Transactional
+    public CreateEventRDTO create(CreateEventDTO dto, boolean audit) {
 
         LocationEntity eventLocation = getLocationInstanceService.requiredById(dto.locationId());
         PermissionEntity requiredPermission = getPermissionInstance.requiredById(dto.requiredPermissionId());
@@ -39,6 +53,23 @@ public class CreateEvent {
         newEventEntity.setRequiredPermission(requiredPermission);
 
         EventEntity savedEventEntity = eventRepository.save(newEventEntity);
+
+        if (audit) {
+            activityLogger.log(
+                    ActivityAction.EVENT_CREATED,
+                    ActivityTargetType.EVENT,
+                    newEvent.getId(),
+                    null,
+                    "Event created: " + savedEventEntity.getTitle(),
+                    Map.of(
+                            "eventId", newEvent.getId(),
+                            "eventType", newEvent.getType().name(),
+                            "status", newEvent.getStatus().name(),
+                            "locationId", dto.locationId(),
+                            "requiredPermissionId", dto.requiredPermissionId()
+                    )
+            );
+        }
 
         return eventMapper.entityToCreateEventRDTO(savedEventEntity);
     }
