@@ -5,11 +5,8 @@ import br.org.gam.api.rbac.AccountRole.application.AccountRoleEntityLoader;
 import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleEntity;
 import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleRepository;
 import br.org.gam.api.rbac.Role.application.RoleEntityLoader;
-import br.org.gam.api.shared.activitylog.ActivityAction;
-import br.org.gam.api.shared.activitylog.ActivityLogger;
-import br.org.gam.api.shared.activitylog.ActivityTargetType;
+import br.org.gam.api.shared.activitylog.ActivityEvents;
 import jakarta.transaction.Transactional;
-import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -18,14 +15,14 @@ public class DropAccountRole {
     private final AccountRoleEntityLoader getAccountRoleInstance;
     private final AccountRoleRepository accountRoleRepo;
     private final RoleEntityLoader getRoleInstance;
-    private final ActivityLogger activityLogger;
+    private final ActivityEvents activityEvents;
 
     public DropAccountRole(AccountRoleEntityLoader getAccountRoleInstance, AccountRoleRepository accountRoleRepo,
-                           RoleEntityLoader getRoleInstance, ActivityLogger activityLogger) {
+                           RoleEntityLoader getRoleInstance, ActivityEvents activityEvents) {
         this.getAccountRoleInstance = getAccountRoleInstance;
         this.accountRoleRepo = accountRoleRepo;
         this.getRoleInstance = getRoleInstance;
-        this.activityLogger = activityLogger;
+        this.activityEvents = activityEvents;
     }
 
     @Transactional
@@ -35,36 +32,41 @@ public class DropAccountRole {
 
     @Transactional
     public void byDTO(AccountRoleDTO dto, boolean audit) {
+        String reason = audit ? requiredAuditReason(dto.reason()) : null;
         AccountRoleEntity accountRoleEntity = getAccountRoleInstance.requiredByDTO(dto);
 
         accountRoleRepo.delete(accountRoleEntity);
 
         if (audit) {
             String roleName = accountRoleEntity.getRole() == null ? null : accountRoleEntity.getRole().getName();
-            activityLogger.log(
-                    ActivityAction.ACCOUNT_ROLE_REMOVED,
-                    ActivityTargetType.ACCOUNT_ROLE,
+            activityEvents.accountRoleRemoved(
                     accountRoleEntity.getId(),
-                    null,
-                    "Role " + dto.roleId() + " removed from account " + dto.accountId(),
-                    Map.of(
-                            "accountId", dto.accountId(),
-                            "roleId", dto.roleId(),
-                            "roleName", roleName == null ? "" : roleName
-                    )
+                    dto.accountId(),
+                    dto.roleId(),
+                    roleName,
+                    reason
             );
         }
     }
 
     @Transactional
-    public void byRoleName(String roleName, UUID accountId) {
-        byRoleName(roleName, accountId, true);
+    public void byRoleName(String roleName, UUID accountId, String reason) {
+        UUID roleId = getRoleInstance.requiredByName(roleName).getId();
+
+        byDTO(new AccountRoleDTO(accountId, roleId, reason), true);
     }
 
     @Transactional
     public void byRoleName(String roleName, UUID accountId, boolean audit) {
         UUID roleId = getRoleInstance.requiredByName(roleName).getId();
 
-        byDTO(new AccountRoleDTO(accountId, roleId), audit);
+        byDTO(new AccountRoleDTO(accountId, roleId, null), audit);
+    }
+
+    private String requiredAuditReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("Account role changes require an audit reason.");
+        }
+        return reason.trim();
     }
 }

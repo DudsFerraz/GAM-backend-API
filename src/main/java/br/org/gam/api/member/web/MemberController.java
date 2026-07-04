@@ -2,6 +2,7 @@ package br.org.gam.api.member.web;
 
 import br.org.gam.api.member.application.MemberRDTO;
 import br.org.gam.api.member.application.useCases.Activation;
+import br.org.gam.api.member.application.useCases.DeactivateMemberDTO;
 import br.org.gam.api.member.application.useCases.GetMember;
 import br.org.gam.api.member.application.useCases.RegisterMember.RegisterMember;
 import br.org.gam.api.member.application.useCases.RegisterMember.RegisterMemberDTO;
@@ -82,9 +83,9 @@ public class MemberController {
 
     @PreAuthorize("hasAuthority('" + PermissionEnum.Code.MEMBER_ACTIVATION + "')")
     @PatchMapping("/{id}/deactivate")
-    public ResponseEntity<Void> deactivate(@PathVariable UUID id) {
+    public ResponseEntity<Void> deactivate(@PathVariable UUID id, @RequestBody @Valid DeactivateMemberDTO dto) {
 
-        activation.deactivate(id);
+        activation.deactivate(id, dto.reason());
         return ResponseEntity.ok().build();
     }
 

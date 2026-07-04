@@ -29,7 +29,7 @@ The project will use Spring Data JPA Auditing plus a custom activity log. This i
 
 Audit user intent, not every database write.
 
-Activity logs must be emitted from application workflows, not from repositories. Repository-level auditing already records row metadata. The custom activity log must explain what happened and why it matters.
+Activity logs must be initiated from application workflows, not from repositories. Workflows publish explicit activity events for meaningful business actions, and a transactional activity-log listener translates those events into persisted audit rows. Repository-level auditing already records row metadata. The custom activity log must explain what happened and why it matters.
 
 When one workflow causes multiple writes, prefer one high-level activity.
 
@@ -132,7 +132,69 @@ Example:
 }
 ```
 
-## 5. Account Actions
+## 5. Activity Reason Policy
+
+The `activity_logs.reason` column is part of the generic activity-log shape, but not every activity event should carry a reason. A null reason is valid for ordinary actions whose purpose is already explained by the action and metadata. A non-null reason is required when the action is corrective, destructive, security-sensitive, or performed outside the normal public API.
+
+Current implementation policy:
+
+| Activity event                                  | Reason   | Rationale                                                                             |
+|-------------------------------------------------|----------|---------------------------------------------------------------------------------------|
+| `memberActivated(...)`                          | null     | Activation is a normal status transition; role side effects are captured as metadata. |
+| `memberDeactivated(...)`                        | required | Deactivation removes active participation and deserves an explicit justification.     |
+| `accountRoleAdded(...)`                         | required | Direct role grants change account authority.                                          |
+| `accountRoleRemoved(...)`                       | required | Direct role removals change account authority.                                        |
+| `eventCreated(...)`                             | null     | Creation intent is represented by the action and event metadata.                      |
+| `missaCreated(...)`                             | null     | Creation intent is represented by the action and related event id.                    |
+| `oratorioCreated(...)`                          | null     | Creation intent is represented by the action and related event id.                    |
+| `presenceRegistered(...)`                       | null     | Presence registration is a normal attendance action.                                  |
+| `developerMaintenance(...)` inspect             | null     | Inspection is traceable by table/count metadata but does not mutate data.             |
+| `developerMaintenance(...)` restore/hard-delete | required | Restore and hard delete are exceptional maintenance actions.                          |
+
+Reason-bearing activity events must receive the reason from the workflow input. The listener must not invent reasons. Internal helper calls that suppress auditing, such as role changes caused by member activation/deactivation, do not require a reason because they are metadata on the high-level member activity.
+
+## 6. Activity Event Flow
+
+Activity logging follows an explicit event-listener flow. The workflow decides that a meaningful business action happened. `ActivityEvents` publishes a typed activity event. `ActivityLogEventListener` translates that event into the stable audit-log shape. `ActivityLogger` adds actor/request metadata and persists the row.
+
+```mermaid
+flowchart TD
+    Start[Application workflow completes meaningful action] --> IdKnown{Target id known?}
+    IdKnown -- No --> Wait[Save or resolve target first]
+    Wait --> IdKnown
+    IdKnown -- Yes --> ReasonPolicy{Action requires reason?}
+
+    ReasonPolicy -- Yes --> ReasonInput{Reason supplied by workflow input?}
+    ReasonInput -- No --> Reject[Reject action before data mutation]
+    ReasonInput -- Yes --> PublishReason[Publish reason-bearing activity event]
+
+    ReasonPolicy -- No --> PublishNoReason[Publish reasonless activity event]
+
+    PublishReason --> Publisher[ActivityEvents]
+    PublishNoReason --> Publisher
+    Publisher --> Spring[ApplicationEventPublisher publishes typed event]
+    Spring --> Listener[ActivityLogEventListener handles event before commit]
+    Listener --> MapAudit[Map event to action, target, reason, summary, metadata]
+    MapAudit --> Logger[ActivityLogger adds actor and request metadata]
+    Logger --> DB[(activity_logs)]
+    DB --> Commit[Business data and audit row commit together]
+```
+
+Rendered meaning:
+
+```text
+business workflow
+  -> validates required reason when the action needs one
+  -> publishes a typed activity event
+  -> Spring dispatches the event to the transactional listener
+  -> listener maps the event to the audit-log row shape
+  -> ActivityLogger enriches and saves the row
+  -> audit row commits with the business transaction
+```
+
+The flow intentionally avoids repository-level auto-logging. Repositories know that rows changed, but workflows know which business action those writes represent.
+
+## 7. Account Actions
 
 | Action | Audit? | Rationale |
 |---|---:|---|
@@ -154,7 +216,7 @@ ACCESS_DENIED
 
 These can be revisited later if security monitoring becomes a priority.
 
-## 6. Member Actions
+## 8. Member Actions
 
 | Action | Audit? | Rationale |
 |---|---:|---|
@@ -164,7 +226,7 @@ These can be revisited later if security monitoring becomes a priority.
 
 Do not create a normal user-facing `MEMBER_DELETED` action unless the member deletion policy changes. Members should be deactivated instead of deleted through the UI.
 
-## 7. Oratoriano Actions
+## 9. Oratoriano Actions
 
 `Oratoriano` represents a person who frequents the oratory.
 
@@ -202,7 +264,7 @@ ORATORIANO_REMOVED_AS_MISTAKE
 
 A real person must not be removed through the UI. If an oratoriano record was created incorrectly, correction must happen through developer-controlled soft delete or a future merge/deduplication workflow.
 
-## 8. Event Actions
+## 10. Event Actions
 
 | Action | Audit? | Rationale |
 |---|---:|---|
@@ -212,7 +274,7 @@ A real person must not be removed through the UI. If an oratoriano record was cr
 
 `EVENT_DELETED` must only be available when the event deletion policy allows it. Cancellation remains the correct action for real events that must stay in history.
 
-## 9. Presence Actions
+## 11. Presence Actions
 
 | Action | Audit? | Rationale |
 |---|---:|---|
@@ -221,7 +283,7 @@ A real person must not be removed through the UI. If an oratoriano record was cr
 
 `PRESENCE_REMOVED` must be a correction action. It must not become a quiet way to rewrite historical participation.
 
-## 10. Location Actions
+## 12. Location Actions
 
 | Action | Audit? | Rationale |
 |---|---:|---|
@@ -231,7 +293,7 @@ A real person must not be removed through the UI. If an oratoriano record was cr
 
 Location changes can have historical impact because events reference locations.
 
-## 11. RBAC Actions
+## 13. RBAC Actions
 
 | Action | Audit? | Rationale |
 |---|---:|---|
@@ -260,7 +322,7 @@ SEED_ROLE_PERMISSION_CHANGED
 
 If seed or migration code performs real security-sensitive data changes later, that decision can be revisited.
 
-## 12. Missa Actions
+## 14. Missa Actions
 
 | Action | Audit? | Rationale |
 |---|---:|---|
@@ -270,7 +332,7 @@ If seed or migration code performs real security-sensitive data changes later, t
 
 If `MISSA_CREATED` creates both an `Event` and a `Missa`, log one high-level `MISSA_CREATED` activity and include the created `eventId` in metadata.
 
-## 13. Oratorio Actions
+## 15. Oratorio Actions
 
 | Action | Audit? | Rationale |
 |---|---:|---|
@@ -280,7 +342,7 @@ If `MISSA_CREATED` creates both an `Event` and a `Missa`, log one high-level `MI
 
 If `ORATORIO_CREATED` creates both an `Event` and an `Oratorio`, log one high-level `ORATORIO_CREATED` activity and include the created `eventId` in metadata.
 
-## 14. Developer Maintenance Actions
+## 16. Developer Maintenance Actions
 
 Developer-only operations must also be audited.
 
@@ -292,7 +354,7 @@ Developer-only operations must also be audited.
 
 These actions may not be emitted through the public API. They belong to developer-controlled maintenance tooling.
 
-## 15. Non-Audited Actions
+## 17. Non-Audited Actions
 
 Do not audit these in the current project state:
 
@@ -316,31 +378,33 @@ Rationale:
 3. Internal helper calls are implementation details, not user intent.
 4. Validation failures usually do not represent completed business actions.
 
-## 16. Refactor Instructions
+## 18. Refactor Instructions
 
 Resolved implementation decisions:
 
 1. The first implementation uses an append-only `activity_logs` table and an application-level `ActivityLogger`.
-2. The logger is called by workflows, not repositories.
-3. `MEMBER_ACTIVATED` and `MEMBER_DEACTIVATED` are high-level activities; account-role changes caused by activation are metadata on the member activity.
-4. Direct account-role changes still emit `ACCOUNT_ROLE_ADDED` and `ACCOUNT_ROLE_REMOVED`.
-5. `EVENT_CREATED`, `MISSA_CREATED`, `ORATORIO_CREATED`, and `PRESENCE_REGISTERED` are emitted during their application workflows.
-6. Developer restore, hard delete, and soft-deleted record inspection are audited by the maintenance command-line job, not by public API endpoints.
+2. Workflows publish explicit activity events through `ActivityEvents`; repositories do not emit activity logs.
+3. `ActivityLogEventListener` handles those events with `@TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)` and calls `ActivityLogger`.
+4. `ActivityLogger` remains the low-level persistence adapter responsible for actor, request metadata, and saving `ActivityLogEntity`.
+5. `MEMBER_ACTIVATED` and `MEMBER_DEACTIVATED` are high-level activities; account-role changes caused by activation are metadata on the member activity.
+6. Direct account-role changes still emit `ACCOUNT_ROLE_ADDED` and `ACCOUNT_ROLE_REMOVED`.
+7. `EVENT_CREATED`, `MISSA_CREATED`, `ORATORIO_CREATED`, and `PRESENCE_REGISTERED` are emitted during their application workflows.
+8. Developer restore, hard delete, and soft-deleted record inspection are audited by the maintenance command-line job, not by public API endpoints.
 
 Implement the activity log as an application-level service.
 
 For each audited workflow:
 
-1. emit the activity from the application workflow, not from the repository;
+1. publish the activity event from the application workflow, not from the repository;
 2. log after the target entity id is known;
-3. keep the activity in the same transaction as the business change when possible;
+3. handle the event before transaction commit so the audit row is persisted with the business change;
 4. use one high-level activity for multi-write workflows;
 5. require a reason for corrective and security-sensitive actions;
 6. store technical side effects in metadata;
 7. avoid storing sensitive values;
 8. keep action names stable.
 
-## 17. Refactor Order
+## 19. Refactor Order
 
 Apply audit logging in this order:
 

@@ -1,8 +1,7 @@
 package br.org.gam.api.shared.maintenance;
 
 import br.org.gam.api.shared.activitylog.ActivityAction;
-import br.org.gam.api.shared.activitylog.ActivityLogger;
-import br.org.gam.api.shared.activitylog.ActivityTargetType;
+import br.org.gam.api.shared.activitylog.ActivityEvents;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import java.util.List;
@@ -40,13 +39,13 @@ public class SoftDeletedRecordMaintenanceJob implements ApplicationRunner {
     );
 
     private final EntityManager entityManager;
-    private final ActivityLogger activityLogger;
+    private final ActivityEvents activityEvents;
     private final ConfigurableApplicationContext applicationContext;
 
-    public SoftDeletedRecordMaintenanceJob(EntityManager entityManager, ActivityLogger activityLogger,
+    public SoftDeletedRecordMaintenanceJob(EntityManager entityManager, ActivityEvents activityEvents,
                                            ConfigurableApplicationContext applicationContext) {
         this.entityManager = entityManager;
-        this.activityLogger = activityLogger;
+        this.activityEvents = activityEvents;
         this.applicationContext = applicationContext;
     }
 
@@ -73,10 +72,10 @@ public class SoftDeletedRecordMaintenanceJob implements ApplicationRunner {
                 .getResultList();
 
         log.info("Soft-deleted records in {}: {}", table, ids);
-        activityLogger.log(
+        activityEvents.developerMaintenance(
                 ActivityAction.DEVELOPER_VIEWED_SOFT_DELETED_RECORDS,
-                ActivityTargetType.MAINTENANCE_RECORD,
                 BULK_TARGET_ID,
+                table,
                 null,
                 "Developer inspected soft-deleted records in " + table,
                 Map.of("table", table, "count", ids.size())
@@ -93,10 +92,10 @@ public class SoftDeletedRecordMaintenanceJob implements ApplicationRunner {
             throw new IllegalArgumentException("Expected one soft-deleted record to restore, but restored " + updated + ".");
         }
 
-        activityLogger.log(
+        activityEvents.developerMaintenance(
                 ActivityAction.DEVELOPER_RESTORE_EXECUTED,
-                ActivityTargetType.MAINTENANCE_RECORD,
                 id,
+                table,
                 reason,
                 "Developer restored soft-deleted record " + table + "/" + id,
                 Map.of("table", table, "id", id)
@@ -113,10 +112,10 @@ public class SoftDeletedRecordMaintenanceJob implements ApplicationRunner {
             throw new IllegalArgumentException("Expected one soft-deleted record to hard delete, but deleted " + deleted + ".");
         }
 
-        activityLogger.log(
+        activityEvents.developerMaintenance(
                 ActivityAction.DEVELOPER_HARD_DELETE_EXECUTED,
-                ActivityTargetType.MAINTENANCE_RECORD,
                 id,
+                table,
                 reason,
                 "Developer hard-deleted soft-deleted record " + table + "/" + id,
                 Map.of("table", table, "id", id)

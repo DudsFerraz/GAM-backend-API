@@ -10,7 +10,7 @@ import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.persistence.MemberRepository;
 import br.org.gam.api.rbac.AccountRole.application.useCases.AddAccountRole;
 import br.org.gam.api.rbac.AccountRole.application.useCases.DropAccountRole;
-import br.org.gam.api.shared.activitylog.ActivityLogger;
+import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.shared.domain.Name;
 import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
 import br.org.gam.api.testing.annotation.FunctionalTest;
@@ -27,8 +27,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.Mock;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @UnitTest
@@ -52,7 +54,7 @@ class ActivationTest {
     private DropAccountRole dropAccountRole;
 
     @Mock
-    private ActivityLogger activityLogger;
+    private ActivityEvents activityEvents;
 
     @InjectMocks
     private Activation activation;
@@ -81,6 +83,14 @@ class ActivationTest {
             verify(addAccountRole).byRoleName("MEMBER", account.getId(), false);
             verify(dropAccountRole).byRoleName("VISITOR", account.getId(), false);
             verify(memberRepo).save(mappedEntity);
+            verify(activityEvents).memberActivated(
+                    member.getId(),
+                    account.getId(),
+                    MemberStatus.PENDENT.name(),
+                    MemberStatus.ACTIVE.name(),
+                    "MEMBER",
+                    "VISITOR"
+            );
         }
 
         @Test
@@ -95,7 +105,7 @@ class ActivationTest {
             when(getMemberInstance.requiredById(memberId)).thenReturn(member);
             when(memberMapper.domainToEntity(any(Member.class))).thenReturn(mappedEntity);
 
-            activation.deactivate(memberId);
+            activation.deactivate(memberId, "No longer participates");
 
             ArgumentCaptor<Member> memberCaptor = ArgumentCaptor.forClass(Member.class);
             verify(memberMapper).domainToEntity(memberCaptor.capture());
@@ -103,6 +113,27 @@ class ActivationTest {
             verify(addAccountRole).byRoleName("VISITOR", account.getId(), false);
             verify(dropAccountRole).byRoleName("MEMBER", account.getId(), false);
             verify(memberRepo).save(mappedEntity);
+            verify(activityEvents).memberDeactivated(
+                    member.getId(),
+                    account.getId(),
+                    MemberStatus.ACTIVE.name(),
+                    MemberStatus.INACTIVE.name(),
+                    "VISITOR",
+                    "MEMBER",
+                    "No longer participates"
+            );
+        }
+
+        @Test
+        @DisplayName("EP - deactivate member without reason -> validation error")
+        void deactivateMemberWithoutReasonShouldReturnValidationError() {
+            UUID memberId = UUID.randomUUID();
+
+            assertThatThrownBy(() -> activation.deactivate(memberId, " "))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Member deactivation requires an audit reason.");
+
+            verifyNoInteractions(getMemberInstance, addAccountRole, dropAccountRole, memberRepo, activityEvents);
         }
     }
 

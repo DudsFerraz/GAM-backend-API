@@ -4,6 +4,10 @@ import java.util.UUID;
 
 public record AccountRoleDTO(
         UUID accountId,
-        UUID roleId
+        UUID roleId,
+        String reason
 ) {
+    public AccountRoleDTO(UUID accountId, UUID roleId) {
+        this(accountId, roleId, null);
+    }
 }

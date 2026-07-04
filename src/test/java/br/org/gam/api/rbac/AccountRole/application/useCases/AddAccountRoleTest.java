@@ -14,7 +14,7 @@ import br.org.gam.api.rbac.Role.application.RoleNotFoundException;
 import br.org.gam.api.rbac.Role.application.RoleRDTO;
 import br.org.gam.api.rbac.Role.application.RoleEntityLoader;
 import br.org.gam.api.rbac.Role.persistence.RoleEntity;
-import br.org.gam.api.shared.activitylog.ActivityLogger;
+import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.util.UUID;
@@ -53,7 +53,7 @@ class AddAccountRoleTest {
     private AccountRoleMapper accountRoleMapper;
 
     @Mock
-    private ActivityLogger activityLogger;
+    private ActivityEvents activityEvents;
 
     @InjectMocks
     private AddAccountRole addAccountRole;
@@ -68,8 +68,9 @@ class AddAccountRoleTest {
         void accountWithoutRoleShouldAddAccountRole() {
             AccountEntity account = account();
             RoleEntity role = role();
-            AccountRoleDTO dto = new AccountRoleDTO(account.getId(), role.getId());
+            AccountRoleDTO dto = new AccountRoleDTO(account.getId(), role.getId(), "Grant admin access");
             AccountRoleEntity savedEntity = new AccountRoleEntity();
+            savedEntity.setId(UUID.randomUUID());
             AccountRoleRDTO expectedResponse = response(role.getId());
 
             when(getAccountInstance.requiredById(dto.accountId())).thenReturn(account);
@@ -89,6 +90,21 @@ class AddAccountRoleTest {
             assertThat(accountRole.getId().version()).isEqualTo(7);
             assertThat(accountRole.getAccount()).isSameAs(account);
             assertThat(accountRole.getRole()).isSameAs(role);
+            verify(activityEvents).accountRoleAdded(
+                    savedEntity.getId(), account.getId(), role.getId(), role.getName(), "Grant admin access");
+        }
+
+        @Test
+        @DisplayName("EP - account role add without reason -> validation error")
+        void accountRoleAddWithoutReasonShouldReturnValidationError() {
+            AccountRoleDTO dto = new AccountRoleDTO(UUID.randomUUID(), UUID.randomUUID(), " ");
+
+            assertThatThrownBy(() -> addAccountRole.byDTO(dto))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Account role changes require an audit reason.");
+
+            verifyNoInteractions(getAccountInstance, getRoleInstance, accountRoleMapper, activityEvents);
+            verify(accountRoleRepo, never()).save(any());
         }
 
         @Test
@@ -96,7 +112,7 @@ class AddAccountRoleTest {
         void accountAlreadyHasRoleShouldReturnConflictError() {
             AccountEntity account = account();
             RoleEntity role = role();
-            AccountRoleDTO dto = new AccountRoleDTO(account.getId(), role.getId());
+            AccountRoleDTO dto = new AccountRoleDTO(account.getId(), role.getId(), "Grant duplicate access");
 
             when(getAccountInstance.requiredById(dto.accountId())).thenReturn(account);
             when(getRoleInstance.requiredById(dto.roleId())).thenReturn(role);
@@ -115,7 +131,7 @@ class AddAccountRoleTest {
         void missingAccountIdShouldReturnNotFoundError() {
             UUID accountId = UUID.randomUUID();
             UUID roleId = UUID.randomUUID();
-            AccountRoleDTO dto = new AccountRoleDTO(accountId, roleId);
+            AccountRoleDTO dto = new AccountRoleDTO(accountId, roleId, "Grant missing account access");
 
             when(getAccountInstance.requiredById(accountId))
                     .thenThrow(new AccountNotFoundException("Could not find account with id " + accountId));
@@ -133,7 +149,7 @@ class AddAccountRoleTest {
         void missingRoleIdShouldReturnNotFoundError() {
             AccountEntity account = account();
             UUID roleId = UUID.randomUUID();
-            AccountRoleDTO dto = new AccountRoleDTO(account.getId(), roleId);
+            AccountRoleDTO dto = new AccountRoleDTO(account.getId(), roleId, "Grant missing role access");
 
             when(getAccountInstance.requiredById(account.getId())).thenReturn(account);
             when(getRoleInstance.requiredById(roleId))
@@ -153,6 +169,7 @@ class AddAccountRoleTest {
             AccountEntity account = account();
             RoleEntity role = role();
             AccountRoleEntity savedEntity = new AccountRoleEntity();
+            savedEntity.setId(UUID.randomUUID());
             AccountRoleRDTO expectedResponse = response(role.getId());
 
             when(getRoleInstance.requiredByName("ADMIN")).thenReturn(role);
@@ -162,10 +179,12 @@ class AddAccountRoleTest {
             when(accountRoleRepo.save(anyAccountRoleEntity())).thenReturn(savedEntity);
             when(accountRoleMapper.entityToRDTO(savedEntity)).thenReturn(expectedResponse);
 
-            AccountRoleRDTO response = addAccountRole.byRoleName("ADMIN", account.getId());
+            AccountRoleRDTO response = addAccountRole.byRoleName("ADMIN", account.getId(), "Grant admin access");
 
             assertThat(response).isSameAs(expectedResponse);
             verify(getRoleInstance).requiredByName("ADMIN");
+            verify(activityEvents).accountRoleAdded(
+                    savedEntity.getId(), account.getId(), role.getId(), role.getName(), "Grant admin access");
         }
     }
 

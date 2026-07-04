@@ -12,7 +12,7 @@ import br.org.gam.api.event.Missa.persistence.MissaEntity;
 import br.org.gam.api.event.Missa.persistence.MissaRepository;
 import br.org.gam.api.member.application.MemberDomainLoader;
 import br.org.gam.api.member.domain.Member;
-import br.org.gam.api.shared.activitylog.ActivityLogger;
+import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.time.Instant;
@@ -54,7 +54,7 @@ class CreateMissaTest {
     private MissaRepository missaRepo;
 
     @Mock
-    private ActivityLogger activityLogger;
+    private ActivityEvents activityEvents;
 
     @InjectMocks
     private CreateMissa createMissa;
@@ -99,6 +99,7 @@ class CreateMissaTest {
             assertThat(missa.getLeitura1Member()).isNull();
             assertThat(missa.getAcolhidaMembers()).containsExactly(acolhida);
             verify(missaRepo).save(mappedEntity);
+            verify(activityEvents).missaCreated(missa.getId(), event.getId());
         }
     }
 

@@ -8,11 +8,8 @@ import br.org.gam.api.presence.application.PresenceConflictException;
 import br.org.gam.api.presence.application.PresenceMapper;
 import br.org.gam.api.presence.persistence.PresenceEntity;
 import br.org.gam.api.presence.persistence.PresenceRepository;
-import br.org.gam.api.shared.activitylog.ActivityAction;
-import br.org.gam.api.shared.activitylog.ActivityLogger;
-import br.org.gam.api.shared.activitylog.ActivityTargetType;
+import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
-import java.util.Map;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,16 +20,16 @@ public class RegisterPresence {
     private final PresenceMapper presenceMapper;
     private final MemberEntityLoader getMemberInstance;
     private final EventEntityLoader getEventInstance;
-    private final ActivityLogger activityLogger;
+    private final ActivityEvents activityEvents;
 
     public RegisterPresence(PresenceRepository presenceRepo, PresenceMapper presenceMapper,
                             MemberEntityLoader getMemberInstance, EventEntityLoader getEventInstance,
-                            ActivityLogger activityLogger) {
+                            ActivityEvents activityEvents) {
         this.presenceRepo = presenceRepo;
         this.presenceMapper = presenceMapper;
         this.getMemberInstance = getMemberInstance;
         this.getEventInstance = getEventInstance;
-        this.activityLogger = activityLogger;
+        this.activityEvents = activityEvents;
     }
 
     @Transactional
@@ -55,17 +52,10 @@ public class RegisterPresence {
 
         PresenceEntity savedPresenceEntity = presenceRepo.save(newPresenceEntity);
 
-        activityLogger.log(
-                ActivityAction.PRESENCE_REGISTERED,
-                ActivityTargetType.PRESENCE,
+        activityEvents.presenceRegistered(
                 newPresenceEntity.getId(),
-                null,
-                "Presence registered for member " + dto.memberId() + " and event " + dto.eventId(),
-                Map.of(
-                        "presenceId", newPresenceEntity.getId(),
-                        "memberId", dto.memberId(),
-                        "eventId", dto.eventId()
-                )
+                dto.memberId(),
+                dto.eventId()
         );
 
         return presenceMapper.entityToRegisterPresenceRDTO(savedPresenceEntity);

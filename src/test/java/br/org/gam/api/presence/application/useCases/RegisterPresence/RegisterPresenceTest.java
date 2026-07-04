@@ -10,7 +10,7 @@ import br.org.gam.api.presence.application.PresenceConflictException;
 import br.org.gam.api.presence.application.PresenceMapper;
 import br.org.gam.api.presence.persistence.PresenceEntity;
 import br.org.gam.api.presence.persistence.PresenceRepository;
-import br.org.gam.api.shared.activitylog.ActivityLogger;
+import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.util.UUID;
@@ -49,7 +49,7 @@ class RegisterPresenceTest {
     private EventEntityLoader getEventInstance;
 
     @Mock
-    private ActivityLogger activityLogger;
+    private ActivityEvents activityEvents;
 
     @InjectMocks
     private RegisterPresence registerPresence;
@@ -89,6 +89,7 @@ class RegisterPresenceTest {
             assertThat(presence.getMember()).isSameAs(member);
             assertThat(presence.getEvent()).isSameAs(event);
             assertThat(presence.getObservations()).isEqualTo("Present at entrance");
+            verify(activityEvents).presenceRegistered(presence.getId(), memberId, eventId);
         }
 
         @Test

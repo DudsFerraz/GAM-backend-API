@@ -10,7 +10,7 @@ import br.org.gam.api.location.application.LocationEntityLoader;
 import br.org.gam.api.location.persistence.LocationEntity;
 import br.org.gam.api.rbac.Permission.application.PermissionEntityLoader;
 import br.org.gam.api.rbac.Permission.persistence.PermissionEntity;
-import br.org.gam.api.shared.activitylog.ActivityLogger;
+import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.time.Instant;
@@ -47,7 +47,7 @@ class CreateEventTest {
     private PermissionEntityLoader getPermissionInstance;
 
     @Mock
-    private ActivityLogger activityLogger;
+    private ActivityEvents activityEvents;
 
     @InjectMocks
     private CreateEvent createEvent;
@@ -69,6 +69,7 @@ class CreateEventTest {
             PermissionEntity permission = new PermissionEntity();
             EventEntity mappedEntity = new EventEntity();
             EventEntity savedEntity = new EventEntity();
+            savedEntity.setTitle("Sunday Mass");
             CreateEventRDTO expectedResponse = new CreateEventRDTO(UUID.randomUUID());
 
             when(getLocationInstanceService.requiredById(locationId)).thenReturn(location);
@@ -95,6 +96,14 @@ class CreateEventTest {
             assertThat(mappedEntity.getLocation()).isSameAs(location);
             assertThat(mappedEntity.getRequiredPermission()).isSameAs(permission);
             verify(eventRepository).save(mappedEntity);
+            verify(activityEvents).eventCreated(
+                    event.getId(),
+                    savedEntity.getTitle(),
+                    event.getType(),
+                    event.getStatus(),
+                    locationId,
+                    permissionId
+            );
         }
     }
 }

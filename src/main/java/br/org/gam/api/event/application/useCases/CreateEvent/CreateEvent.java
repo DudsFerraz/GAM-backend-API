@@ -8,10 +8,7 @@ import br.org.gam.api.location.application.LocationEntityLoader;
 import br.org.gam.api.location.persistence.LocationEntity;
 import br.org.gam.api.rbac.Permission.application.PermissionEntityLoader;
 import br.org.gam.api.rbac.Permission.persistence.PermissionEntity;
-import br.org.gam.api.shared.activitylog.ActivityAction;
-import br.org.gam.api.shared.activitylog.ActivityLogger;
-import br.org.gam.api.shared.activitylog.ActivityTargetType;
-import java.util.Map;
+import br.org.gam.api.shared.activitylog.ActivityEvents;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,16 +20,16 @@ public class CreateEvent {
     private final LocationEntityLoader getLocationInstanceService;
     private final EventMapper eventMapper;
     private final PermissionEntityLoader getPermissionInstance;
-    private final ActivityLogger activityLogger;
+    private final ActivityEvents activityEvents;
 
     public CreateEvent(EventRepository eventRepository, LocationEntityLoader getLocationInstanceService,
                        EventMapper eventMapper, PermissionEntityLoader getPermissionInstance,
-                       ActivityLogger activityLogger) {
+                       ActivityEvents activityEvents) {
         this.eventRepository = eventRepository;
         this.getLocationInstanceService = getLocationInstanceService;
         this.eventMapper = eventMapper;
         this.getPermissionInstance = getPermissionInstance;
-        this.activityLogger = activityLogger;
+        this.activityEvents = activityEvents;
     }
 
     @Transactional
@@ -55,19 +52,13 @@ public class CreateEvent {
         EventEntity savedEventEntity = eventRepository.save(newEventEntity);
 
         if (audit) {
-            activityLogger.log(
-                    ActivityAction.EVENT_CREATED,
-                    ActivityTargetType.EVENT,
+            activityEvents.eventCreated(
                     newEvent.getId(),
-                    null,
-                    "Event created: " + savedEventEntity.getTitle(),
-                    Map.of(
-                            "eventId", newEvent.getId(),
-                            "eventType", newEvent.getType().name(),
-                            "status", newEvent.getStatus().name(),
-                            "locationId", dto.locationId(),
-                            "requiredPermissionId", dto.requiredPermissionId()
-                    )
+                    savedEventEntity.getTitle(),
+                    newEvent.getType(),
+                    newEvent.getStatus(),
+                    dto.locationId(),
+                    dto.requiredPermissionId()
             );
         }
 

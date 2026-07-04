@@ -10,12 +10,9 @@ import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleEntity;
 import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleRepository;
 import br.org.gam.api.rbac.Role.application.RoleEntityLoader;
 import br.org.gam.api.rbac.Role.persistence.RoleEntity;
-import br.org.gam.api.shared.activitylog.ActivityAction;
-import br.org.gam.api.shared.activitylog.ActivityLogger;
-import br.org.gam.api.shared.activitylog.ActivityTargetType;
+import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
 import jakarta.transaction.Transactional;
-import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -25,16 +22,16 @@ public class AddAccountRole {
     private final AccountEntityLoader getAccountInstance;
     private final RoleEntityLoader getRoleInstance;
     private final AccountRoleMapper accountRoleMapper;
-    private final ActivityLogger activityLogger;
+    private final ActivityEvents activityEvents;
 
     public AddAccountRole(AccountRoleRepository accountRoleRepo, AccountEntityLoader getAccountInstance,
                           RoleEntityLoader getRoleInstance, AccountRoleMapper accountRoleMapper,
-                          ActivityLogger activityLogger) {
+                          ActivityEvents activityEvents) {
         this.accountRoleRepo = accountRoleRepo;
         this.getAccountInstance = getAccountInstance;
         this.getRoleInstance = getRoleInstance;
         this.accountRoleMapper = accountRoleMapper;
-        this.activityLogger = activityLogger;
+        this.activityEvents = activityEvents;
     }
 
     @Transactional
@@ -44,6 +41,7 @@ public class AddAccountRole {
 
     @Transactional
     public AccountRoleRDTO byDTO(AccountRoleDTO dto, boolean audit) {
+        String reason = audit ? requiredAuditReason(dto.reason()) : null;
 
         AccountEntity account = getAccountInstance.requiredById(dto.accountId());
         RoleEntity role = getRoleInstance.requiredById(dto.roleId());
@@ -61,17 +59,12 @@ public class AddAccountRole {
         AccountRoleEntity savedAccountRoleEntity = accountRoleRepo.save(newAccountRoleEntity);
 
         if (audit) {
-            activityLogger.log(
-                    ActivityAction.ACCOUNT_ROLE_ADDED,
-                    ActivityTargetType.ACCOUNT_ROLE,
+            activityEvents.accountRoleAdded(
                     savedAccountRoleEntity.getId(),
-                    null,
-                    "Role " + role.getName() + " added to account " + account.getId(),
-                    Map.of(
-                            "accountId", account.getId(),
-                            "roleId", role.getId(),
-                            "roleName", role.getName()
-                    )
+                    account.getId(),
+                    role.getId(),
+                    role.getName(),
+                    reason
             );
         }
 
@@ -79,14 +72,23 @@ public class AddAccountRole {
     }
 
     @Transactional
-    public AccountRoleRDTO byRoleName(String roleName, UUID accountId) {
-        return byRoleName(roleName, accountId, true);
+    public AccountRoleRDTO byRoleName(String roleName, UUID accountId, String reason) {
+        UUID roleId = getRoleInstance.requiredByName(roleName).getId();
+
+        return byDTO(new AccountRoleDTO(accountId, roleId, reason), true);
     }
 
     @Transactional
     public AccountRoleRDTO byRoleName(String roleName, UUID accountId, boolean audit) {
         UUID roleId = getRoleInstance.requiredByName(roleName).getId();
 
-        return byDTO(new AccountRoleDTO(accountId, roleId), audit);
+        return byDTO(new AccountRoleDTO(accountId, roleId, null), audit);
+    }
+
+    private String requiredAuditReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("Account role changes require an audit reason.");
+        }
+        return reason.trim();
     }
 }

@@ -14,7 +14,7 @@ import br.org.gam.api.member.application.MemberDomainLoader;
 import br.org.gam.api.member.domain.Member;
 import br.org.gam.api.oratoriano.application.OratorianoDomainLoader;
 import br.org.gam.api.oratoriano.domain.Oratoriano;
-import br.org.gam.api.shared.activitylog.ActivityLogger;
+import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.time.Instant;
@@ -59,7 +59,7 @@ class CreateOratorioTest {
     private OratorioMapper oratorioMapper;
 
     @Mock
-    private ActivityLogger activityLogger;
+    private ActivityEvents activityEvents;
 
     @InjectMocks
     private CreateOratorio createOratorio;
@@ -107,6 +107,7 @@ class CreateOratorioTest {
             assertThat(oratorio.getBtCriancasMembers()).isEmpty();
             assertThat(oratorio.getOratorianos()).containsExactly(oratoriano);
             verify(oratorioRepo).save(mappedEntity);
+            verify(activityEvents).oratorioCreated(oratorio.getId(), event.getId());
         }
     }
 
