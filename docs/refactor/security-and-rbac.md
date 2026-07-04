@@ -53,7 +53,7 @@ Most controller authorization uses permissions:
 Event visibility also uses permissions dynamically:
 
 ```text
-event.requiredPermission.name in userAuthorities
+event.requiredPermission.code in userAuthorities
 ```
 
 The real access model is:
@@ -148,6 +148,8 @@ The following roles are system-managed.
 
 Administrators must not rename, edit, delete, disable, or unprotect these roles.
 
+System role codes and descriptions are owned by the `SystemRole` registry in code. Seed logic must read from that registry instead of duplicating role code/description pairs locally.
+
 ## 6. Permission Definition
 
 A permission must be defined as:
@@ -185,7 +187,7 @@ MEMBER_GET(
 )
 ```
 
-Target database shape:
+Implemented database shape:
 
 ```text
 permissions.code
@@ -194,7 +196,7 @@ permissions.description
 permissions.system_managed
 ```
 
-The current `permissions.name` column can either be renamed to `code` or treated as the permission code during the first refactor step.
+The `permissions.name` column has been replaced by `permissions.code`. The system is still under active development, so this refactor does not preserve compatibility with older lowercase or pre-registry permission names.
 
 ## 7. Naming Policy
 
@@ -256,20 +258,20 @@ Seed code must:
 3. mark system roles as `systemManaged = true`;
 4. mark system permissions as `systemManaged = true`;
 5. create missing system role-permission links;
-6. avoid changing administrator-created custom roles;
-7. avoid deleting database records automatically when code changes.
+6. update code-owned labels/descriptions for system roles and permissions;
+7. avoid changing administrator-created custom roles;
+8. avoid deleting database records automatically when code changes.
 
 If a system permission is removed from code, do not automatically hard delete or soft delete it. Permission removal must be a deliberate developer-controlled change.
 
 Current issue to fix:
+Fixed behavior:
 
 ```java
 private static final Set<PermissionEnum> VISITOR_PERMISSIONS = EnumSet.noneOf(PermissionEnum.class);
 ```
 
-exists, but the Java seed currently grants `MEMBER_PERMISSIONS` to `VISITOR`.
-
-Target:
+The Java seed must grant only `VISITOR_PERMISSIONS` to `VISITOR`:
 
 ```java
 if (visitorId != null && VISITOR_PERMISSIONS.contains(permission)) {
@@ -344,13 +346,15 @@ Minimum hard invariant:
 At least one active account must have the SUDO role.
 ```
 
+For this project, an active account means an account that exists and is not soft-deleted.
+
 Operational admin invariant:
 
 ```text
 At least one active account should have the COORD role.
 ```
 
-`SUDO` is strict because it is the developer recovery path. `COORD` may be enforced strictly if the product requires an active coordinator at all times.
+`SUDO` is strict because it is the developer recovery path. `COORD` is monitored/soft-enforced only.
 
 Block these actions:
 
@@ -363,6 +367,27 @@ Block these actions:
 7. removing the actor's own last admin capability when no other active admin remains.
 
 Implement these checks in application services, not only in the frontend.
+
+`SUDO` assignment and removal must be handled by a dedicated internal developer-controlled service path, not the ordinary administrator role-management path. Internal `SUDO` removal must still enforce the last-active-`SUDO` invariant.
+
+Implemented invocation path:
+
+```text
+spring profile: maintenance
+maintenance.job=sudo
+maintenance.action=assign-sudo | remove-sudo
+maintenance.account-id=<account UUID>
+maintenance.account-email=<account email>
+maintenance.reason=<audit reason>
+```
+
+Use exactly one account selector: `maintenance.account-id` or `maintenance.account-email`.
+
+Example:
+
+```bash
+mvn spring-boot:run -Dspring-boot.run.profiles=maintenance -Dspring-boot.run.arguments="--maintenance.job=sudo --maintenance.action=assign-sudo --maintenance.account-email=dev@example.com --maintenance.reason=developer-recovery-access"
+```
 
 Use a dedicated policy/service:
 
@@ -412,22 +437,22 @@ This keeps sensitive resource discovery controlled while still returning clear a
 
 For RBAC:
 
-1. Add `systemManaged` to `RoleEntity` and `PermissionEntity`.
-2. Add database columns for `roles.system_managed` and `permissions.system_managed`.
+1. Add `systemManaged` to `RoleEntity` and `PermissionEntity`. Implemented.
+2. Add database columns for `roles.system_managed` and `permissions.system_managed`. Implemented.
 3. Mark all system roles as `systemManaged = true`.
 4. Mark all current permissions as `systemManaged = true`.
-5. Add `label` to permissions or define when `description` is enough for the current step.
-6. Make `PermissionEnum` expose `code`, `label`, and `description`.
+5. Add `label` to permissions. Implemented.
+6. Make `PermissionEnum` expose `code`, `label`, and `description`. Implemented.
 7. Keep `PermissionEnum` as source of truth for system permissions.
 8. Update seed code to create/sync system-managed roles and permissions.
-9. Fix the `VISITOR_PERMISSIONS` seed behavior.
-10. Stop emitting `ROLE_<roleName>` authorities.
+9. Fix the `VISITOR_PERMISSIONS` seed behavior. Implemented.
+10. Stop emitting `ROLE_<roleName>` authorities. Implemented.
 11. Use only permission authorities for authorization.
 12. Block admin edits/deletes/disables for system-managed roles and permissions.
 13. Block admin edits to system-managed role-permission links.
 14. Allow custom roles to use system permissions.
 15. Do not implement custom permissions at this stage.
-16. Add `RbacSafetyPolicy` for lockout prevention.
+16. Add `RbacSafetyPolicy` for lockout prevention. Implemented.
 17. Apply the `403` vs hidden `404` policy consistently.
 
 ## 17. Refactor Order
@@ -436,7 +461,7 @@ Apply this subject in this order:
 
 1. Add `systemManaged` columns and entity fields.
 2. Update seed logic and fix `VISITOR` permissions.
-3. Add permission `label` support or formalize `description` as temporary display text.
+3. Add permission `label` support.
 4. Stop emitting role authorities.
 5. Add system-managed edit/delete guards.
 6. Add custom role management rules.

@@ -254,7 +254,7 @@ Approved public filters for `Event`:
 | `description` | `description` | `LIKE` | Public field |
 | `locationId` | `location.id` | `EQUALS` | Replaces `location.id` |
 | `requiredPermissionId` | `requiredPermission.id` | `EQUALS` | Public alias |
-| `requiredPermissionName` | `requiredPermission.name` | `EQUALS`, `IN` | Public alias |
+| `requiredPermissionCode` | `requiredPermission.code` | `EQUALS`, `IN` | Public alias |
 | `type` | `type` | `EQUALS`, `IN` | `GENERIC`, `ORATORIO`, `MISSA` |
 | `status` | `status` | `EQUALS`, `IN` | `SCHEDULED`, `COMPLETED`, `CANCELLED` |
 | `beginDate` | `beginDate` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` | Parse to `Instant` |
