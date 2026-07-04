@@ -1,14 +1,13 @@
 package br.org.gam.api.event.Oratorio.application.useCases;
 
-import br.org.gam.api.event.application.EventNotFoundException;
 import br.org.gam.api.event.application.EventSecurity;
 import br.org.gam.api.event.application.EventEntityLoader;
 import br.org.gam.api.event.Oratorio.application.OratorioMapper;
 import br.org.gam.api.event.Oratorio.application.OratorioRDTO;
 import br.org.gam.api.event.Oratorio.application.OratorioEntityLoader;
-import br.org.gam.api.event.Oratorio.domain.Oratorio;
 import br.org.gam.api.event.Oratorio.persistence.OratorioEntity;
 import br.org.gam.api.event.persistence.EventEntity;
+import br.org.gam.api.shared.exception.NotFoundException;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -27,7 +26,7 @@ public class GetOratorio {
     }
     public OratorioRDTO byId(UUID id) {
         EventEntity eventEntity = getEventInstance.requiredById(id);
-        if(!eventSecurity.canGetEvent(eventEntity)) throw new EventNotFoundException("Could not find oratorio with id " + id);
+        if(!eventSecurity.canGetEvent(eventEntity)) throw NotFoundException.resource("Oratorio", id);
 
         OratorioEntity oratorioEntity = getOratorioInstance.requiredById(id);
         return oratorioMapper.entityToRDTO(oratorioEntity);

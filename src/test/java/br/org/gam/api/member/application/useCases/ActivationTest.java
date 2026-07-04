@@ -12,6 +12,7 @@ import br.org.gam.api.rbac.AccountRole.application.useCases.AddAccountRole;
 import br.org.gam.api.rbac.AccountRole.application.useCases.DropAccountRole;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.shared.domain.Name;
+import br.org.gam.api.shared.exception.InvalidCommandException;
 import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
@@ -130,7 +131,7 @@ class ActivationTest {
             UUID memberId = UUID.randomUUID();
 
             assertThatThrownBy(() -> activation.deactivate(memberId, " "))
-                    .isInstanceOf(IllegalArgumentException.class)
+                    .isInstanceOf(InvalidCommandException.class)
                     .hasMessage("Member deactivation requires an audit reason.");
 
             verifyNoInteractions(getMemberInstance, addAccountRole, dropAccountRole, memberRepo, activityEvents);

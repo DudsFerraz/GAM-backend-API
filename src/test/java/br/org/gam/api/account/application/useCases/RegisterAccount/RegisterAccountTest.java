@@ -1,11 +1,11 @@
 package br.org.gam.api.account.application.useCases.RegisterAccount;
 
-import br.org.gam.api.account.application.AccountConflictException;
 import br.org.gam.api.account.application.AccountMapper;
 import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.account.domain.MyEmail;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.account.persistence.AccountRepository;
+import br.org.gam.api.shared.exception.ConflictException;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.util.UUID;
@@ -87,7 +87,7 @@ class RegisterAccountTest {
             when(accountRepo.existsByEmail(dto.email())).thenReturn(true);
 
             assertThatThrownBy(() -> registerAccount.register(dto))
-                    .isInstanceOf(AccountConflictException.class)
+                    .isInstanceOf(ConflictException.class)
                     .hasMessage("Email 'user@example.com' already registered.");
 
             verifyNoInteractions(passwordEncoder, accountMapper);

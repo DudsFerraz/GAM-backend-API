@@ -4,11 +4,11 @@ import br.org.gam.api.event.application.EventEntityLoader;
 import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.member.application.MemberEntityLoader;
 import br.org.gam.api.member.persistence.MemberEntity;
-import br.org.gam.api.presence.application.PresenceConflictException;
 import br.org.gam.api.presence.application.PresenceMapper;
 import br.org.gam.api.presence.persistence.PresenceEntity;
 import br.org.gam.api.presence.persistence.PresenceRepository;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
+import br.org.gam.api.shared.exception.ConflictException;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
@@ -35,7 +35,11 @@ public class RegisterPresence {
     @Transactional
     public RegisterPresenceRDTO register(RegisterPresenceDTO dto) {
         if(presenceRepo.existsByMember_IdAndEvent_Id(dto.memberId(), dto.eventId())){
-            throw new PresenceConflictException("Presence already registered");
+            throw ConflictException.resource(
+                    "Presence",
+                    "%s:%s".formatted(dto.memberId(), dto.eventId()),
+                    "Presence already registered"
+            );
         }
 
         MemberEntity presentMember = getMemberInstance.requiredById(dto.memberId());

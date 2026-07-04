@@ -2,6 +2,7 @@ package br.org.gam.api.presence.application;
 
 import br.org.gam.api.presence.persistence.PresenceEntity;
 import br.org.gam.api.presence.persistence.PresenceRepository;
+import br.org.gam.api.shared.exception.NotFoundException;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -16,13 +17,11 @@ public class PresenceEntityLoader {
 
     public PresenceEntity requiredById(UUID id) {
         return presenceRepo.findById(id)
-                .orElseThrow(() -> new PresenceNotFoundException("Could not find presence with id " + id));
+                .orElseThrow(() -> NotFoundException.resource("Presence", id));
     }
 
     public PresenceEntity requiredByMemberIdAndEventId(UUID memberId, UUID eventId) {
         return presenceRepo.findByMember_IdAndEvent_Id(memberId, eventId)
-                .orElseThrow(() -> new PresenceNotFoundException(
-                        String.format("member with id: %s has no presence registered in event with id: %s", memberId, eventId)
-                ));
+                .orElseThrow(() -> NotFoundException.resource("Presence", "%s:%s".formatted(memberId, eventId)));
     }
 }

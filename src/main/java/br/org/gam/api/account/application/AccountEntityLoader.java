@@ -3,6 +3,7 @@ package br.org.gam.api.account.application;
 import br.org.gam.api.account.domain.MyEmail;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.account.persistence.AccountRepository;
+import br.org.gam.api.shared.exception.NotFoundException;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -17,11 +18,11 @@ public class AccountEntityLoader {
 
     public AccountEntity requiredById(UUID id) {
         return accountRepo.findById(id)
-                .orElseThrow(() -> new AccountNotFoundException("Could not find account with id " + id));
+                .orElseThrow(() -> NotFoundException.resource("Account", id));
     }
 
     public AccountEntity requiredByEmail(MyEmail email) {
         return accountRepo.findByEmail(email)
-                .orElseThrow(() -> new AccountNotFoundException("Could not find account with email " + email));
+                .orElseThrow(() -> NotFoundException.resource("Account", email));
     }
 }

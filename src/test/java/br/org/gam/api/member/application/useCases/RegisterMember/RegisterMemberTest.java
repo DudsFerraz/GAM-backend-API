@@ -3,12 +3,12 @@ package br.org.gam.api.member.application.useCases.RegisterMember;
 import br.org.gam.api.account.application.AccountDomainLoader;
 import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.account.domain.MyEmail;
-import br.org.gam.api.member.application.MemberAccountConflictException;
 import br.org.gam.api.member.application.MemberMapper;
 import br.org.gam.api.member.domain.Member;
 import br.org.gam.api.member.domain.MemberStatus;
 import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.persistence.MemberRepository;
+import br.org.gam.api.shared.exception.ConflictException;
 import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
@@ -98,7 +98,7 @@ class RegisterMemberTest {
             when(memberRepo.existsByAccountId(accountId)).thenReturn(true);
 
             assertThatThrownBy(() -> registerMember.register(dto))
-                    .isInstanceOf(MemberAccountConflictException.class)
+                    .isInstanceOf(ConflictException.class)
                     .hasMessage("A member is already linked to this account.");
 
             verifyNoInteractions(getAccountInstance, memberMapper);

@@ -1,7 +1,6 @@
 package br.org.gam.api.event.application.useCases;
 
 import br.org.gam.api.event.application.EventMapper;
-import br.org.gam.api.event.application.EventNotFoundException;
 import br.org.gam.api.event.application.EventRDTO;
 import br.org.gam.api.event.application.EventSecurity;
 import br.org.gam.api.event.application.EventEntityLoader;
@@ -9,6 +8,7 @@ import br.org.gam.api.event.domain.Event;
 import br.org.gam.api.event.domain.EventStatus;
 import br.org.gam.api.event.domain.EventType;
 import br.org.gam.api.event.persistence.EventEntity;
+import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.time.Instant;
@@ -78,8 +78,8 @@ class GetEventTest {
             when(eventSecurity.canGetEvent(entity)).thenReturn(false);
 
             assertThatThrownBy(() -> getEvent.byId(id))
-                    .isInstanceOf(EventNotFoundException.class)
-                    .hasMessage("Could not find event with id " + id);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Event not found with identifier " + id);
 
             verify(eventSecurity).canGetEvent(entity);
             verifyNoInteractions(eventMapper);
@@ -91,11 +91,11 @@ class GetEventTest {
             UUID id = UUID.randomUUID();
 
             when(getEventInstance.requiredById(id))
-                    .thenThrow(new EventNotFoundException("Could not find event with id " + id));
+                    .thenThrow(NotFoundException.resource("Event", id));
 
             assertThatThrownBy(() -> getEvent.byId(id))
-                    .isInstanceOf(EventNotFoundException.class)
-                    .hasMessage("Could not find event with id " + id);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Event not found with identifier " + id);
 
             verifyNoInteractions(eventSecurity, eventMapper);
         }

@@ -2,12 +2,12 @@ package br.org.gam.api.member.application.useCases.RegisterMember;
 
 import br.org.gam.api.account.application.AccountDomainLoader;
 import br.org.gam.api.account.domain.Account;
-import br.org.gam.api.member.application.MemberAccountConflictException;
 import br.org.gam.api.member.application.MemberMapper;
 import br.org.gam.api.member.domain.Member;
 import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.persistence.MemberRepository;
 import br.org.gam.api.shared.domain.Name;
+import br.org.gam.api.shared.exception.ConflictException;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
@@ -28,7 +28,7 @@ public class RegisterMember {
     @Transactional
     public RegisterMemberRDTO register(RegisterMemberDTO dto) {
         if (memberRepo.existsByAccountId(dto.accountId())){
-            throw new MemberAccountConflictException("A member is already linked to this account.");
+            throw ConflictException.resource("Account", dto.accountId(), "A member is already linked to this account.");
         }
 
         Account relatedAccount = getAccountInstance.requiredById(dto.accountId());

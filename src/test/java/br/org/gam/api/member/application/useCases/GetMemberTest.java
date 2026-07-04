@@ -1,13 +1,13 @@
 package br.org.gam.api.member.application.useCases;
 
 import br.org.gam.api.member.application.MemberMapper;
-import br.org.gam.api.member.application.MemberNotFoundException;
 import br.org.gam.api.member.application.MemberRDTO;
 import br.org.gam.api.member.application.MemberSecurity;
 import br.org.gam.api.member.application.MemberEntityLoader;
 import br.org.gam.api.member.domain.Member;
 import br.org.gam.api.member.domain.MemberStatus;
 import br.org.gam.api.member.persistence.MemberEntity;
+import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.time.LocalDate;
@@ -77,8 +77,8 @@ class GetMemberTest {
             when(memberSecurity.canGetMember(entity)).thenReturn(false);
 
             assertThatThrownBy(() -> getMember.byId(id))
-                    .isInstanceOf(MemberNotFoundException.class)
-                    .hasMessage("Could not find member with id " + id);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Member not found with identifier " + id);
 
             verify(memberSecurity).canGetMember(entity);
             verifyNoInteractions(memberMapper);
@@ -90,11 +90,11 @@ class GetMemberTest {
             UUID id = UUID.randomUUID();
 
             when(getMemberInstance.requiredById(id))
-                    .thenThrow(new MemberNotFoundException("Could not find member with id " + id));
+                    .thenThrow(NotFoundException.resource("Member", id));
 
             assertThatThrownBy(() -> getMember.byId(id))
-                    .isInstanceOf(MemberNotFoundException.class)
-                    .hasMessage("Could not find member with id " + id);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Member not found with identifier " + id);
 
             verifyNoInteractions(memberSecurity, memberMapper);
         }

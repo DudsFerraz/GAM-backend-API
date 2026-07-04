@@ -2,6 +2,7 @@ package br.org.gam.api.oratoriano.application;
 
 import br.org.gam.api.oratoriano.persistence.OratorianoEntity;
 import br.org.gam.api.oratoriano.persistence.OratorianoRepository;
+import br.org.gam.api.shared.exception.NotFoundException;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -16,6 +17,6 @@ public class OratorianoEntityLoader {
 
     public OratorianoEntity requiredById(UUID id) {
         return oratorianoRepo.findById(id)
-                .orElseThrow(() -> new OratorianoNotFoundException("Could not find oratoriano with id " + id));
+                .orElseThrow(() -> NotFoundException.resource("Oratoriano", id));
     }
 }

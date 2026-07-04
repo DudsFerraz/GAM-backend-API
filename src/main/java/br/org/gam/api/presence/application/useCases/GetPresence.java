@@ -1,15 +1,14 @@
 package br.org.gam.api.presence.application.useCases;
 
-import br.org.gam.api.event.application.EventNotFoundException;
 import br.org.gam.api.event.application.EventSecurity;
 import br.org.gam.api.event.application.EventEntityLoader;
 import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.presence.application.PresenceMapper;
-import br.org.gam.api.presence.application.PresenceNotFoundException;
 import br.org.gam.api.presence.application.PresenceRDTO;
 import br.org.gam.api.presence.persistence.PresenceEntity;
 import br.org.gam.api.presence.persistence.PresenceRepository;
 import br.org.gam.api.presence.persistence.PresenceSpecifications;
+import br.org.gam.api.shared.exception.NotFoundException;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -37,13 +36,11 @@ public class GetPresence {
 
         return presenceRepo.findOne(spec)
                 .map(presenceMapper::entityToRDTO)
-                .orElseThrow(() -> new PresenceNotFoundException(
-                        String.format("member with id: %s has no presence registered in event with id: %s", memberId, eventId)
-                        ));
+                .orElseThrow(() -> NotFoundException.resource("Presence", "%s:%s".formatted(memberId, eventId)));
     }
     public Page<PresenceRDTO> allByEvent(UUID eventId, Pageable pageable) {
         EventEntity eventEntity = getEventInstance.requiredById(eventId);
-        if(!eventSecurity.canGetEvent(eventEntity)) throw new EventNotFoundException("Could not find event with id " + eventId);
+        if(!eventSecurity.canGetEvent(eventEntity)) throw NotFoundException.resource("Event", eventId);
 
         Specification<PresenceEntity> spec = PresenceSpecifications.fetchEvent()
                 .and(PresenceSpecifications.fetchMember())

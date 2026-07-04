@@ -1,15 +1,14 @@
 package br.org.gam.api.rbac.AccountRole.application.useCases;
 
-import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.rbac.AccountRole.application.AccountRoleDTO;
-import br.org.gam.api.rbac.AccountRole.application.AccountRoleNotFoundException;
 import br.org.gam.api.rbac.AccountRole.application.AccountRoleEntityLoader;
 import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleEntity;
 import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleRepository;
-import br.org.gam.api.rbac.Role.application.RoleNotFoundException;
 import br.org.gam.api.rbac.Role.application.RoleEntityLoader;
 import br.org.gam.api.rbac.Role.persistence.RoleEntity;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
+import br.org.gam.api.shared.exception.InvalidCommandException;
+import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.util.UUID;
@@ -77,7 +76,7 @@ class DropAccountRoleTest {
             AccountRoleDTO dto = new AccountRoleDTO(UUID.randomUUID(), UUID.randomUUID(), " ");
 
             assertThatThrownBy(() -> dropAccountRole.byDTO(dto))
-                    .isInstanceOf(IllegalArgumentException.class)
+                    .isInstanceOf(InvalidCommandException.class)
                     .hasMessage("Account role changes require an audit reason.");
 
             verifyNoInteractions(getAccountRoleInstance, activityEvents);
@@ -89,13 +88,12 @@ class DropAccountRoleTest {
         void missingAccountRoleShouldReturnNotFoundError() {
             AccountRoleDTO dto = new AccountRoleDTO(UUID.randomUUID(), UUID.randomUUID(), "Remove missing role");
 
-            String message = "Account with id: " + dto.accountId() + " does not have role with id: " + dto.roleId();
             when(getAccountRoleInstance.requiredByDTO(dto))
-                    .thenThrow(new AccountRoleNotFoundException(message));
+                    .thenThrow(NotFoundException.resource("AccountRole", dto.accountId() + ":" + dto.roleId()));
 
             assertThatThrownBy(() -> dropAccountRole.byDTO(dto))
-                    .isInstanceOf(AccountRoleNotFoundException.class)
-                    .hasMessage(message);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("AccountRole not found with identifier " + dto.accountId() + ":" + dto.roleId());
 
             verify(accountRoleRepo, never()).delete(org.mockito.ArgumentMatchers.any());
         }
@@ -130,11 +128,11 @@ class DropAccountRoleTest {
             UUID accountId = UUID.randomUUID();
 
             when(getRoleInstance.requiredByName("ADMIN"))
-                    .thenThrow(new RoleNotFoundException("Could not find role with name ADMIN"));
+                    .thenThrow(NotFoundException.resource("Role", "ADMIN"));
 
             assertThatThrownBy(() -> dropAccountRole.byRoleName("ADMIN", accountId, "Remove missing role"))
-                    .isInstanceOf(RoleNotFoundException.class)
-                    .hasMessage("Could not find role with name ADMIN");
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Role not found with identifier ADMIN");
 
             verifyNoInteractions(getAccountRoleInstance);
             verify(accountRoleRepo, never()).delete(org.mockito.ArgumentMatchers.any());

@@ -1,11 +1,11 @@
 package br.org.gam.api.location.application.useCases;
 
 import br.org.gam.api.location.application.LocationMapper;
-import br.org.gam.api.location.application.LocationNotFoundException;
 import br.org.gam.api.location.application.LocationRDTO;
 import br.org.gam.api.location.application.LocationEntityLoader;
 import br.org.gam.api.location.persistence.LocationEntity;
 import br.org.gam.api.location.persistence.LocationRepository;
+import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.StructuralTest;
 import br.org.gam.api.testing.annotation.UnitTest;
@@ -75,11 +75,11 @@ class GetLocationTest {
             UUID id = UUID.randomUUID();
 
             when(getLocationInstance.requiredById(id))
-                    .thenThrow(new LocationNotFoundException("Could not find location with id " + id));
+                    .thenThrow(NotFoundException.resource("Location", id));
 
             assertThatThrownBy(() -> getLocation.byId(id))
-                    .isInstanceOf(LocationNotFoundException.class)
-                    .hasMessage("Could not find location with id " + id);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Location not found with identifier " + id);
 
             verifyNoInteractions(locationMapper, locationRepo);
         }

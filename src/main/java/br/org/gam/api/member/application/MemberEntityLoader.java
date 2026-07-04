@@ -2,6 +2,7 @@ package br.org.gam.api.member.application;
 
 import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.persistence.MemberRepository;
+import br.org.gam.api.shared.exception.NotFoundException;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -16,6 +17,6 @@ public class MemberEntityLoader {
 
     public MemberEntity requiredById(UUID id) {
         return memberRepo.findById(id)
-                .orElseThrow(() -> new MemberNotFoundException("Could not find member with id " + id));
+                .orElseThrow(() -> NotFoundException.resource("Member", id));
     }
 }

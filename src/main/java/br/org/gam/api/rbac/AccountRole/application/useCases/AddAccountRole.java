@@ -2,7 +2,6 @@ package br.org.gam.api.rbac.AccountRole.application.useCases;
 
 import br.org.gam.api.account.application.AccountEntityLoader;
 import br.org.gam.api.account.persistence.AccountEntity;
-import br.org.gam.api.rbac.AccountRole.application.AccountAlreadyHasRoleException;
 import br.org.gam.api.rbac.AccountRole.application.AccountRoleDTO;
 import br.org.gam.api.rbac.AccountRole.application.AccountRoleMapper;
 import br.org.gam.api.rbac.AccountRole.application.AccountRoleRDTO;
@@ -11,6 +10,8 @@ import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleRepository;
 import br.org.gam.api.rbac.Role.application.RoleEntityLoader;
 import br.org.gam.api.rbac.Role.persistence.RoleEntity;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
+import br.org.gam.api.shared.exception.ConflictException;
+import br.org.gam.api.shared.exception.InvalidCommandException;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
 import jakarta.transaction.Transactional;
 import java.util.UUID;
@@ -47,8 +48,11 @@ public class AddAccountRole {
         RoleEntity role = getRoleInstance.requiredById(dto.roleId());
 
         if (accountRoleRepo.existsByAccount_IdAndRole_Id(account.getId(), role.getId())) {
-            throw new AccountAlreadyHasRoleException(
-                    String.format("Account: %s already has role: %s", account.getEmail(), role.getName()));
+            throw ConflictException.resource(
+                    "AccountRole",
+                    "%s:%s".formatted(account.getId(), role.getId()),
+                    String.format("Account: %s already has role: %s", account.getEmail(), role.getName())
+            );
         }
 
         AccountRoleEntity newAccountRoleEntity = new AccountRoleEntity();
@@ -87,7 +91,7 @@ public class AddAccountRole {
 
     private String requiredAuditReason(String reason) {
         if (reason == null || reason.isBlank()) {
-            throw new IllegalArgumentException("Account role changes require an audit reason.");
+            throw InvalidCommandException.reason("Account role changes require an audit reason.");
         }
         return reason.trim();
     }

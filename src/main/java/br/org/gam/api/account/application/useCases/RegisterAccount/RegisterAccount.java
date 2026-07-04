@@ -1,10 +1,10 @@
 package br.org.gam.api.account.application.useCases.RegisterAccount;
 
-import br.org.gam.api.account.application.AccountConflictException;
 import br.org.gam.api.account.application.AccountMapper;
 import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.account.persistence.AccountRepository;
+import br.org.gam.api.shared.exception.ConflictException;
 import jakarta.transaction.Transactional;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -25,7 +25,7 @@ public class RegisterAccount {
     @Transactional
     public RegisterAccountRDTO register(RegisterAccountDTO dto) {
         if (accountRepo.existsByEmail(dto.email())){
-            throw new AccountConflictException("Email '" + dto.email() + "' already registered.");
+            throw ConflictException.resource("Account", dto.email(), "Email '" + dto.email() + "' already registered.");
         }
 
         String hashedPassword = passwordEncoder.encode(dto.password());

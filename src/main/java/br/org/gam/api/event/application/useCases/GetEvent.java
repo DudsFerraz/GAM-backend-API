@@ -1,11 +1,11 @@
 package br.org.gam.api.event.application.useCases;
 
 import br.org.gam.api.event.application.EventMapper;
-import br.org.gam.api.event.application.EventNotFoundException;
 import br.org.gam.api.event.application.EventRDTO;
 import br.org.gam.api.event.application.EventSecurity;
 import br.org.gam.api.event.application.EventEntityLoader;
 import br.org.gam.api.event.persistence.EventEntity;
+import br.org.gam.api.shared.exception.NotFoundException;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -23,7 +23,7 @@ public class GetEvent {
     public EventRDTO byId(UUID id) {
         EventEntity eventEntity = getEventInstance.requiredById(id);
 
-        if(!eventSecurity.canGetEvent(eventEntity)) throw new EventNotFoundException("Could not find event with id " + id);
+        if(!eventSecurity.canGetEvent(eventEntity)) throw NotFoundException.resource("Event", id);
 
         return eventMapper.entityToRDTO(eventEntity);
     }

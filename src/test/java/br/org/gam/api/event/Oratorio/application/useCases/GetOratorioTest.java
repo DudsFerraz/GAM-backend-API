@@ -1,15 +1,13 @@
 package br.org.gam.api.event.Oratorio.application.useCases;
 
-import br.org.gam.api.event.application.EventNotFoundException;
 import br.org.gam.api.event.application.EventSecurity;
 import br.org.gam.api.event.application.EventEntityLoader;
 import br.org.gam.api.event.Oratorio.application.OratorioMapper;
-import br.org.gam.api.event.Oratorio.application.OratorioNotFoundException;
 import br.org.gam.api.event.Oratorio.application.OratorioRDTO;
 import br.org.gam.api.event.Oratorio.application.OratorioEntityLoader;
-import br.org.gam.api.event.Oratorio.domain.Oratorio;
 import br.org.gam.api.event.Oratorio.persistence.OratorioEntity;
 import br.org.gam.api.event.persistence.EventEntity;
+import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.StructuralTest;
 import br.org.gam.api.testing.annotation.UnitTest;
@@ -85,8 +83,8 @@ class GetOratorioTest {
             when(eventSecurity.canGetEvent(eventEntity)).thenReturn(false);
 
             assertThatThrownBy(() -> getOratorio.byId(id))
-                    .isInstanceOf(EventNotFoundException.class)
-                    .hasMessage("Could not find oratorio with id " + id);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Oratorio not found with identifier " + id);
 
             verifyNoInteractions(getOratorioInstance, oratorioMapper);
         }
@@ -97,11 +95,11 @@ class GetOratorioTest {
             UUID id = UUID.randomUUID();
 
             when(getEventInstance.requiredById(id))
-                    .thenThrow(new EventNotFoundException("Could not find event with id " + id));
+                    .thenThrow(NotFoundException.resource("Event", id));
 
             assertThatThrownBy(() -> getOratorio.byId(id))
-                    .isInstanceOf(EventNotFoundException.class)
-                    .hasMessage("Could not find event with id " + id);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Event not found with identifier " + id);
 
             verifyNoInteractions(eventSecurity, getOratorioInstance, oratorioMapper);
         }
@@ -115,11 +113,11 @@ class GetOratorioTest {
             when(getEventInstance.requiredById(id)).thenReturn(eventEntity);
             when(eventSecurity.canGetEvent(eventEntity)).thenReturn(true);
             when(getOratorioInstance.requiredById(id))
-                    .thenThrow(new OratorioNotFoundException("Could not find oratorio with id " + id));
+                    .thenThrow(NotFoundException.resource("Oratorio", id));
 
             assertThatThrownBy(() -> getOratorio.byId(id))
-                    .isInstanceOf(OratorioNotFoundException.class)
-                    .hasMessage("Could not find oratorio with id " + id);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Oratorio not found with identifier " + id);
 
             verify(eventSecurity).canGetEvent(eventEntity);
             verifyNoInteractions(oratorioMapper);

@@ -2,6 +2,7 @@ package br.org.gam.api.rbac.Role.application;
 
 import br.org.gam.api.rbac.Role.persistence.RoleEntity;
 import br.org.gam.api.rbac.Role.persistence.RoleRepository;
+import br.org.gam.api.shared.exception.NotFoundException;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -16,11 +17,11 @@ public class RoleEntityLoader {
 
     public RoleEntity requiredById(UUID id) {
         return roleRepo.findById(id)
-                .orElseThrow(() -> new RoleNotFoundException("Could not find role with id " + id));
+                .orElseThrow(() -> NotFoundException.resource("Role", id));
     }
 
     public RoleEntity requiredByName(String name) {
         return roleRepo.findByName(name)
-                .orElseThrow(() -> new RoleNotFoundException("Could not find role with name " + name));
+                .orElseThrow(() -> NotFoundException.resource("Role", name));
     }
 }

@@ -1,14 +1,13 @@
 package br.org.gam.api.event.Missa.application.useCases;
 
-import br.org.gam.api.event.application.EventNotFoundException;
 import br.org.gam.api.event.application.EventSecurity;
 import br.org.gam.api.event.application.EventEntityLoader;
 import br.org.gam.api.event.Missa.application.MissaMapper;
 import br.org.gam.api.event.Missa.application.MissaRDTO;
 import br.org.gam.api.event.Missa.application.MissaEntityLoader;
-import br.org.gam.api.event.Missa.domain.Missa;
 import br.org.gam.api.event.Missa.persistence.MissaEntity;
 import br.org.gam.api.event.persistence.EventEntity;
+import br.org.gam.api.shared.exception.NotFoundException;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -27,7 +26,7 @@ public class GetMissa {
     }
     public MissaRDTO byId(UUID id) {
         EventEntity eventEntity = getEventInstance.requiredById(id);
-        if(!eventSecurity.canGetEvent(eventEntity)) throw new EventNotFoundException("Could not find missa with id " + id);
+        if(!eventSecurity.canGetEvent(eventEntity)) throw NotFoundException.resource("Missa", id);
 
         MissaEntity missaEntity = getMissaInstance.requiredById(id);
         return missaMapper.entityToRDTO(missaEntity);

@@ -8,6 +8,7 @@ import br.org.gam.api.member.persistence.MemberRepository;
 import br.org.gam.api.rbac.AccountRole.application.useCases.AddAccountRole;
 import br.org.gam.api.rbac.AccountRole.application.useCases.DropAccountRole;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
+import br.org.gam.api.shared.exception.InvalidCommandException;
 import jakarta.transaction.Transactional;
 import java.util.function.Consumer;
 import java.util.UUID;
@@ -98,7 +99,7 @@ public class Activation {
 
     private String requiredAuditReason(String reason) {
         if (reason == null || reason.isBlank()) {
-            throw new IllegalArgumentException("Member deactivation requires an audit reason.");
+            throw InvalidCommandException.reason("Member deactivation requires an audit reason.");
         }
         return reason.trim();
     }

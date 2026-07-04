@@ -1,20 +1,20 @@
 package br.org.gam.api.rbac.AccountRole.application.useCases;
 
-import br.org.gam.api.account.application.AccountNotFoundException;
 import br.org.gam.api.account.application.AccountEntityLoader;
 import br.org.gam.api.account.domain.MyEmail;
 import br.org.gam.api.account.persistence.AccountEntity;
-import br.org.gam.api.rbac.AccountRole.application.AccountAlreadyHasRoleException;
 import br.org.gam.api.rbac.AccountRole.application.AccountRoleDTO;
 import br.org.gam.api.rbac.AccountRole.application.AccountRoleMapper;
 import br.org.gam.api.rbac.AccountRole.application.AccountRoleRDTO;
 import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleEntity;
 import br.org.gam.api.rbac.AccountRole.persistence.AccountRoleRepository;
-import br.org.gam.api.rbac.Role.application.RoleNotFoundException;
 import br.org.gam.api.rbac.Role.application.RoleRDTO;
 import br.org.gam.api.rbac.Role.application.RoleEntityLoader;
 import br.org.gam.api.rbac.Role.persistence.RoleEntity;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
+import br.org.gam.api.shared.exception.ConflictException;
+import br.org.gam.api.shared.exception.InvalidCommandException;
+import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.util.UUID;
@@ -100,7 +100,7 @@ class AddAccountRoleTest {
             AccountRoleDTO dto = new AccountRoleDTO(UUID.randomUUID(), UUID.randomUUID(), " ");
 
             assertThatThrownBy(() -> addAccountRole.byDTO(dto))
-                    .isInstanceOf(IllegalArgumentException.class)
+                    .isInstanceOf(InvalidCommandException.class)
                     .hasMessage("Account role changes require an audit reason.");
 
             verifyNoInteractions(getAccountInstance, getRoleInstance, accountRoleMapper, activityEvents);
@@ -119,7 +119,7 @@ class AddAccountRoleTest {
             when(accountRoleRepo.existsByAccount_IdAndRole_Id(account.getId(), role.getId())).thenReturn(true);
 
             assertThatThrownBy(() -> addAccountRole.byDTO(dto))
-                    .isInstanceOf(AccountAlreadyHasRoleException.class)
+                    .isInstanceOf(ConflictException.class)
                     .hasMessage("Account: " + account.getEmail() + " already has role: " + role.getName());
 
             verifyNoInteractions(accountRoleMapper);
@@ -134,11 +134,11 @@ class AddAccountRoleTest {
             AccountRoleDTO dto = new AccountRoleDTO(accountId, roleId, "Grant missing account access");
 
             when(getAccountInstance.requiredById(accountId))
-                    .thenThrow(new AccountNotFoundException("Could not find account with id " + accountId));
+                    .thenThrow(NotFoundException.resource("Account", accountId));
 
             assertThatThrownBy(() -> addAccountRole.byDTO(dto))
-                    .isInstanceOf(AccountNotFoundException.class)
-                    .hasMessage("Could not find account with id " + accountId);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Account not found with identifier " + accountId);
 
             verifyNoInteractions(getRoleInstance, accountRoleMapper);
             verify(accountRoleRepo, never()).save(any());
@@ -153,11 +153,11 @@ class AddAccountRoleTest {
 
             when(getAccountInstance.requiredById(account.getId())).thenReturn(account);
             when(getRoleInstance.requiredById(roleId))
-                    .thenThrow(new RoleNotFoundException("Could not find role with id " + roleId));
+                    .thenThrow(NotFoundException.resource("Role", roleId));
 
             assertThatThrownBy(() -> addAccountRole.byDTO(dto))
-                    .isInstanceOf(RoleNotFoundException.class)
-                    .hasMessage("Could not find role with id " + roleId);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Role not found with identifier " + roleId);
 
             verifyNoInteractions(accountRoleMapper);
             verify(accountRoleRepo, never()).save(any());

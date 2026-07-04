@@ -2,6 +2,7 @@ package br.org.gam.api.event.application;
 
 import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.event.persistence.EventRepository;
+import br.org.gam.api.shared.exception.NotFoundException;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -16,6 +17,6 @@ public class EventEntityLoader {
 
     public EventEntity requiredById(UUID id) {
         return eventRepo.findById(id)
-                .orElseThrow(() -> new EventNotFoundException("Could not find event with id " + id));
+                .orElseThrow(() -> NotFoundException.resource("Event", id));
     }
 }

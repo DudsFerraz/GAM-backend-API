@@ -2,6 +2,7 @@ package br.org.gam.api.event.Missa.application;
 
 import br.org.gam.api.event.Missa.persistence.MissaEntity;
 import br.org.gam.api.event.Missa.persistence.MissaRepository;
+import br.org.gam.api.shared.exception.NotFoundException;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -16,6 +17,6 @@ public class MissaEntityLoader {
 
     public MissaEntity requiredById(UUID id) {
         return missaRepo.findById(id)
-                .orElseThrow(() -> new MissaNotFoundException("Could not find missa with id " + id));
+                .orElseThrow(() -> NotFoundException.resource("Missa", id));
     }
 }

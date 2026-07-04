@@ -1,10 +1,10 @@
 package br.org.gam.api.rbac.Role.application.useCases;
 
 import br.org.gam.api.rbac.Role.application.RoleMapper;
-import br.org.gam.api.rbac.Role.application.RoleNotFoundException;
 import br.org.gam.api.rbac.Role.application.RoleRDTO;
 import br.org.gam.api.rbac.Role.application.RoleEntityLoader;
 import br.org.gam.api.rbac.Role.persistence.RoleEntity;
+import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.util.UUID;
@@ -64,11 +64,11 @@ class GetRoleTest {
             UUID id = UUID.randomUUID();
 
             when(getRoleInstance.requiredById(id))
-                    .thenThrow(new RoleNotFoundException("Could not find role with id " + id));
+                    .thenThrow(NotFoundException.resource("Role", id));
 
             assertThatThrownBy(() -> getRole.byId(id))
-                    .isInstanceOf(RoleNotFoundException.class)
-                    .hasMessage("Could not find role with id " + id);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Role not found with identifier " + id);
 
             verifyNoInteractions(roleMapper);
         }

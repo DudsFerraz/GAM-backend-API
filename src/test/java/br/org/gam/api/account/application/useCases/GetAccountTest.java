@@ -1,13 +1,13 @@
 package br.org.gam.api.account.application.useCases;
 
 import br.org.gam.api.account.application.AccountMapper;
-import br.org.gam.api.account.application.AccountNotFoundException;
 import br.org.gam.api.account.application.AccountRDTO;
 import br.org.gam.api.account.application.AccountEntityLoader;
 import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.account.domain.MyEmail;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.rbac.AccountRole.application.AccountRolesRDTO;
+import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.util.UUID;
@@ -72,11 +72,11 @@ class GetAccountTest {
             UUID id = UUID.randomUUID();
 
             when(getAccountInstance.requiredById(id))
-                    .thenThrow(new AccountNotFoundException("Could not find account with id " + id));
+                    .thenThrow(NotFoundException.resource("Account", id));
 
             assertThatThrownBy(() -> getAccount.byId(id))
-                    .isInstanceOf(AccountNotFoundException.class)
-                    .hasMessage("Could not find account with id " + id);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Account not found with identifier " + id);
 
             verify(getAccountInstance).requiredById(id);
             verifyNoInteractions(accountMapper);

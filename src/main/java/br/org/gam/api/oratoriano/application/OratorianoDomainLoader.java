@@ -2,6 +2,7 @@ package br.org.gam.api.oratoriano.application;
 
 import br.org.gam.api.oratoriano.domain.Oratoriano;
 import br.org.gam.api.oratoriano.persistence.OratorianoRepository;
+import br.org.gam.api.shared.exception.NotFoundException;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -21,7 +22,7 @@ public class OratorianoDomainLoader {
     public Oratoriano requiredById(UUID id) {
         return oratorianoRepo.findById(id)
                 .map(oratorianoMapper::entityToDomain)
-                .orElseThrow(() -> new OratorianoNotFoundException("Could not find oratoriano with id " + id));
+                .orElseThrow(() -> NotFoundException.resource("Oratoriano", id));
     }
 
     public Set<Oratoriano> requiredByIds(Set<UUID> ids) {

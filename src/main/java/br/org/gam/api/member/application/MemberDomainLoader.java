@@ -2,6 +2,7 @@ package br.org.gam.api.member.application;
 
 import br.org.gam.api.member.domain.Member;
 import br.org.gam.api.member.persistence.MemberRepository;
+import br.org.gam.api.shared.exception.NotFoundException;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -22,7 +23,7 @@ public class MemberDomainLoader {
     public Member requiredById(UUID id) {
         return memberRepo.findById(id)
                 .map(memberMapper::entityToDomain)
-                .orElseThrow(() -> new MemberNotFoundException("Could not find member with id " + id));
+                .orElseThrow(() -> NotFoundException.resource("Member", id));
     }
 
     public Set<Member> requiredByIds(Set<UUID> ids) {

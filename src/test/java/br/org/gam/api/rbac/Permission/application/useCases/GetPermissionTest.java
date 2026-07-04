@@ -1,10 +1,10 @@
 package br.org.gam.api.rbac.Permission.application.useCases;
 
 import br.org.gam.api.rbac.Permission.application.PermissionMapper;
-import br.org.gam.api.rbac.Permission.application.PermissionNotFoundException;
 import br.org.gam.api.rbac.Permission.application.PermissionRDTO;
 import br.org.gam.api.rbac.Permission.application.PermissionEntityLoader;
 import br.org.gam.api.rbac.Permission.persistence.PermissionEntity;
+import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.util.UUID;
@@ -64,11 +64,11 @@ class GetPermissionTest {
             UUID id = UUID.randomUUID();
 
             when(getPermissionInstance.requiredById(id))
-                    .thenThrow(new PermissionNotFoundException("Could not find permission with id " + id));
+                    .thenThrow(NotFoundException.resource("Permission", id));
 
             assertThatThrownBy(() -> getPermission.byId(id))
-                    .isInstanceOf(PermissionNotFoundException.class)
-                    .hasMessage("Could not find permission with id " + id);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Permission not found with identifier " + id);
 
             verifyNoInteractions(permissionMapper);
         }

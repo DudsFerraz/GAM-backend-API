@@ -1,16 +1,15 @@
 package br.org.gam.api.presence.application.useCases.RegisterPresence;
 
-import br.org.gam.api.event.application.EventNotFoundException;
 import br.org.gam.api.event.application.EventEntityLoader;
 import br.org.gam.api.event.persistence.EventEntity;
-import br.org.gam.api.member.application.MemberNotFoundException;
 import br.org.gam.api.member.application.MemberEntityLoader;
 import br.org.gam.api.member.persistence.MemberEntity;
-import br.org.gam.api.presence.application.PresenceConflictException;
 import br.org.gam.api.presence.application.PresenceMapper;
 import br.org.gam.api.presence.persistence.PresenceEntity;
 import br.org.gam.api.presence.persistence.PresenceRepository;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
+import br.org.gam.api.shared.exception.ConflictException;
+import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.util.UUID;
@@ -102,7 +101,7 @@ class RegisterPresenceTest {
             when(presenceRepo.existsByMember_IdAndEvent_Id(memberId, eventId)).thenReturn(true);
 
             assertThatThrownBy(() -> registerPresence.register(dto))
-                    .isInstanceOf(PresenceConflictException.class)
+                    .isInstanceOf(ConflictException.class)
                     .hasMessage("Presence already registered");
 
             verifyNoInteractions(getMemberInstance, getEventInstance, presenceMapper);
@@ -118,11 +117,11 @@ class RegisterPresenceTest {
 
             when(presenceRepo.existsByMember_IdAndEvent_Id(memberId, eventId)).thenReturn(false);
             when(getMemberInstance.requiredById(memberId))
-                    .thenThrow(new MemberNotFoundException("Could not find member with id " + memberId));
+                    .thenThrow(NotFoundException.resource("Member", memberId));
 
             assertThatThrownBy(() -> registerPresence.register(dto))
-                    .isInstanceOf(MemberNotFoundException.class)
-                    .hasMessage("Could not find member with id " + memberId);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Member not found with identifier " + memberId);
 
             verifyNoInteractions(getEventInstance, presenceMapper);
             verify(presenceRepo, never()).save(any());
@@ -139,11 +138,11 @@ class RegisterPresenceTest {
             when(presenceRepo.existsByMember_IdAndEvent_Id(memberId, eventId)).thenReturn(false);
             when(getMemberInstance.requiredById(memberId)).thenReturn(member);
             when(getEventInstance.requiredById(eventId))
-                    .thenThrow(new EventNotFoundException("Could not find event with id " + eventId));
+                    .thenThrow(NotFoundException.resource("Event", eventId));
 
             assertThatThrownBy(() -> registerPresence.register(dto))
-                    .isInstanceOf(EventNotFoundException.class)
-                    .hasMessage("Could not find event with id " + eventId);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Event not found with identifier " + eventId);
 
             verifyNoInteractions(presenceMapper);
             verify(presenceRepo, never()).save(any());

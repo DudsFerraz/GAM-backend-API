@@ -2,6 +2,7 @@ package br.org.gam.api.rbac.Permission.application;
 
 import br.org.gam.api.rbac.Permission.persistence.PermissionEntity;
 import br.org.gam.api.rbac.Permission.persistence.PermissionRepository;
+import br.org.gam.api.shared.exception.NotFoundException;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -16,6 +17,6 @@ public class PermissionEntityLoader {
 
     public PermissionEntity requiredById(UUID id) {
         return permissionRepo.findById(id)
-                .orElseThrow(() -> new PermissionNotFoundException("Could not find permission with id " + id));
+                .orElseThrow(() -> NotFoundException.resource("Permission", id));
     }
 }

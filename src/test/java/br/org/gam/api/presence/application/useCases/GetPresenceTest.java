@@ -1,14 +1,13 @@
 package br.org.gam.api.presence.application.useCases;
 
-import br.org.gam.api.event.application.EventNotFoundException;
 import br.org.gam.api.event.application.EventSecurity;
 import br.org.gam.api.event.application.EventEntityLoader;
 import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.presence.application.PresenceMapper;
-import br.org.gam.api.presence.application.PresenceNotFoundException;
 import br.org.gam.api.presence.application.PresenceRDTO;
 import br.org.gam.api.presence.persistence.PresenceEntity;
 import br.org.gam.api.presence.persistence.PresenceRepository;
+import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.StructuralTest;
 import br.org.gam.api.testing.annotation.UnitTest;
@@ -93,8 +92,8 @@ class GetPresenceTest {
             when(presenceRepo.findOne(any(Specification.class))).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> getPresence.byIds(memberId, eventId))
-                    .isInstanceOf(PresenceNotFoundException.class)
-                    .hasMessage("member with id: " + memberId + " has no presence registered in event with id: " + eventId);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Presence not found with identifier " + memberId + ":" + eventId);
 
             verifyNoInteractions(presenceMapper, eventSecurity, getEventInstance);
         }
@@ -141,8 +140,8 @@ class GetPresenceTest {
             when(eventSecurity.canGetEvent(eventEntity)).thenReturn(false);
 
             assertThatThrownBy(() -> getPresence.allByEvent(eventId, pageable))
-                    .isInstanceOf(EventNotFoundException.class)
-                    .hasMessage("Could not find event with id " + eventId);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Event not found with identifier " + eventId);
 
             verify(eventSecurity).canGetEvent(eventEntity);
             verifyNoInteractions(presenceRepo, presenceMapper);
@@ -155,11 +154,11 @@ class GetPresenceTest {
             Pageable pageable = PageRequest.of(0, 10);
 
             when(getEventInstance.requiredById(eventId))
-                    .thenThrow(new EventNotFoundException("Could not find event with id " + eventId));
+                    .thenThrow(NotFoundException.resource("Event", eventId));
 
             assertThatThrownBy(() -> getPresence.allByEvent(eventId, pageable))
-                    .isInstanceOf(EventNotFoundException.class)
-                    .hasMessage("Could not find event with id " + eventId);
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("Event not found with identifier " + eventId);
 
             verifyNoInteractions(eventSecurity, presenceRepo, presenceMapper);
         }
