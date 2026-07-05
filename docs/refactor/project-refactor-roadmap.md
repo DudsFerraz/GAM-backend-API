@@ -10,7 +10,7 @@ Enterprise Java often tolerates more structure in exchange for explicit boundari
 
 The main architectural problem is **accumulated ceremony**. The codebase applies several enterprise patterns at once: domain/entity separation, one interface per use case, one Spring implementation per interface, DTOs per operation, mappers per aggregate, custom exceptions per resource, custom repositories, custom specifications, and method-level security. Each pattern can be defensible in isolation, but together they create many files and indirections for relatively simple CRUD-oriented workflows.
 
-This document intentionally does not define the testing strategy. Whenever architecture decisions need test coverage, this file only references the dedicated tests document: [`tests.md`](../tests.md).
+This document intentionally does not define the testing strategy. Whenever architecture decisions need test coverage, this file only references the dedicated tests document: [`tests.md`](../software-guidelines/tests.md).
 
 The target is a **feature-oriented Spring API**: internally modular, deployed as this backend application, independent from the frontend repository, with fewer redundant interfaces, clearer application services, and explicit domain rules where they actually exist.
 
