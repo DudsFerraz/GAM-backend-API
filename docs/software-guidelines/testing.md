@@ -42,38 +42,135 @@ Deleting or materially weakening a test is allowed only after explicit developer
 
 This section defines *how* test cases should be designed, regardless of the execution level.
 
-### 2.1. Functional Testing Approach (Black-Box)
+### 2.1. Behavior-Focused Tests and Test Seams
+
+Tests must verify behavior through an appropriate boundary, not through private implementation details. Functional and integration tests derive their cases from requirements and API contracts. Structural tests may derive their cases from source-code decisions, conditions, and loops, but they should still execute those paths through the narrowest meaningful public or intentionally exposed seam. A good test reads like a small executable specification: it names the behavior that must exist, uses inputs that make the scenario clear, and asserts an observable result.
+
+A test seam is the boundary where the test interacts with the system. It is the place where behavior can be stimulated and observed without reaching inside unrelated internals. In this project, common seams include:
+
+* A domain model or value object public method when testing domain invariants, normalization, or state transitions.
+* An application use case public method when testing a workflow that coordinates domain objects, loaders, repositories, or policies.
+* A repository or persistence adapter when testing persistence behavior, soft-delete visibility, database constraints, or specifications.
+* An HTTP endpoint when testing API contracts, authentication, authorization, request validation, response bodies, and status codes.
+* A dedicated external-infrastructure boundary when testing integration with a provider such as email, payment, storage, time, randomness, or the file system.
+
+Choose the narrowest seam that still protects the requirement behavior. Do not test every layer for the same rule unless each layer has a distinct contract to protect. If the correct seam is unclear, derive it from the accepted requirement, ADR, OpenAPI contract, package guidelines, and risk level. Ask for clarification when those sources do not identify a clear boundary.
+
+Good behavior-focused tests have these traits:
+
+* They exercise behavior that a caller, API client, maintainer, or domain expert would care about.
+* They use public APIs for the selected seam.
+* They survive internal refactors when the behavior remains unchanged.
+* Their names describe what behavior is protected, not how the implementation works.
+* Their expected values come from a requirement, a worked example, a known literal, or another independent source of truth.
+
+Structural tests have one extra nuance: their case selection is allowed to be implementation-aware, but their execution should not reach into private methods. If a private method contains enough branching complexity that direct testing feels necessary, prefer extracting that behavior into a domain policy, value object, specification, parser, validator, converter, or other focused component with its own seam. Package-private seams are acceptable only when the component is deliberately internal and the test protects a meaningful unit contract.
+
+Avoid these test anti-patterns:
+
+* **Implementation-coupled tests:** Tests that mock internal collaborators, test private methods, assert internal call counts or ordering, or verify behavior through an unrelated side channel. These tests often fail during harmless refactors while missing real behavior regressions.
+* **Tautological tests:** Tests whose expected value is recomputed using the same logic as the production code, such as calculating the expected total with the same loop or formula being tested. Expected values must be independent enough to disagree with the implementation when the implementation is wrong.
+
+Examples:
+
+```java
+// Good: verifies observable behavior through the selected public seam.
+var total = order.totalFor(List.of(
+        new OrderLine("Notebook", BigDecimal.valueOf(10)),
+        new OrderLine("Pen", BigDecimal.valueOf(5))
+));
+
+assertThat(total).isEqualByComparingTo("15");
+```
+
+```java
+// Bad: tautological expected value repeats the same computation style.
+var lines = List.of(
+        new OrderLine("Notebook", BigDecimal.valueOf(10)),
+        new OrderLine("Pen", BigDecimal.valueOf(5))
+);
+var expected = lines.stream()
+        .map(OrderLine::amount)
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+assertThat(order.totalFor(lines)).isEqualByComparingTo(expected);
+```
+
+```java
+// Usually bad for application behavior: asserts internal collaboration
+// instead of the externally observable result of the use case.
+verify(paymentGateway).charge(order.total());
+```
+
+```java
+// Better: assert the outcome the caller cares about.
+assertThat(result.status()).isEqualTo(OrderStatus.CONFIRMED);
+assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.APPROVED);
+```
+
+### 2.2. Mocking and Test Doubles
+
+Use mocks and test doubles to isolate true system boundaries, not to duplicate the application's internal structure inside tests.
+
+Mock or fake external boundaries when using the real dependency would make the test slow, flaky, unsafe, unavailable, or focused on another system:
+
+* External APIs and provider SDKs.
+* Email, payment, storage, messaging, or notification providers.
+* Time and randomness.
+* File system access when the file system behavior itself is not under test.
+* Databases only when the selected test seam is a pure unit seam. Prefer a real test database for persistence, API, security, and migration-sensitive behavior.
+
+Do not mock:
+
+* The domain model under test.
+* Internal application classes merely because they are collaborators.
+* Code owned by this project when a narrower public seam or a realistic fake would express the behavior more clearly.
+* Repositories in tests whose purpose is to verify persistence behavior, soft-delete behavior, constraints, specifications, or transactional integration.
+
+When an external dependency must be mocked, design the boundary intentionally:
+
+* Inject the dependency instead of constructing provider clients directly inside business logic.
+* Prefer specific provider-facing operations over a generic request function that forces conditional logic into test setup.
+* Keep mock behavior simple and scenario-specific.
+
+### 2.3. Functional Testing Approach (Black-Box)
 
 Functional tests are based on the specification, though nothing prevents analyzing the code. The process must be iterative, not sequential. The Equivalence Partitioning and Boundary Value Analysis criteria must be used alongside JUnit, AssertJ, and Mockito.
 
 1. **Requirements Comprehension:** Carefully read the requirements to understand how the program works, its inputs and outputs, boundary conditions, data types, etc. (If the tester does not understand how the program works, they cannot evaluate if it functions properly). If there is any doubt about the requirement the LLM model should ask the user about it, rather than make assumptions.
-2. **Exploratory Analysis:** Execute the program with different input and output values to improve your understanding of what it does.
-3. **Partition Identification:** Investigate inputs and outputs to map equivalence classes. Analyze each input individually, potential interactions between inputs, and all possible outputs.
-4. **Boundary Analysis:** Analyze each equivalence class to identify the boundaries that lead to changes in the program's behavior.
-5. **Test Case Creation:** Combine equivalence classes to create test cases. To avoid an explosion in the number of tests, combine only valid classes and test invalid classes only once. (If the number of combinations is too large, divide the tested module).
-6. **Domain Contract Gate:** Before implementing or accepting a test suite, explicitly verify that the suite describes the intended domain behavior, not only the behavior already present in the code. If the specification is incomplete, ambiguous, or missing important constraints such as limits, allowed formats, normalization, error messages, or rejection rules, pause and ask for clarification. Do not proceed with tests that merely preserve an under-specified implementation.
-7. **Test Automation:** Implement the test cases using a testing framework, preferring realistic values for input data even if they are not actively used in the test. Dedicate more attention to testing modules that have a higher cost of failure.
-8. **Test Suite Expansion:** Revisit the created tests and add new tests if deemed necessary.
+2. **Seam Selection:** Select the narrowest public seam that protects the requirement behavior and risk being tested. If the seam is unclear, ask for clarification before writing tests.
+3. **Exploratory Analysis:** Execute the program with different input and output values to improve your understanding of what it does.
+4. **Partition Identification:** Investigate inputs and outputs to map equivalence classes. Analyze each input individually, potential interactions between inputs, and all possible outputs.
+5. **Boundary Analysis:** Analyze each equivalence class to identify the boundaries that lead to changes in the program's behavior.
+6. **Test Case Creation:** Combine equivalence classes to create test cases. To avoid an explosion in the number of tests, combine only valid classes and test invalid classes only once. (If the number of combinations is too large, divide the tested module).
+7. **Domain Contract Gate:** Before implementing or accepting a test suite, explicitly verify that the suite describes the intended domain behavior, not only the behavior already present in the code. If the specification is incomplete, ambiguous, or missing important constraints such as limits, allowed formats, normalization, error messages, or rejection rules, pause and ask for clarification. Do not proceed with tests that merely preserve an under-specified implementation.
+8. **Test Automation:** Implement the test cases using a testing framework, preferring realistic values for input data even if they are not actively used in the test. Dedicate more attention to testing modules that have a higher cost of failure.
+9. **Test Suite Expansion:** Revisit the created tests and add new tests if deemed necessary.
 
 Before considering a functional suite complete, review it with the following gate questions:
 
 * Does each test case cover a distinct behavior, equivalence class, boundary, output, or failure mode? Remove cases that only repeat the same behavioral signal with different example data.
 * Does the suite maximize behavior variance with the minimum practical number of test cases? Prefer one representative valid case per equivalence class, plus explicit boundary and invalid cases.
+* Does each test use an appropriate public seam for the behavior under test?
+* Would the test survive an internal refactor that preserves the behavior?
 * Are boundary fixtures derived in a way that makes the boundary obvious? Use `@MethodSource` for generated values such as `"a".repeat(32)` when inline literals would be hard to count or easy to misread.
 * Is test data human-readable? Prefer direct literals such as `"Á"` over Unicode escapes such as `"\u00C1"` unless the escape itself is the behavior under test.
 * Are normalization tests justified by the domain contract? Only test Unicode normalization, separator equivalence, trimming, or canonicalization when normalization is explicitly required before saving or comparing values.
 * Are tests named and grouped by the behavior being protected, not by incidental implementation details?
 
-### 2.2. Structural Testing Approach (White-Box)
+### 2.4. Structural Testing Approach (White-Box)
 
 The structural testing technique uses the program's source code to derive test cases and acts as a complement to the functional technique. The main focus will be the **Condition/Decision** criterion.
 
+Structural tests are implementation-aware during design, but they should remain behavior-observing during execution. They may be selected because a condition exists in the code, yet they should normally exercise that condition through the same public or intentionally exposed seam a real caller uses. Do not test private methods directly as a shortcut around awkward design.
+
 1. **Code and Specification Comprehension:** Analyze the unit's source code, combining this reading with knowledge about the program's specification to understand the implementation details of the algorithms.
 2. **Decision and Condition Mapping:** Identify all decision commands. Break down compound commands to identify individual boolean conditions.
-3. **Test Requirements Definition:** Ensure that all individual conditions are exercised at least once with each possible value (true and false), and that the final results of the decisions are also exercised.
-4. **Test Case Creation:** Derive the specific input data capable of forcing the program to follow the mapped execution flows.
-5. **Automation and Coverage Analysis:** Automate the test cases. Use IDE coverage reports to verify adequacy.
-6. **Refinement and Loop Analysis:** Apply loop boundary adequacy: ensure there are test cases that execute each loop zero times, exactly once, and more than once.
+3. **Structural Seam Selection:** Select the narrowest meaningful seam that can exercise the mapped decisions. Prefer public domain/application methods, repository/specification APIs, controller endpoints, or deliberately package-private internal components. If only a private method can exercise the decision cleanly, consider extracting the behavior before writing the test.
+4. **Test Requirements Definition:** Ensure that all individual conditions are exercised at least once with each possible value (true and false), and that the final results of the decisions are also exercised.
+5. **Test Case Creation:** Derive the specific input data capable of forcing the program to follow the mapped execution flows.
+6. **Automation and Coverage Analysis:** Automate the test cases. Use IDE coverage reports to verify adequacy.
+7. **Refinement and Loop Analysis:** Apply loop boundary adequacy: ensure there are test cases that execute each loop zero times, exactly once, and more than once.
 
 ---
 
