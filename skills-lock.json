@@ -12,6 +12,12 @@
       "sourceType": "github",
       "skillPath": "skills/productivity/grilling/SKILL.md",
       "computedHash": "250c2622b0035a3536fdd8bfae5b008da473174617387306860dff8e0866dba6"
+    },
+    "handoff": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/handoff/SKILL.md",
+      "computedHash": "b7c38b5061b73217e5478f9446fc403be17ce311d4c23a108cc37b5b4604fa37"
     }
   }
 }
