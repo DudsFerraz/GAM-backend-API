@@ -63,6 +63,16 @@ Agent R is responsible for independent review. It reviews requirements, ADRs, di
 
 ---
 
+## Bug diagnosis mode
+
+Bug diagnosis mode is a separate, exceptional workflow for rare hard bugs, flaky failures, or performance regressions. Regular Agent P / Agent T / Agent D / Agent R sessions must not read or invoke `$diagnosing-bugs` just because a task mentions a bug, failing test, or broken behavior.
+
+Use `$diagnosing-bugs` only when the developer explicitly asks for that skill, diagnosis mode, deep bug diagnosis, or the separate diagnostic workflow.
+
+The diagnosis output is not a source-of-truth artifact. To turn a diagnosis into a project change, return to the regular GAM workflow: document missing or changed behavior when needed, let Agent T design regression coverage from the documented defect or requirement, let Agent D implement the fix, and let Agent R review the result.
+
+---
+
 ## Continuation notes
 
 A continuation note is an ephemeral handoff aid for moving work to a fresh agent session. When the external `$handoff` skill is available, use it to create continuation notes for fresh agent sessions. The resulting handoff document remains ephemeral and non-authoritative.

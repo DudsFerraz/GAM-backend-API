@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "diagnosing-bugs": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/diagnosing-bugs/SKILL.md",
+      "computedHash": "871aa9bd7d283910becea8f77859b469045d048ab2497d6e24e6d0e76c5fb201"
+    },
     "grill-with-docs": {
       "source": "mattpocock/skills",
       "sourceType": "github",

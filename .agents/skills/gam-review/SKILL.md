@@ -51,6 +51,7 @@ If no issues are found, say that clearly and mention remaining residual risk or 
 - Security, authorization, persistence, or data integrity risks
 - Broken API contracts or error response shape
 - Missing functional, structural, integration, API, security, or persistence tests
+- Bug fixes without a reproduced symptom, regression test or documented test-boundary gap, cleanup of debug instrumentation, or verified cause
 - Guideline violations that make future work harder
 - Documentation drift or missing ADRs for durable decisions
 

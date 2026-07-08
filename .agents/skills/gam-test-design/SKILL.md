@@ -53,4 +53,6 @@ Use this skill to design tests from documented behavior. Tests must protect the 
 - API/security tests must distinguish authentication failures from authorization failures.
 - Shared API test support, authentication, authorization, token behavior, or security configuration changes require broad verification such as full `mvn verify`.
 - If a test reveals a production defect, fix production behavior instead of weakening the test.
+- Regression tests for documented defects must fail for the original symptom before Agent D fixes it and pass after the fix.
+- If no correct regression-test boundary exists, report the gap instead of writing a misleading test.
 - Continuation notes, including handoff documents produced by `$handoff`, may summarize test context for another session, but they must reference Requirement Specifications and test files instead of replacing them.
