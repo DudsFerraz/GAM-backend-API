@@ -34,6 +34,10 @@ Use this skill for Agent P: the planning agent responsible for turning an initia
    - Summarize produced or updated docs.
    - List in-scope behavior and explicit out-of-scope boundaries.
    - List open questions and decisions still pending.
+   - When useful, propose internal implementation slices for Agent T and Agent D:
+     - Use thin, independently verifiable vertical slices through the relevant backend layers when the feature can be built incrementally.
+     - Use an expand-contract sequence for wide refactors that cannot stay green as ordinary vertical slices.
+     - For each slice, include a title, requirement IDs covered, expected behavior, acceptance signal, and blockers.
    - State that the next step is a fresh Agent T session using `$gam-test-design` to write functional tests from the accepted requirements.
 
 ## Boundaries
@@ -41,6 +45,7 @@ Use this skill for Agent P: the planning agent responsible for turning an initia
 - Do not write tests.
 - Do not implement production code.
 - Do not create PRDs or publish issue-tracker items unless the developer explicitly asks for that external workflow.
+- Do not treat implementation slices as replacement requirements; they are planning handoff notes derived from Requirement Specifications.
 - Do not infer business rules from existing implementation.
 - Do not mark Draft requirements as Accepted unless the developer explicitly approves.
 - Do not hide unresolved ambiguity; preserve it as open questions.

@@ -43,7 +43,11 @@ This workflow may be compressed for small or low-risk changes, but requirement c
 
 Agent P is responsible for the planning phase. It evaluates the request, grills the developer until shared understanding is reached, sharpens domain terminology, identifies ADR-worthy decisions, creates diagrams when useful, and produces Requirement Specifications with stable IDs, clear scope, and explicit out-of-scope boundaries.
 
-Agent P ends with a planning synthesis that summarizes the problem, intended outcome, produced documentation, in-scope behavior, out-of-scope behavior, open questions, and pending decisions. Agent P stops before tests or implementation.
+Agent P ends with a planning synthesis that summarizes the problem, intended outcome, produced documentation, in-scope behavior, out-of-scope behavior, open questions, and pending decisions.
+
+When useful after requirements are clear, Agent P may also propose internal implementation slices for Agent T and Agent D. These slices break the work into independently verifiable increments, list the requirement IDs covered, identify blockers, and describe the expected behavior for each increment. They are handoff notes only: they do not replace Requirement Specifications, do not authorize scope beyond the documented requirements, and are not published as issue-tracker items unless the developer explicitly asks for that workflow. Prefer vertical slices through the relevant backend layers; use expand-contract sequencing for wide refactors that cannot stay green as ordinary vertical slices.
+
+Agent P stops before tests or implementation.
 
 ### Agent T: test design
 
