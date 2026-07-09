@@ -1,11 +1,24 @@
 ---
 name: handoff
-description: Compact the current conversation into a handoff document for another agent to pick up.
+description: Compact the current conversation into a chat-ready handoff for another agent to copy into a fresh session.
 argument-hint: "What will the next session be used for?"
 disable-model-invocation: true
 ---
 
-Write a handoff document summarizing the current conversation so a fresh agent can continue the work. Save to the temporary directory of the user's OS - not the current workspace.
+Write a handoff directly in the chat response so the user can copy and paste it into a fresh agent session.
+
+Do not save the handoff to the repository, the OS temporary directory, or any other file unless the developer explicitly asks for a saved artifact.
+
+Make the handoff self-identifying. A fresh agent reading it should immediately recognize:
+
+- The intended next agent role.
+- The suggested skills to invoke.
+- The durable source-of-truth artifacts to read.
+- The current status.
+- The exact next action.
+- Any blockers, open questions, risks, or verification state.
+
+Keep the handoff compact. Do not restate rules that the next agent will already load from `AGENTS.md`, the suggested skill, or project documentation. Include only session-specific facts, deviations, decisions, unresolved issues, and durable artifact references.
 
 Include a "suggested skills" section in the document, which suggests skills that the agent should invoke.
 

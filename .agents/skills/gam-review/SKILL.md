@@ -57,4 +57,4 @@ If no issues are found, say that clearly and mention remaining residual risk or 
 - Guideline violations that make future work harder
 - Documentation drift or missing ADRs for durable decisions
 
-Continuation notes, including handoff documents produced by `$handoff`, may help another review session resume context, but they are not review findings or source-of-truth artifacts. Review findings must still be reported directly with file and line references when possible.
+Continuation notes, including chat handoffs produced by `$handoff`, may help another review session resume context, but they are not review findings or source-of-truth artifacts. Review findings must still be reported directly with file and line references when possible.

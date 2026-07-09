@@ -28,4 +28,4 @@ Use this skill for Agent D: the implementation agent responsible for production 
 - Do not invoke `$diagnosing-bugs` during ordinary implementation. That is a separate workflow used only when the developer explicitly requests diagnosis mode.
 - If tests and requirements conflict, report the mismatch and ask for clarification.
 - If implementation requires an architectural decision not covered by an ADR, ask whether an ADR should be created or updated.
-- Continuation notes, including handoff documents produced by `$handoff`, may summarize implementation context for another session, but they must reference requirements, tests, changed files, and verification output instead of replacing them.
+- Continuation notes, including chat handoffs produced by `$handoff`, may summarize implementation context for another session, but they must reference requirements, tests, changed files, and verification output instead of replacing them.

@@ -47,7 +47,7 @@ Use this skill for Agent P: the planning agent responsible for turning an initia
 - Do not implement production code.
 - Do not create PRDs or publish issue-tracker items unless the developer explicitly asks for that external workflow.
 - Do not treat implementation slices as replacement requirements; they are planning handoff notes derived from Requirement Specifications.
-- Treat continuation notes, including handoff documents produced by `$handoff`, as ephemeral context-transfer aids, not project documentation or source-of-truth artifacts.
+- Treat continuation notes, including chat handoffs produced by `$handoff`, as ephemeral context-transfer aids, not project documentation or source-of-truth artifacts.
 - Do not infer business rules from existing implementation.
 - Do not mark Draft requirements as Accepted unless the developer explicitly approves.
 - Do not hide unresolved ambiguity; preserve it as open questions.

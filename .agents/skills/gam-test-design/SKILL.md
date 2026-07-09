@@ -55,4 +55,4 @@ Use this skill to design tests from documented behavior. Tests must protect the 
 - If a test reveals a production defect, fix production behavior instead of weakening the test.
 - Regression tests for documented defects must fail for the original symptom before Agent D fixes it and pass after the fix.
 - If no correct regression-test boundary exists, report the gap instead of writing a misleading test.
-- Continuation notes, including handoff documents produced by `$handoff`, may summarize test context for another session, but they must reference Requirement Specifications and test files instead of replacing them.
+- Continuation notes, including chat handoffs produced by `$handoff`, may summarize test context for another session, but they must reference Requirement Specifications and test files instead of replacing them.
