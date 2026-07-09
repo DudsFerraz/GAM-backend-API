@@ -15,6 +15,8 @@ This document is not a Requirement Specification. It defines canonical terms, di
 | **Oratoriano**     | A person who attends an Oratorio. Oratorianos are usually between 5 and 20 years old, but adults can also be Oratorianos; an Oratoriano older than 25 is rare but expected at least monthly. | None                 | Oratorio frequenter, attendee    |
 | **Member**         | A lifetime member of GAM Piracicaba. A Member may become active or inactive, but does not stop being a Member because of inactivity.                                                         | None                 | Participant                      |
 | **Coordinator**    | A Member responsible for coordinating a GAM activity, team, responsibility area, or system capability. System authorization roles may reuse this domain term.                                | coord                | Admin, director                  |
+| **Account**        | A persisted identity that can authenticate to GAM. An Account is not automatically a Member, Coordinator, or any other role-bearing domain person.                                           | None                 | User account                     |
+| **displayName**    | It is how the user wants to be known. It is not a legal name, personal name, or GamName.                                                                                                     | None                 | name, full name, GamName         |
 | **GamName**        | The common primitive for a person's required name components: `firstName` and `surname`.                                                                                                     | None                 | Name, full name                  |
 | **firstName**      | The given or personal name component inside a **GamName**.                                                                                                                                   | None                 | first name                       |
 | **surname**        | The family name component inside a **GamName**.                                                                                                                                              | None                 | lastName, last name              |
@@ -29,6 +31,9 @@ This document is not a Requirement Specification. It defines canonical terms, di
 - A **Boa Tarde** happens as part of an **Oratorio**.
 - A **Coordinator** is a **Member** with coordination responsibility.
 - A **Coordinator** may inactivate a **Member** in the system because of real-life inactivity in GAM actions and events.
+- An **Account** may authenticate to GAM and may receive roles or permissions through RBAC workflows.
+- An **Account** is not automatically a **Member** or **Coordinator**.
+- A **displayName** belongs to an **Account** and must not be treated as a **GamName**.
 - A **GamName** is composed of `firstName` and `surname`.
 - **UUID** is used to identify persisted resources such as Accounts, Members, Oratorianos, Events, Locations, Roles, and Permissions.
 
