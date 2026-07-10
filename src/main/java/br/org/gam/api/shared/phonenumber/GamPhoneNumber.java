@@ -6,6 +6,7 @@ import com.google.i18n.phonenumbers.NumberParseException;
 import com.google.i18n.phonenumbers.PhoneNumberUtil;
 import com.google.i18n.phonenumbers.Phonenumber.PhoneNumber;
 import java.io.Serializable;
+import java.util.Objects;
 
 public record GamPhoneNumber(
         String value,
@@ -18,6 +19,26 @@ public record GamPhoneNumber(
     public GamPhoneNumber {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("phone number cannot be null or blank");
+        }
+
+        PhoneNumberUtil phoneUtil = PhoneNumberUtil.getInstance();
+        try {
+            PhoneNumber parsedNumber = phoneUtil.parse(value, DEFAULT_REGION);
+            if (!value.startsWith("+") || !phoneUtil.isValidNumber(parsedNumber)) {
+                throw new IllegalArgumentException("phone number is not valid or dialable");
+            }
+
+            String e164 = phoneUtil.format(parsedNumber, PhoneNumberUtil.PhoneNumberFormat.E164);
+            String national = phoneUtil.format(parsedNumber, PhoneNumberUtil.PhoneNumberFormat.NATIONAL);
+
+            if (!value.equals(e164)
+                    || !Objects.equals(nationalFormat, national)
+                    || countryCode != parsedNumber.getCountryCode()
+                    || nationalNumber != parsedNumber.getNationalNumber()) {
+                throw new IllegalArgumentException("phone number metadata does not match canonical value");
+            }
+        } catch (NumberParseException e) {
+            throw new IllegalArgumentException("phone number has invalid syntax", e);
         }
     }
 

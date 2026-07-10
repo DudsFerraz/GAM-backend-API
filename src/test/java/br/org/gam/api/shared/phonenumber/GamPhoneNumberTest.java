@@ -50,6 +50,20 @@ class GamPhoneNumberTest {
         assertCreationFails(() -> GamPhoneNumber.fromString(rawPhoneNumber));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"abc", "(19) 99887-7665", "19998877665"})
+    @DisplayName("EP - non-canonical direct value -> validation error")
+    void nonCanonicalDirectValueShouldReturnValidationError(String value) {
+        assertCreationFails(() -> new GamPhoneNumber(value, value, 0, 0));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"wrong national format", "(11) 99887-7665"})
+    @DisplayName("EP - mismatched direct metadata -> validation error")
+    void mismatchedDirectMetadataShouldReturnValidationError(String nationalFormat) {
+        assertCreationFails(() -> new GamPhoneNumber("+5519998877665", nationalFormat, 55, 19998877665L));
+    }
+
     private static void assertCreationFails(ThrowingCallable callable) {
         assertThatThrownBy(callable)
                 .isInstanceOfAny(IllegalArgumentException.class, NullPointerException.class);
