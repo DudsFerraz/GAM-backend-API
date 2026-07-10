@@ -6,7 +6,7 @@ import br.org.gam.api.member.application.MemberMapper;
 import br.org.gam.api.member.domain.Member;
 import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.persistence.MemberRepository;
-import br.org.gam.api.shared.domain.Name;
+import br.org.gam.api.shared.domain.GamName;
 import br.org.gam.api.shared.exception.ConflictException;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
@@ -33,7 +33,7 @@ public class RegisterMember {
 
         Account relatedAccount = getAccountInstance.requiredById(dto.accountId());
 
-        Name name = new Name(dto.firstName(), dto.surname());
+        GamName name = new GamName(dto.firstName(), dto.surname());
 
         Member newMember = Member.register(relatedAccount, name, dto.birthDate(), dto.phoneNumber());
 

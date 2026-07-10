@@ -3,8 +3,8 @@ package br.org.gam.api.member.persistence;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.member.domain.MemberStatus;
 import br.org.gam.api.shared.auditing.FullAuditableEntity;
-import br.org.gam.api.shared.domain.Name;
-import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
+import br.org.gam.api.shared.domain.GamName;
+import br.org.gam.api.shared.phonenumber.GamPhoneNumber;
 import jakarta.persistence.*;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -32,13 +32,13 @@ public class MemberEntity extends FullAuditableEntity {
     private AccountEntity account;
 
     @Embedded
-    private Name name;
+    private GamName name;
 
     @Column(name = "birth_date", nullable = false)
     private LocalDate birthDate;
 
     @Column(name = "phone_number")
-    private MyPhoneNumber phoneNumber;
+    private GamPhoneNumber phoneNumber;
 
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "status")

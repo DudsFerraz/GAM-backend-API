@@ -1,9 +1,9 @@
 package br.org.gam.api.member.domain;
 
 import br.org.gam.api.account.domain.Account;
-import br.org.gam.api.shared.domain.Name;
+import br.org.gam.api.shared.domain.GamName;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
-import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
+import br.org.gam.api.shared.phonenumber.GamPhoneNumber;
 import java.time.LocalDate;
 import java.time.Period;
 import java.util.Objects;
@@ -12,18 +12,18 @@ import java.util.UUID;
 public class Member {
     private UUID id;
     private Account account;
-    private Name name;
+    private GamName name;
     private LocalDate birthDate;
-    private MyPhoneNumber phoneNumber;
+    private GamPhoneNumber phoneNumber;
     private MemberStatus status;
 
     /**
      * @deprecated <b>ESTE CONSTRUTOR É EXCLUSIVO PARA USO INTERNO (JPA/MapStruct).</b>
      * <br> <br>
-     * <b> Use o método fábrica {@link #register(Account account, Name name, LocalDate birthDate, MyPhoneNumber phoneNumber)}.
+     * <b> Use o método fábrica {@link #register(Account account, GamName name, LocalDate birthDate, GamPhoneNumber phoneNumber)}.
      */
     @Deprecated
-    public Member(UUID id, Account account, Name name, LocalDate birthDate, MyPhoneNumber phoneNumber, MemberStatus status) {
+    public Member(UUID id, Account account, GamName name, LocalDate birthDate, GamPhoneNumber phoneNumber, MemberStatus status) {
         this.id = id;
         this.account = account;
         this.name = name;
@@ -32,7 +32,7 @@ public class Member {
         this.status = status;
     }
 
-    public static Member register(Account account, Name name, LocalDate birthDate, MyPhoneNumber phoneNumber){
+    public static Member register(Account account, GamName name, LocalDate birthDate, GamPhoneNumber phoneNumber){
         Objects.requireNonNull(account, "Account cannot be null.");
         Objects.requireNonNull(name, "Name cannot be null.");
         Objects.requireNonNull(birthDate, "Birth date cannot be null.");
@@ -66,7 +66,7 @@ public class Member {
         return account;
     }
 
-    public Name getName() {
+    public GamName getName() {
         return name;
     }
 
@@ -74,7 +74,7 @@ public class Member {
         return birthDate;
     }
 
-    public MyPhoneNumber getPhoneNumber() {
+    public GamPhoneNumber getPhoneNumber() {
         return phoneNumber;
     }
 

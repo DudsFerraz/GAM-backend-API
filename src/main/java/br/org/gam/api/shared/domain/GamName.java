@@ -1,11 +1,17 @@
 package br.org.gam.api.shared.domain;
 
+import jakarta.persistence.Column;
+import jakarta.persistence.Embeddable;
 import java.io.Serializable;
 import java.text.Normalizer;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
-public record GamName(String firstName, String surname) implements Serializable {
+@Embeddable
+public record GamName(
+        @Column(name = "first_name", nullable = false, length = FIRST_NAME_MAX_LENGTH) String firstName,
+        @Column(name = "surname", nullable = false, length = SURNAME_MAX_LENGTH) String surname
+) implements Serializable {
     private static final int FIRST_NAME_MAX_LENGTH = 32;
     private static final int SURNAME_MAX_LENGTH = 64;
     private static final int MIN_LETTERS = 2;

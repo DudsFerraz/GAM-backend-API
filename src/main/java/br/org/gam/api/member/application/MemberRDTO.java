@@ -2,7 +2,7 @@ package br.org.gam.api.member.application;
 
 import br.org.gam.api.account.application.AccountRDTO;
 import br.org.gam.api.member.domain.MemberStatus;
-import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
+import br.org.gam.api.shared.phonenumber.GamPhoneNumber;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -11,7 +11,7 @@ public record MemberRDTO(
         AccountRDTO account,
         String name,
         LocalDate birthDate,
-        MyPhoneNumber phoneNumber,
+        GamPhoneNumber phoneNumber,
         MemberStatus status
 ) {
 }

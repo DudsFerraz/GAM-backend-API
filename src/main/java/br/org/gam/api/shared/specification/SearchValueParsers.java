@@ -1,7 +1,7 @@
 package br.org.gam.api.shared.specification;
 
 import br.org.gam.api.account.domain.MyEmail;
-import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
+import br.org.gam.api.shared.phonenumber.GamPhoneNumber;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -62,7 +62,7 @@ public final class SearchValueParsers {
     }
 
     public static Object phoneNumberEquals(JsonNode value) {
-        return MyPhoneNumber.fromString(text(value));
+        return GamPhoneNumber.fromString(text(value));
     }
 
     public static Object phoneNumberLike(JsonNode value) {

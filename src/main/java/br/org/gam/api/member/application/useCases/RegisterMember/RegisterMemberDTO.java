@@ -1,6 +1,6 @@
 package br.org.gam.api.member.application.useCases.registerMember;
 
-import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
+import br.org.gam.api.shared.phonenumber.GamPhoneNumber;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.time.LocalDate;
@@ -11,6 +11,6 @@ public record RegisterMemberDTO(
         @NotNull @NotBlank String firstName,
         @NotNull @NotBlank String surname,
         @NotNull LocalDate birthDate,
-        @NotNull MyPhoneNumber phoneNumber
+        @NotNull GamPhoneNumber phoneNumber
 ) {
 }

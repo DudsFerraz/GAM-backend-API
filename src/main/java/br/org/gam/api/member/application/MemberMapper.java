@@ -5,7 +5,7 @@ import br.org.gam.api.member.application.useCases.registerMember.RegisterMemberR
 import br.org.gam.api.member.domain.Member;
 import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.shared.auditing.IgnoreFullAuditFields;
-import br.org.gam.api.shared.domain.Name;
+import br.org.gam.api.shared.domain.GamName;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.Named;
@@ -37,7 +37,7 @@ public interface MemberMapper {
     // =====================================================================================
 
     @Named("nameToString")
-    default String nameToString(Name name) {
+    default String nameToString(GamName name) {
         if (name == null) return null;
         return name.toString();
     }

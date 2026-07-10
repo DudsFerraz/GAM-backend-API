@@ -19,8 +19,8 @@ import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.web.MemberController;
 import br.org.gam.api.oratoriano.domain.Oratoriano;
 import br.org.gam.api.oratoriano.persistence.OratorianoEntity;
-import br.org.gam.api.shared.domain.Name;
-import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
+import br.org.gam.api.shared.domain.GamName;
+import br.org.gam.api.shared.phonenumber.GamPhoneNumber;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.StructuralTest;
 import br.org.gam.api.testing.annotation.UnitTest;
@@ -139,11 +139,11 @@ class UUIDIdentityTest {
         return Account.register(MyEmail.of("person@example.com"), "hash", "Ana Silva");
     }
 
-    private static Name name() {
-        return new Name("Ana", "Silva");
+    private static GamName name() {
+        return new GamName("Ana", "Silva");
     }
 
-    private static MyPhoneNumber phoneNumber() {
-        return MyPhoneNumber.fromString("+5519998877665");
+    private static GamPhoneNumber phoneNumber() {
+        return GamPhoneNumber.fromString("+5519998877665");
     }
 }

@@ -11,9 +11,9 @@ import br.org.gam.api.member.persistence.MemberRepository;
 import br.org.gam.api.rbac.accountRole.application.useCases.AddAccountRole;
 import br.org.gam.api.rbac.accountRole.application.useCases.DropAccountRole;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
-import br.org.gam.api.shared.domain.Name;
+import br.org.gam.api.shared.domain.GamName;
 import br.org.gam.api.shared.exception.InvalidCommandException;
-import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
+import br.org.gam.api.shared.phonenumber.GamPhoneNumber;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.time.LocalDate;
@@ -141,9 +141,9 @@ class ActivationTest {
     private static Member member(Account account) {
         return Member.register(
                 account,
-                new Name("Ana", "Silva"),
+                new GamName("Ana", "Silva"),
                 LocalDate.now().minusYears(20),
-                MyPhoneNumber.parse("+5519998877665", "BR")
+                GamPhoneNumber.fromString("+5519998877665")
         );
     }
 

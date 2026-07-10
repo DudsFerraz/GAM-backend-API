@@ -2,8 +2,8 @@ package br.org.gam.api.member.domain;
 
 import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.account.domain.MyEmail;
-import br.org.gam.api.shared.domain.Name;
-import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
+import br.org.gam.api.shared.domain.GamName;
+import br.org.gam.api.shared.phonenumber.GamPhoneNumber;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.time.LocalDate;
@@ -30,9 +30,9 @@ class MemberTest {
         @DisplayName("EP - valid registration data -> pendent member with generated identity")
         void validRegistrationDataShouldCreatePendentMemberWithGeneratedIdentity() {
             Account account = account();
-            Name name = new Name("Ana", "Silva");
+            GamName name = new GamName("Ana", "Silva");
             LocalDate birthDate = LocalDate.now().minusYears(20);
-            MyPhoneNumber phoneNumber = phoneNumber();
+            GamPhoneNumber phoneNumber = phoneNumber();
 
             Member member = Member.register(account, name, birthDate, phoneNumber);
 
@@ -48,7 +48,7 @@ class MemberTest {
         @Test
         @DisplayName("BVA - birth date today -> accepted")
         void birthDateTodayShouldBeAccepted() {
-            Member member = Member.register(account(), new Name("Ana", "Silva"), LocalDate.now(), phoneNumber());
+            Member member = Member.register(account(), new GamName("Ana", "Silva"), LocalDate.now(), phoneNumber());
 
             assertThat(member.getAge()).isZero();
         }
@@ -58,7 +58,7 @@ class MemberTest {
         void futureBirthDateShouldReturnValidationError() {
             LocalDate tomorrow = LocalDate.now().plusDays(1);
 
-            assertThatThrownBy(() -> Member.register(account(), new Name("Ana", "Silva"), tomorrow, phoneNumber()))
+            assertThatThrownBy(() -> Member.register(account(), new GamName("Ana", "Silva"), tomorrow, phoneNumber()))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessage("Birth date cannot be in the future.");
         }
@@ -68,14 +68,14 @@ class MemberTest {
         @DisplayName("EP - null account -> validation error")
         void nullAccountShouldReturnValidationError(Account account) {
             assertThatNullPointerException()
-                    .isThrownBy(() -> Member.register(account, new Name("Ana", "Silva"), LocalDate.now(), phoneNumber()))
+                    .isThrownBy(() -> Member.register(account, new GamName("Ana", "Silva"), LocalDate.now(), phoneNumber()))
                     .withMessage("Account cannot be null.");
         }
 
         @ParameterizedTest
         @NullSource
         @DisplayName("EP - null name -> validation error")
-        void nullNameShouldReturnValidationError(Name name) {
+        void nullNameShouldReturnValidationError(GamName name) {
             assertThatNullPointerException()
                     .isThrownBy(() -> Member.register(account(), name, LocalDate.now(), phoneNumber()))
                     .withMessage("Name cannot be null.");
@@ -86,23 +86,23 @@ class MemberTest {
         @DisplayName("EP - null birth date -> validation error")
         void nullBirthDateShouldReturnValidationError(LocalDate birthDate) {
             assertThatNullPointerException()
-                    .isThrownBy(() -> Member.register(account(), new Name("Ana", "Silva"), birthDate, phoneNumber()))
+                    .isThrownBy(() -> Member.register(account(), new GamName("Ana", "Silva"), birthDate, phoneNumber()))
                     .withMessage("Birth date cannot be null.");
         }
 
         @ParameterizedTest
         @NullSource
         @DisplayName("EP - null phone number -> validation error")
-        void nullPhoneNumberShouldReturnValidationError(MyPhoneNumber phoneNumber) {
+        void nullPhoneNumberShouldReturnValidationError(GamPhoneNumber phoneNumber) {
             assertThatNullPointerException()
-                    .isThrownBy(() -> Member.register(account(), new Name("Ana", "Silva"), LocalDate.now(), phoneNumber))
+                    .isThrownBy(() -> Member.register(account(), new GamName("Ana", "Silva"), LocalDate.now(), phoneNumber))
                     .withMessage("Phone number cannot be null.");
         }
 
         @Test
         @DisplayName("EP - activate pendent member -> active member")
         void activatePendentMemberShouldSetActiveStatus() {
-            Member member = Member.register(account(), new Name("Ana", "Silva"), LocalDate.now(), phoneNumber());
+            Member member = Member.register(account(), new GamName("Ana", "Silva"), LocalDate.now(), phoneNumber());
 
             member.activate();
 
@@ -112,7 +112,7 @@ class MemberTest {
         @Test
         @DisplayName("EP - deactivate member -> inactive member")
         void deactivateMemberShouldSetInactiveStatus() {
-            Member member = Member.register(account(), new Name("Ana", "Silva"), LocalDate.now(), phoneNumber());
+            Member member = Member.register(account(), new GamName("Ana", "Silva"), LocalDate.now(), phoneNumber());
 
             member.deactivate();
 
@@ -124,7 +124,7 @@ class MemberTest {
         return Account.register(MyEmail.of("member@example.com"), "encoded-password", "Member Account");
     }
 
-    private static MyPhoneNumber phoneNumber() {
-        return MyPhoneNumber.parse("+5519998877665", "BR");
+    private static GamPhoneNumber phoneNumber() {
+        return GamPhoneNumber.fromString("+5519998877665");
     }
 }

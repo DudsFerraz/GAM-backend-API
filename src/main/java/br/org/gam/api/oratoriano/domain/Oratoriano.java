@@ -1,32 +1,32 @@
 package br.org.gam.api.oratoriano.domain;
 
-import br.org.gam.api.shared.domain.Name;
+import br.org.gam.api.shared.domain.GamName;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
-import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
+import br.org.gam.api.shared.phonenumber.GamPhoneNumber;
 import java.time.LocalDate;
 import java.util.Objects;
 import java.util.UUID;
 
 public class Oratoriano {
     private UUID id;
-    private Name name;
+    private GamName name;
     private LocalDate birthDate;
-    private MyPhoneNumber phoneNumber;
+    private GamPhoneNumber phoneNumber;
 
     /**
      * @deprecated <b>ESTE CONSTRUTOR É EXCLUSIVO PARA USO INTERNO (JPA/MapStruct).</b>
      * <br> <br>
-     * <b> Use o método fábrica {@link #register(Name name, LocalDate birthDate, MyPhoneNumber phoneNumber)}.
+     * <b> Use o método fábrica {@link #register(GamName name, LocalDate birthDate, GamPhoneNumber phoneNumber)}.
      */
     @Deprecated
-    public Oratoriano(UUID id, Name name, LocalDate birthDate, MyPhoneNumber phoneNumber) {
+    public Oratoriano(UUID id, GamName name, LocalDate birthDate, GamPhoneNumber phoneNumber) {
         this.id = id;
         this.name = name;
         this.birthDate = birthDate;
         this.phoneNumber = phoneNumber;
     }
 
-    public static Oratoriano register(Name name, LocalDate birthDate, MyPhoneNumber phoneNumber) {
+    public static Oratoriano register(GamName name, LocalDate birthDate, GamPhoneNumber phoneNumber) {
         Objects.requireNonNull(name, "name cannot be null");
         if (birthDate != null && birthDate.isAfter(LocalDate.now())) throw new IllegalArgumentException("Birth date cannot be in the future.");
 
@@ -39,7 +39,7 @@ public class Oratoriano {
         this.birthDate = birthDate;
     }
 
-    public void setPhoneNumber(MyPhoneNumber phoneNumber) {
+    public void setPhoneNumber(GamPhoneNumber phoneNumber) {
         this.phoneNumber = phoneNumber;
     }
 
@@ -47,7 +47,7 @@ public class Oratoriano {
         return id;
     }
 
-    public Name getName() {
+    public GamName getName() {
         return name;
     }
 
@@ -55,7 +55,7 @@ public class Oratoriano {
         return birthDate;
     }
 
-    public MyPhoneNumber getPhoneNumber() {
+    public GamPhoneNumber getPhoneNumber() {
         return phoneNumber;
     }
 }

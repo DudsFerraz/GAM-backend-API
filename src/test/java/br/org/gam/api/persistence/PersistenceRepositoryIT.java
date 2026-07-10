@@ -15,9 +15,9 @@ import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.persistence.MemberRepository;
 import br.org.gam.api.presence.persistence.PresenceEntity;
 import br.org.gam.api.presence.persistence.PresenceRepository;
-import br.org.gam.api.shared.domain.Name;
+import br.org.gam.api.shared.domain.GamName;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
-import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
+import br.org.gam.api.shared.phonenumber.GamPhoneNumber;
 import br.org.gam.api.testing.annotation.IntegrationTest;
 import br.org.gam.api.testing.annotation.PersistenceTest;
 import br.org.gam.api.testing.integration.PostgreSQLIntegrationTest;
@@ -168,9 +168,9 @@ class PersistenceRepositoryIT extends PostgreSQLIntegrationTest {
         MemberEntity member = new MemberEntity();
         member.setId(UUIDGenerator.generateUUIDV7());
         member.setAccount(account);
-        member.setName(new Name("Ana", "Silva"));
+        member.setName(new GamName("Ana", "Silva"));
         member.setBirthDate(LocalDate.of(1995, 1, 10));
-        member.setPhoneNumber(MyPhoneNumber.fromString("+5511987654321"));
+        member.setPhoneNumber(GamPhoneNumber.fromString("+5511987654321"));
         member.setStatus(status);
         return member;
     }

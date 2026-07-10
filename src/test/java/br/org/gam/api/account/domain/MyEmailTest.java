@@ -1,6 +1,5 @@
 package br.org.gam.api.account.domain;
 
-import br.org.gam.api.shared.domain.Name;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import jakarta.validation.Validation;

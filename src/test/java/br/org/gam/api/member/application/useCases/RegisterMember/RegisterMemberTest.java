@@ -9,7 +9,7 @@ import br.org.gam.api.member.domain.MemberStatus;
 import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.persistence.MemberRepository;
 import br.org.gam.api.shared.exception.ConflictException;
-import br.org.gam.api.shared.phonenumber.MyPhoneNumber;
+import br.org.gam.api.shared.phonenumber.GamPhoneNumber;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.time.LocalDate;
@@ -58,7 +58,7 @@ class RegisterMemberTest {
         void accountWithoutMemberShouldRegisterMember() {
             UUID accountId = UUID.randomUUID();
             Account account = Account.register(MyEmail.of("member@example.com"), "encoded-password", "Member Account");
-            MyPhoneNumber phoneNumber = phoneNumber();
+            GamPhoneNumber phoneNumber = phoneNumber();
             RegisterMemberDTO dto = new RegisterMemberDTO(accountId, "Ana", "Silva", LocalDate.now().minusYears(20), phoneNumber);
             MemberEntity mappedEntity = new MemberEntity();
             MemberEntity savedEntity = new MemberEntity();
@@ -106,7 +106,7 @@ class RegisterMemberTest {
         }
     }
 
-    private static MyPhoneNumber phoneNumber() {
-        return MyPhoneNumber.parse("+5519998877665", "BR");
+    private static GamPhoneNumber phoneNumber() {
+        return GamPhoneNumber.fromString("+5519998877665");
     }
 }
