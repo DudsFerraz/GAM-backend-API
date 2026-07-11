@@ -168,8 +168,18 @@ public abstract class BaseApiIntegrationTest {
     }
 
     protected ExtractableResponse<Response> login(String email, String password) {
+        Map<String, Object> payload = loginPayload(email, password);
+        String csrfToken = jsonRequest()
+                .body(payload)
+                .post("/auth/login")
+                .then()
+                .extract()
+                .cookie("XSRF-TOKEN");
+
         return jsonRequest()
-                .body(loginPayload(email, password))
+                .cookie("XSRF-TOKEN", csrfToken)
+                .header("X-XSRF-TOKEN", csrfToken)
+                .body(payload)
                 .post("/auth/login")
                 .then()
                 .statusCode(200)

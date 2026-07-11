@@ -160,7 +160,7 @@ class PersistenceRepositoryIT extends PostgreSQLIntegrationTest {
     }
 
     private AccountEntity account(String email, String displayName) {
-        Account account = Account.register(GamEmail.of(email), "{bcrypt}hash", displayName);
+        Account account = Account.register(GamEmail.of(email), "{pbkdf2}hash", displayName);
         return accountMapper.domainToEntity(account);
     }
 

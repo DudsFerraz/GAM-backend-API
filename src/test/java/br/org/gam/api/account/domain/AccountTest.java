@@ -38,6 +38,32 @@ class AccountTest {
         }
 
         @Test
+        @DisplayName("BVA - displayName length 50 after trimming -> accepted")
+        void displayNameLength50AfterTrimmingShouldBeAccepted() {
+            String displayName = "  " + "a".repeat(50) + "  ";
+
+            Account account = Account.register(
+                    GamEmail.of("user@example.com"),
+                    "encoded-password",
+                    displayName
+            );
+
+            assertThat(account.getDisplayName()).hasSize(50).isEqualTo("a".repeat(50));
+        }
+
+        @Test
+        @DisplayName("BVA - displayName length 51 after trimming -> validation error")
+        void displayNameLength51AfterTrimmingShouldReturnValidationError() {
+            assertThatThrownBy(() -> Account.register(
+                    GamEmail.of("user@example.com"),
+                    "encoded-password",
+                    "a".repeat(51)
+            ))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Display name cannot exceed 50 characters.");
+        }
+
+        @Test
         @DisplayName("EP - null email -> validation error")
         void nullEmailShouldReturnValidationError() {
             assertThatNullPointerException()

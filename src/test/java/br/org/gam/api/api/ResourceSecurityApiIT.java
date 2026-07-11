@@ -36,6 +36,33 @@ class ResourceSecurityApiIT extends BaseApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("malformed bearer token -> HTTP 401")
+    void malformedBearerTokenShouldReturnUnauthorized() {
+        jsonRequest()
+                .header("Authorization", "Bearer not-a-jwt")
+                .get("/accounts/{id}", UUID.randomUUID())
+                .then()
+                .statusCode(401)
+                .body("status", equalTo(401))
+                .body("message", containsString("Authentication failed"));
+    }
+
+    @Test
+    @DisplayName("bearer token for deleted Account -> HTTP 401")
+    void bearerTokenForDeletedAccountShouldReturnUnauthorized() {
+        AuthSession session = registerAndLogin(null);
+        softDeleteAccount(session.accountId());
+
+        jsonRequest()
+                .header("Authorization", "Bearer " + session.accessToken())
+                .get("/accounts/{id}", session.accountId())
+                .then()
+                .statusCode(401)
+                .body("status", equalTo(401))
+                .body("message", containsString("Authentication failed"));
+    }
+
+    @Test
     @DisplayName("missing permission -> HTTP 403")
     void missingPermissionShouldReturnForbidden() {
         AuthSession member = registerAndLogin("MEMBER");
