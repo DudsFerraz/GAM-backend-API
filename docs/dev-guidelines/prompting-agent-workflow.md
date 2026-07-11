@@ -65,12 +65,6 @@ After Agent P finishes, keep Agent T and Agent D in separate open chat sessions 
 4. Use a return-to-Agent-D handoff to return to the same Agent D chat and fix bugs exposed by Agent T's expanded suite.
 5. Repeat the Agent T and Agent D handoff until the agreed verification scope is satisfied.
 
-When switching between Agent T and Agent D, reference the relevant handoff data: changed files, test files, test output, requirement IDs, and any unresolved questions. Do not merge the roles into one chat.
-
-Fresh-agent handoffs should identify the next role, suggested skill, source-of-truth artifacts, current status, verification state, and open questions or risks.
-
-Return-to-same-chat handoffs should be shorter. The receiving Agent T or Agent D chat already has the earlier role and requirement context, so include only valuable new context: current status, changed files, verification changes, important scope notes, and open questions or risks.
-
 ## Agent R: review
 
 Use Agent R after implementation and tests are ready for review.
