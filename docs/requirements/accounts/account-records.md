@@ -238,7 +238,7 @@ Scenario: Account response excludes audit metadata
 * Account registration, login, refresh, logout, and password management.
 * Email verification and invitation flows.
 * Account mutation, deactivation, restoration, or deletion workflows.
-* Role assignment and removal workflows.
+* Role assignment and removal workflows; see [Account Role Management](../rbac/account-role-management.md).
 * Activity-log or action-history reads.
 * Row audit metadata reads for Account records or other domain models.
 * Developer maintenance access to soft-deleted Accounts.

@@ -56,7 +56,7 @@ The RBAC catalog shall maintain a code-defined registry of system permissions. T
 | Area | Permission codes |
 | --- | --- |
 | Members | `MEMBER_GET`, `MEMBER_SEARCH`, `MEMBER_ACTIVATION`, `MEMBER_GET_NON_ACTIVE`, `MEMBER_MANAGE` |
-| Accounts | `ACCOUNT_GET`, `ACCOUNT_SEARCH` |
+| Accounts | `ACCOUNT_GET`, `ACCOUNT_SEARCH`, `ACCOUNT_ROLE_MANAGE` |
 | Events | `EVENT_CREATE`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `EVENT_GET_COORD`, `EVENT_MANAGE` |
 | Presences | `PRESENCES_SEARCH` |
 | RBAC catalog | `ROLE_GET`, `PERMISSION_GET` |
@@ -99,6 +99,8 @@ The current baseline shall seed these active permission bundles:
 | `COORD` | Every permission in the current system permission registry. |
 | `MEMBER` | `MEMBER_GET`, `ACCOUNT_GET`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, and `EVENT_GET_MEMBER`. |
 | `VISITOR` | No permissions. |
+
+The `ACCOUNT_ROLE_MANAGE` permission is included in the `SUDO` and `COORD` bundles through their all-permissions baseline and is not included in the `MEMBER` or `VISITOR` bundles.
 
 The cumulative event-view behavior shall be produced by seeded links, not by runtime role inheritance:
 
@@ -413,8 +415,6 @@ flowchart LR
 
 * Role creation, editing, disabling, deletion, or restoration.
 * Permission creation, editing, disabling, deletion, or restoration.
-* Account role assignment and removal, including developer-controlled SUDO maintenance.
-* Lockout-prevention policy for SUDO and Coordinator coverage.
 * Collection, search, or pagination endpoints for roles or permissions.
 * Event creation, editing, cancellation, and request validation beyond the permission-reference contract in `REQ-RBAC-011`.
 * Reading soft-deleted records through HTTP.
