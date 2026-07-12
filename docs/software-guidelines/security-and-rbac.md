@@ -88,10 +88,13 @@ mvn spring-boot:run -Dspring-boot.run.profiles=maintenance -Dspring-boot.run.arg
 
 The application enforces strict invariants to prevent accidental or malicious system lockouts. These checks are executed in the application layer (inside `RbacSafetyPolicy`) within the same transaction as the mutation.
 
-**The Hard Invariant:** At least one active account must possess the `SUDO` role at all times.
+**The current hard invariant for explicit SUDO role removal:** At least one active account must possess the `SUDO` role after every committed SUDO role removal.
 
 The system will block and throw a `ForbiddenOperationException` for the following actions:
 
 1. Removing the last active `SUDO` account role.
-2. Deactivating or disabling the last active `SUDO` account.
-3. A Coordinator attempting to remove their own last coordination capability when no other active Coordinator exists in the system.
+2. A Coordinator attempting to remove their own last coordination capability when no other active Coordinator exists in the system.
+
+An Account with an active `SUDO` assignment is exempt from the self-Coordinator protection and may remove the final active `COORD` assignment.
+
+Account deactivation, disabling, deletion, and restoration while an Account has SUDO are outside the current Account-role requirements. They require a separate accepted Requirement Specification before any protection rule is inferred or implemented.

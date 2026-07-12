@@ -11,11 +11,18 @@ This Requirement Specification was created after the Account-role implementation
 
 Roles remain permission bundles; authorization decisions must use permissions rather than role names. The `ACCOUNT_ROLE_MANAGE` permission is part of the RBAC catalog and shall be seeded for the baseline `SUDO` and `COORD` roles, but not for `MEMBER` or `VISITOR`.
 
+`SUDO` is a developer-controlled unrestricted-access role. Its assignment and removal require a separate maintenance workflow because ordinary Account-role administration must not be able to remove the application's developer recovery path.
+
 ## Ubiquitous Language
 
+- `active Account`: An Account that is not soft-deleted and is visible through ordinary application reads.
+- `active Role`: A Role that is not soft-deleted and is visible through ordinary application reads.
 - `active Account-role assignment`: A non-deleted association between an active Account and an active Role.
 - `Account-role collection`: The active roles assigned to one Account, returned as a top-level `roles` list.
 - `drop`: The user-facing action that removes an active Account-role assignment while preserving the historical assignment through the technical soft-delete mechanism.
+- `active SUDO assignment`: An active Account-role assignment whose Role is `SUDO`.
+- `SUDO maintenance operation`: A developer-controlled assignment or removal of an active SUDO assignment through the dedicated maintenance workflow.
+- `maintenance Account selector`: Exactly one Account UUID or Account email supplied to identify the target Account for a SUDO maintenance operation.
 
 ## Functional requirements
 
@@ -93,7 +100,7 @@ Invalid examples:
 
 The system shall require an active Account and an active Role. A missing or soft-deleted Account shall return `404 Not Found` for the Account resource. A missing or soft-deleted Role shall return `404 Not Found` for the Role resource.
 
-The system shall reject adding `SUDO` through this API with `403 Forbidden`. SUDO assignment is developer-controlled maintenance behavior.
+The system shall reject adding `SUDO` through this API with `403 Forbidden`. SUDO assignment is developer-controlled maintenance behavior; see REQ-ACCOUNT-ROLE-009 through REQ-ACCOUNT-ROLE-013.
 
 The system shall reject an existing active Account-role assignment with `409 Conflict` and shall not create a second active assignment or activity-log record.
 
@@ -147,7 +154,7 @@ Invalid examples:
 
 The system shall require an active Account-role assignment for the requested Account and Role. If the Account, Role, or active assignment is missing or soft-deleted, the API shall return `404 Not Found` and shall not mutate data.
 
-The system shall reject dropping `SUDO` through this API with `403 Forbidden`. SUDO removal is developer-controlled maintenance behavior.
+The system shall reject dropping `SUDO` through this API with `403 Forbidden`. SUDO removal is developer-controlled maintenance behavior; see REQ-ACCOUNT-ROLE-009 through REQ-ACCOUNT-ROLE-013.
 
 On success, the system shall soft-delete the active assignment, return `204 No Content`, and make the assignment absent from subsequent Account-role lists. The historical assignment shall remain available only to developer-controlled maintenance workflows.
 
@@ -167,13 +174,13 @@ Invalid examples:
 
 ### REQ-ACCOUNT-ROLE-005: Required and bounded audit reason
 
-The `reason` field shall be required for both add and drop requests. The system shall trim leading and trailing whitespace before validation and audit logging.
+The `reason` field shall be required for direct Account-role add and drop requests and for SUDO maintenance assignment and removal commands. The system shall trim leading and trailing whitespace before validation and audit logging.
 
-After trimming, `reason` shall contain between 1 and 2,000 characters. A null, empty, whitespace-only, or over-2,000-character reason shall return `400 Bad Request` before Account or Role loading, data mutation, or activity-event publication.
+After trimming, `reason` shall contain between 1 and 2,000 characters. For direct HTTP requests, a null, empty, whitespace-only, or over-2,000-character reason shall return `400 Bad Request`. For SUDO maintenance commands, the same invalid values shall reject the command before Account or Role loading, data mutation, or activity-event publication.
 
 The maximum is an application-level request limit. The current `activity_logs.reason` database column is `TEXT` and therefore does not define a smaller numeric column limit.
 
-The list operation shall not accept or require a reason.
+The list operation shall not accept or require a reason. Invalid SUDO maintenance reasons shall be rejected before the target Account or Role is loaded or any mutation is attempted.
 
 Rationale:
 Security changes require explicit human intent. A bounded reason keeps the API payload and audit entry useful while remaining independent of an unbounded database `TEXT` column.
@@ -229,6 +236,7 @@ All Account-role mutation workflows shall enforce these protections transactiona
 - HTTP callers shall not add or drop `SUDO`.
 - Developer-controlled SUDO maintenance shall not drop the last active Account-role assignment for `SUDO`.
 - A Coordinator shall not drop the `COORD` role from their own Account when no other active Account has the `COORD` role.
+- An Account with an active `SUDO` assignment is exempt from the self-Coordinator protection and may remove the final active `COORD` assignment, including from its own Account.
 
 Violations shall return or raise a forbidden-operation outcome and shall not mutate the assignment.
 
@@ -242,6 +250,110 @@ Valid examples:
 Invalid examples:
 - Developer maintenance drops the last active SUDO assignment.
 - A Coordinator drops their own COORD role when they are the only active COORD Account.
+
+The SUDO protection in this Requirement Specification applies to explicit SUDO role assignment and removal only. Account deactivation, disabling, deletion, and restoration policies are outside this feature.
+
+---
+
+### REQ-ACCOUNT-ROLE-009: Maintenance-only SUDO management
+
+The system shall make SUDO assignment and removal available only through the dedicated maintenance workflow running with the `maintenance` profile.
+
+The HTTP Account-role API and ordinary application workflows shall reject SUDO assignment and removal with a forbidden-operation outcome. The dedicated maintenance workflow shall support only the `assign-sudo` and `remove-sudo` actions.
+
+Rationale:
+SUDO grants unrestricted system access and must not be manageable through ordinary authenticated administration or an accidental general-purpose application path.
+
+Valid examples:
+- A Developer invokes the dedicated maintenance workflow with `assign-sudo`.
+- A Developer invokes the dedicated maintenance workflow with `remove-sudo`.
+
+Invalid examples:
+- A Coordinator assigns SUDO through the Account-role HTTP API.
+- An ordinary application workflow invokes SUDO assignment or removal.
+- A maintenance invocation uses an unsupported action name.
+
+---
+
+### REQ-ACCOUNT-ROLE-010: SUDO maintenance target selection
+
+Each SUDO maintenance operation shall require exactly one `maintenance Account selector`: either the target Account UUID or the target Account email.
+
+The system shall reject an invocation that supplies both selectors, neither selector, or a blank selector before any SUDO mutation. The selected Account shall be an active Account; an Account that cannot be resolved through ordinary active-record visibility shall not receive or lose SUDO through this workflow.
+
+Rationale:
+An explicit, exclusive target selector prevents ambiguous maintenance commands and reduces the risk of changing the wrong Account.
+
+Valid examples:
+- `assign-sudo` identifies an active Account by UUID.
+- `remove-sudo` identifies an active Account by email.
+
+Invalid examples:
+- Supplying both Account UUID and Account email.
+- Supplying neither selector.
+- Supplying a blank selector.
+- Selecting a missing or soft-deleted Account.
+
+---
+
+### REQ-ACCOUNT-ROLE-011: SUDO maintenance assignment
+
+The `assign-sudo` maintenance action shall create one active SUDO assignment for the selected active Account.
+
+If the Account already has an active SUDO assignment, the system shall reject the operation with a conflict outcome, shall not create a duplicate assignment, and shall not emit an Account-role activity event. If a previous SUDO assignment was dropped, a later assignment shall create a new active assignment identity.
+
+On success, the system shall emit exactly one `ACCOUNT_ROLE_ADDED` activity event containing the selected Account, the SUDO Role, and the normalized audit reason.
+
+Rationale:
+SUDO assignment must be explicit and auditable while preserving the history of previously removed authority.
+
+Valid examples:
+- Maintenance assigns SUDO to an active Account without an active SUDO assignment.
+- Maintenance assigns SUDO again after an earlier SUDO assignment was dropped, creating a new assignment identity.
+
+Invalid examples:
+- Maintenance assigns SUDO to an Account that already has active SUDO.
+- Maintenance assigns SUDO to a missing or soft-deleted Account.
+
+---
+
+### REQ-ACCOUNT-ROLE-012: SUDO maintenance removal
+
+The `remove-sudo` maintenance action shall remove only an active SUDO assignment from the selected Account.
+
+If the selected Account has no active SUDO assignment, the system shall reject the operation with a not-found outcome, shall not mutate any assignment, and shall not emit an Account-role activity event.
+
+On success, the system shall soft-delete the active SUDO assignment and emit exactly one `ACCOUNT_ROLE_REMOVED` activity event containing the selected Account, the SUDO Role, and the normalized audit reason.
+
+Rationale:
+Removal must target a currently effective SUDO assignment and preserve the historical security change without making a missing removal appear successful.
+
+Valid examples:
+- Maintenance removes SUDO from one of several active SUDO Accounts.
+
+Invalid examples:
+- Maintenance removes SUDO from an Account that does not currently have SUDO.
+- Maintenance removes a non-SUDO Role through the SUDO maintenance workflow.
+
+---
+
+### REQ-ACCOUNT-ROLE-013: Last-SUDO protection
+
+The system shall reject a SUDO removal that would leave no active SUDO assignment. The rejected operation shall not mutate the assignment or emit an Account-role activity event.
+
+The system shall evaluate and serialize this invariant transactionally so concurrent SUDO maintenance removals cannot remove every active SUDO assignment. At least one active SUDO assignment shall remain after every committed SUDO removal.
+
+This requirement governs explicit SUDO role removal only. It does not govern Account deactivation, disabling, deletion, or restoration.
+
+Rationale:
+The application must retain a developer recovery path even when multiple maintenance operations are attempted concurrently.
+
+Valid examples:
+- Maintenance removes one SUDO assignment while another active SUDO assignment remains.
+
+Invalid examples:
+- Maintenance removes the last active SUDO assignment.
+- Two concurrent removals both succeed when only two active SUDO assignments existed.
 
 ## Acceptance scenarios
 
@@ -310,11 +422,42 @@ Scenario: HTTP cannot manage SUDO
   Then the system returns 403 Forbidden
   And no assignment is mutated
 
+Scenario: SUDO management requires the maintenance workflow
+  Given a SUDO assignment or removal is requested
+  When the request is not made through the dedicated maintenance workflow
+  Then the system rejects the operation with a forbidden-operation outcome
+  And no assignment is mutated
+
+Scenario: Maintenance requires exactly one Account selector
+  Given a Developer invokes a SUDO maintenance action
+  When the invocation supplies both an Account UUID and an Account email, or supplies neither
+  Then the system rejects the invocation before mutation
+
+Scenario: Duplicate SUDO assignment is rejected
+  Given an active Account already has an active SUDO assignment
+  When maintenance invokes `assign-sudo` for that Account with a valid reason
+  Then the system rejects the operation with a conflict outcome
+  And no second active assignment is created
+  And no Account-role activity event is recorded
+
+Scenario: Missing SUDO assignment cannot be removed
+  Given an active Account has no active SUDO assignment
+  When maintenance invokes `remove-sudo` for that Account with a valid reason
+  Then the system rejects the operation with a not-found outcome
+  And no assignment is mutated
+  And no Account-role activity event is recorded
+
 Scenario: Last active SUDO cannot be removed by maintenance
   Given exactly one active Account has the SUDO role
   When developer maintenance tries to drop that SUDO assignment
   Then the system rejects the operation with a forbidden-operation outcome
   And the SUDO assignment remains active
+
+Scenario: Concurrent SUDO removals preserve one active SUDO assignment
+  Given exactly two active Accounts have the SUDO role
+  When maintenance concurrently tries to remove SUDO from both Accounts
+  Then at most one removal succeeds
+  And at least one SUDO assignment remains active
 
 Scenario: Coordinator cannot remove the only COORD capability from self
   Given the caller is a Coordinator
@@ -323,13 +466,21 @@ Scenario: Coordinator cannot remove the only COORD capability from self
   When the caller drops COORD from their own Account
   Then the system rejects the operation with a forbidden-operation outcome
   And the COORD assignment remains active
+
+Scenario: SUDO can remove the final COORD capability
+  Given the caller has an active SUDO assignment
+  And the caller Account also has the COORD role
+  And no other active Account has the COORD role
+  When the caller drops COORD from their own Account
+  Then the system returns a successful drop outcome
+  And the COORD assignment is soft-deleted
 ```
 
 ## Diagrams
 
 ```mermaid
 flowchart TD
-    Request[Account-role request] --> Auth{Authenticated?}
+    Request[HTTP Account-role request] --> Auth{Authenticated?}
     Auth -- No --> Unauthorized[401 Unauthorized]
     Auth -- Yes --> Permission{Required permission present?}
     Permission -- No --> Forbidden[403 Forbidden]
@@ -345,17 +496,41 @@ flowchart TD
     ReasonDrop -- No --> BadRequest
     ReasonAdd -- Yes --> AddTargets{Active Account and Role exist?}
     AddTargets -- No --> NotFound
-    AddTargets -- Yes --> Duplicate{Active assignment exists?}
+    AddTargets -- Yes --> HttpSudoAdd{SUDO role?}
+    HttpSudoAdd -- Yes --> Forbidden
+    HttpSudoAdd -- No --> Duplicate{Active assignment exists?}
     Duplicate -- Yes --> Conflict[409 Conflict]
-    Duplicate -- No --> AddSafety{SUDO or lockout violation?}
+    Duplicate -- No --> AddSafety{Lockout violation?}
     AddSafety -- Yes --> Forbidden
     AddSafety -- No --> Add[Create assignment and audit]
 
     ReasonDrop -- Yes --> Assignment{Active assignment exists?}
     Assignment -- No --> NotFound
-    Assignment -- Yes --> DropSafety{SUDO or lockout violation?}
+    Assignment -- Yes --> HttpSudoDrop{SUDO role?}
+    HttpSudoDrop -- Yes --> Forbidden
+    HttpSudoDrop -- No --> DropSafety{Lockout violation?}
     DropSafety -- Yes --> Forbidden
     DropSafety -- No --> Drop[Soft-delete assignment and audit]
+
+    Maintenance[Maintenance command] --> Profile{maintenance profile?}
+    Profile -- No --> MaintenanceRejected[Reject SUDO mutation]
+    Profile -- Yes --> Action{assign-sudo or remove-sudo?}
+    Action -- No --> InvalidCommand[Reject invalid command]
+    Action -- Yes --> Selector{Exactly one Account selector?}
+    Selector -- No --> InvalidCommand
+    Selector -- Yes --> MaintenanceReason{Reason valid?}
+    MaintenanceReason -- No --> BadReason[Reject invalid reason]
+    MaintenanceReason -- Yes --> Target{Active Account resolves?}
+    Target -- No --> MaintenanceNotFound[Reject missing Account]
+    Target -- Yes --> SudoAction{Assign or remove?}
+    SudoAction -- Assign --> SudoDuplicate{Active SUDO exists?}
+    SudoDuplicate -- Yes --> Conflict
+    SudoDuplicate -- No --> SudoAdd[Create SUDO assignment and audit]
+    SudoAction -- Remove --> SudoAssignment{Active SUDO assignment exists?}
+    SudoAssignment -- No --> MaintenanceNotFound
+    SudoAssignment -- Yes --> LastSudo{Last active SUDO?}
+    LastSudo -- Yes --> MaintenanceForbidden[Reject and preserve SUDO]
+    LastSudo -- No --> SudoDrop[Soft-delete SUDO assignment and audit]
 ```
 
 ## Open questions
@@ -377,7 +552,7 @@ flowchart TD
 
 ## Related ADRs
 
-* None at this time.
+* [ADR-0002: Serialize last-SUDO removal decisions](../../decisions/0002-serialize-last-sudo-removal.md)
 
 ## Related requirements
 
