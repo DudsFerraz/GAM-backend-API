@@ -9,6 +9,7 @@ import br.org.gam.api.rbac.role.domain.SystemRole;
 import br.org.gam.api.rbac.role.persistence.RoleEntity;
 import br.org.gam.api.rbac.rolePermission.persistence.RolePermissionEntity;
 import br.org.gam.api.shared.exception.ForbiddenOperationException;
+import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.util.List;
@@ -83,6 +84,22 @@ class RbacSafetyPolicyTest {
 
             assertThatCode(() -> policy.assertCanRemoveSudoThroughInternalService(target))
                     .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("REQ-ACCOUNT-ROLE-012 - stale SUDO removal -> not found")
+        void staleSudoRemovalShouldBeNotFound() {
+            RbacSafetyPolicy policy = new RbacSafetyPolicy(accountRoleRepo);
+            UUID targetAccountId = UUID.randomUUID();
+            AccountRoleEntity staleTarget = accountRole(SystemRole.SUDO.getCode(), targetAccountId);
+            AccountRoleEntity remainingSudo = accountRole(SystemRole.SUDO.getCode(), UUID.randomUUID());
+            when(accountRoleRepo.lockActiveAccountRolesByRoleName(SystemRole.SUDO.getCode()))
+                    .thenReturn(List.of(remainingSudo));
+
+            assertThatThrownBy(() -> policy.assertCanRemoveSudoThroughInternalService(staleTarget))
+                    .isInstanceOf(NotFoundException.class)
+                    .hasMessage("AccountRole not found with identifier "
+                            + targetAccountId + ":" + staleTarget.getRole().getId());
         }
 
         @Test

@@ -47,6 +47,7 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
             "MEMBER_MANAGE",
             "ACCOUNT_GET",
             "ACCOUNT_SEARCH",
+            "ACCOUNT_ROLE_MANAGE",
             "EVENT_CREATE",
             "EVENT_SEARCH",
             "EVENT_GET_PRESENCES",
@@ -94,6 +95,8 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
         assertThat(activePermissionCodesForRole("COORD")).containsExactlyInAnyOrderElementsOf(BASELINE_PERMISSIONS);
         assertThat(activePermissionCodesForRole("MEMBER")).containsExactlyInAnyOrderElementsOf(MEMBER_PERMISSIONS);
         assertThat(activePermissionCodesForRole("VISITOR")).isEmpty();
+        assertThat(activePermissionCodesForRole("MEMBER")).doesNotContain("ACCOUNT_ROLE_MANAGE");
+        assertThat(activePermissionCodesForRole("VISITOR")).doesNotContain("ACCOUNT_ROLE_MANAGE");
     }
 
     @Test

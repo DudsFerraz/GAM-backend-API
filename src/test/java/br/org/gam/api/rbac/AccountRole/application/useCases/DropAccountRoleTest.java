@@ -17,9 +17,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InjectMocks;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.Mock;
+
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
@@ -88,6 +92,67 @@ class DropAccountRoleTest {
             verify(accountRoleRepo, never()).delete(org.mockito.ArgumentMatchers.any());
         }
 
+        @ParameterizedTest
+        @MethodSource("invalidReasons")
+        @DisplayName("REQ-ACCOUNT-ROLE-005 - invalid reason -> rejected before loading or mutation")
+        void invalidReasonShouldBeRejectedBeforeLoadingOrMutation(String reason) {
+            AccountRoleDTO dto = new AccountRoleDTO(UUID.randomUUID(), UUID.randomUUID(), reason);
+
+            assertThatThrownBy(() -> dropAccountRole.byDTO(dto))
+                    .isInstanceOf(InvalidCommandException.class);
+
+            verifyNoInteractions(
+                    getAccountRoleInstance,
+                    accountRoleRepo,
+                    getRoleInstance,
+                    activityEvents,
+                    rbacSafetyPolicy
+            );
+        }
+
+        @Test
+        @DisplayName("REQ-ACCOUNT-ROLE-005 - maximum reason length -> accepted after trimming")
+        void maximumReasonLengthShouldBeAcceptedAfterTrimming() {
+            UUID accountId = UUID.randomUUID();
+            UUID roleId = UUID.randomUUID();
+            String reason = "a".repeat(2_000);
+            AccountRoleDTO dto = new AccountRoleDTO(accountId, roleId, " " + reason + " ");
+            AccountRoleEntity entity = new AccountRoleEntity();
+            entity.setId(UUID.randomUUID());
+            RoleEntity role = new RoleEntity();
+            role.setId(roleId);
+            role.setName("ADMIN");
+            entity.setRole(role);
+
+            when(getAccountRoleInstance.requiredByDTO(dto)).thenReturn(entity);
+
+            dropAccountRole.byDTO(dto);
+
+            verify(activityEvents).accountRoleRemoved(
+                    entity.getId(), accountId, roleId, "ADMIN", reason);
+        }
+
+        @Test
+        @DisplayName("REQ-ACCOUNT-ROLE-007 - non-direct workflow drop -> no Account-role audit event")
+        void nonDirectWorkflowDropShouldNotPublishAccountRoleAuditEvent() {
+            UUID accountId = UUID.randomUUID();
+            UUID roleId = UUID.randomUUID();
+            AccountRoleDTO dto = new AccountRoleDTO(accountId, roleId, null);
+            AccountRoleEntity entity = new AccountRoleEntity();
+            entity.setId(UUID.randomUUID());
+            RoleEntity role = new RoleEntity();
+            role.setId(roleId);
+            role.setName("ADMIN");
+            entity.setRole(role);
+
+            when(getAccountRoleInstance.requiredByDTO(dto)).thenReturn(entity);
+
+            dropAccountRole.byDTO(dto, false);
+
+            verify(accountRoleRepo).delete(entity);
+            verifyNoInteractions(activityEvents);
+        }
+
         @Test
         @DisplayName("EP - missing account role -> not found error")
         void missingAccountRoleShouldReturnNotFoundError() {
@@ -141,6 +206,10 @@ class DropAccountRoleTest {
 
             verifyNoInteractions(getAccountRoleInstance);
             verify(accountRoleRepo, never()).delete(org.mockito.ArgumentMatchers.any());
+        }
+
+        private static Stream<String> invalidReasons() {
+            return Stream.of(null, "", " \n\t", "a".repeat(2_001));
         }
     }
 }

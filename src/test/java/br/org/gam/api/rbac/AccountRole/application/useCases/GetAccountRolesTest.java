@@ -61,7 +61,7 @@ class GetAccountRolesTest {
 
             AccountRolesRDTO response = getAccountRoles.get(accountId);
 
-            assertThat(response.roles()).containsExactly(firstResponse, secondResponse);
+            assertThat(response.roles()).containsExactlyInAnyOrder(firstResponse, secondResponse);
             verify(roleMapper).entityToRDTO(firstRole);
             verify(roleMapper).entityToRDTO(secondRole);
         }

@@ -92,6 +92,7 @@ class ActivationTest {
                     "MEMBER",
                     "VISITOR"
             );
+            org.mockito.Mockito.verifyNoMoreInteractions(activityEvents);
         }
 
         @Test
@@ -123,6 +124,7 @@ class ActivationTest {
                     "MEMBER",
                     "No longer participates"
             );
+            org.mockito.Mockito.verifyNoMoreInteractions(activityEvents);
         }
 
         @Test

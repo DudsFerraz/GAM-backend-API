@@ -23,10 +23,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.Mock;
+
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -112,6 +116,73 @@ class AddAccountRoleTest {
             verify(accountRoleRepo, never()).save(any());
         }
 
+        @ParameterizedTest
+        @MethodSource("invalidReasons")
+        @DisplayName("REQ-ACCOUNT-ROLE-005 - invalid reason -> rejected before loading or mutation")
+        void invalidReasonShouldBeRejectedBeforeLoadingOrMutation(String reason) {
+            AccountRoleDTO dto = new AccountRoleDTO(UUID.randomUUID(), UUID.randomUUID(), reason);
+
+            assertThatThrownBy(() -> addAccountRole.byDTO(dto))
+                    .isInstanceOf(InvalidCommandException.class);
+
+            verifyNoInteractions(
+                    accountRoleRepo,
+                    getAccountInstance,
+                    getRoleInstance,
+                    accountRoleMapper,
+                    activityEvents,
+                    rbacSafetyPolicy
+            );
+        }
+
+        @Test
+        @DisplayName("REQ-ACCOUNT-ROLE-005 - maximum reason length -> accepted after trimming")
+        void maximumReasonLengthShouldBeAcceptedAfterTrimming() {
+            AccountEntity account = account();
+            RoleEntity role = role();
+            String reason = "a".repeat(2_000);
+            AccountRoleDTO dto = new AccountRoleDTO(
+                    account.getId(),
+                    role.getId(),
+                    " " + reason + " "
+            );
+            AccountRoleEntity savedEntity = new AccountRoleEntity();
+            savedEntity.setId(UUID.randomUUID());
+            AccountRoleRDTO expectedResponse = response(role.getId());
+
+            when(getAccountInstance.requiredById(account.getId())).thenReturn(account);
+            when(getRoleInstance.requiredById(role.getId())).thenReturn(role);
+            when(accountRoleRepo.existsByAccount_IdAndRole_Id(account.getId(), role.getId())).thenReturn(false);
+            when(accountRoleRepo.save(anyAccountRoleEntity())).thenReturn(savedEntity);
+            when(accountRoleMapper.entityToRDTO(savedEntity)).thenReturn(expectedResponse);
+
+            assertThat(addAccountRole.byDTO(dto)).isSameAs(expectedResponse);
+
+            verify(activityEvents).accountRoleAdded(
+                    savedEntity.getId(), account.getId(), role.getId(), role.getName(), reason);
+        }
+
+        @Test
+        @DisplayName("REQ-ACCOUNT-ROLE-007 - non-direct workflow add -> no Account-role audit event")
+        void nonDirectWorkflowAddShouldNotPublishAccountRoleAuditEvent() {
+            AccountEntity account = account();
+            RoleEntity role = role();
+            AccountRoleDTO dto = new AccountRoleDTO(account.getId(), role.getId(), null);
+            AccountRoleEntity savedEntity = new AccountRoleEntity();
+            savedEntity.setId(UUID.randomUUID());
+            AccountRoleRDTO expectedResponse = response(role.getId());
+
+            when(getAccountInstance.requiredById(account.getId())).thenReturn(account);
+            when(getRoleInstance.requiredById(role.getId())).thenReturn(role);
+            when(accountRoleRepo.existsByAccount_IdAndRole_Id(account.getId(), role.getId())).thenReturn(false);
+            when(accountRoleRepo.save(anyAccountRoleEntity())).thenReturn(savedEntity);
+            when(accountRoleMapper.entityToRDTO(savedEntity)).thenReturn(expectedResponse);
+
+            addAccountRole.byDTO(dto, false);
+
+            verifyNoInteractions(activityEvents);
+        }
+
         @Test
         @DisplayName("EP - account already has role -> conflict error")
         void accountAlreadyHasRoleShouldReturnConflictError() {
@@ -191,6 +262,10 @@ class AddAccountRoleTest {
             verify(activityEvents).accountRoleAdded(
                     savedEntity.getId(), account.getId(), role.getId(), role.getName(), "Grant admin access");
         }
+
+        private static Stream<String> invalidReasons() {
+            return Stream.of(null, "", " \n\t", "a".repeat(2_001));
+        }
     }
 
     private static AccountEntity account() {
@@ -217,4 +292,5 @@ class AddAccountRoleTest {
     private static AccountRoleEntity anyAccountRoleEntity() {
         return org.mockito.ArgumentMatchers.any(AccountRoleEntity.class);
     }
+
 }
