@@ -18,9 +18,11 @@ import br.org.gam.api.shared.exception.InvalidCommandException;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
 import jakarta.transaction.Transactional;
 import java.util.UUID;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
 @Service
+@Profile("maintenance")
 public class ManageSudoRole {
     private final AccountEntityLoader accountEntityLoader;
     private final RoleEntityLoader roleEntityLoader;

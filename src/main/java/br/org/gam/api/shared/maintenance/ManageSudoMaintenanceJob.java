@@ -3,7 +3,6 @@ package br.org.gam.api.shared.maintenance;
 import br.org.gam.api.account.application.AccountEntityLoader;
 import br.org.gam.api.shared.domain.GamEmail;
 import br.org.gam.api.rbac.accountRole.application.useCases.ManageSudoRole;
-import jakarta.transaction.Transactional;
 import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -34,7 +33,6 @@ public class ManageSudoMaintenanceJob implements ApplicationRunner {
     }
 
     @Override
-    @Transactional
     public void run(ApplicationArguments args) {
         String action = requiredOption(args, "maintenance.action");
         String reason = requiredReason(args);
