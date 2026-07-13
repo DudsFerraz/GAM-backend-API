@@ -509,6 +509,8 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
                 .statusCode(403)
                 .body("status", equalTo(403));
 
+        assertThat(activeAssignmentCount(targetId, sudoRoleId)).isZero();
+
         grantRole(targetId, "SUDO");
 
         authenticatedJsonRequest(coordinator)

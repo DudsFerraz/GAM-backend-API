@@ -87,6 +87,17 @@ class RbacSafetyPolicyTest {
         }
 
         @Test
+        @DisplayName("REQ-ACCOUNT-ROLE-012 - internal non-SUDO removal -> forbidden")
+        void internalNonSudoRemovalShouldBeForbidden() {
+            RbacSafetyPolicy policy = new RbacSafetyPolicy(accountRoleRepo);
+            AccountRoleEntity memberAccountRole = accountRole(SystemRole.MEMBER.getCode(), UUID.randomUUID());
+
+            assertThatThrownBy(() -> policy.assertCanRemoveSudoThroughInternalService(memberAccountRole))
+                    .isInstanceOf(ForbiddenOperationException.class)
+                    .hasMessage("Only SUDO role removal is allowed through this internal service.");
+        }
+
+        @Test
         @DisplayName("REQ-ACCOUNT-ROLE-012 - stale SUDO removal -> not found")
         void staleSudoRemovalShouldBeNotFound() {
             RbacSafetyPolicy policy = new RbacSafetyPolicy(accountRoleRepo);
