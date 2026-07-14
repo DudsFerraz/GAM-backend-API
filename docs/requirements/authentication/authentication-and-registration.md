@@ -6,7 +6,9 @@ Accepted
 ## Context
 GAM needs a documented authentication contract for public account registration, login, refresh, logout, access tokens, refresh tokens, and refresh-token cookies.
 
-The authentication flow must support both same-site and cross-site frontend/backend deployments because the final deployment topology is not decided. The refresh-token cookie mechanism is therefore required to be compatible with both deployment shapes.
+The initial supported browser deployment is now same-origin. Browser cookie attributes, CSRF proof, origin validation, in-memory access-token handling, session bootstrap, and cross-tab coordination are governed by [Browser Session and Frontend Integration](browser-session-and-frontend-integration.md).
+
+The historical cross-site requirements `REQ-AUTH-012` and `REQ-AUTH-013` are preserved in the Superseded [Cross-Site Refresh Cookie Compatibility](cross-site-refresh-cookie-compatibility.md) specification and must not be reused or interpreted as current behavior.
 
 ## Ubiquitous Language
 - `access token`: A short-lived bearer token returned to the client and used to authenticate protected API requests.
@@ -94,7 +96,7 @@ Invalid examples:
 ---
 
 ### REQ-AUTH-005: Registration response
-Successful registration shall return `201 Created`, the new Account identifier, and an HTTP `Location` header pointing to the canonical Account resource URI `/accounts/{accountId}`.
+Successful registration shall return `201 Created`, the new Account identifier, and an HTTP `Location` header pointing to the canonical public Account resource URI `/api/accounts/{accountId}`.
 
 The HTTP `Location` header is HTTP vocabulary and is not the GAM Location domain concept.
 
@@ -102,7 +104,7 @@ Rationale:
 Account creation should identify the created resource without starting an authentication session.
 
 Valid examples:
-- `POST /auth/register` returns `201 Created`, body `{ "id": "<account UUID>" }`, and `Location: /accounts/<account UUID>`.
+- `POST /auth/register` returns `201 Created`, body `{ "id": "<account UUID>" }`, and `Location: /api/accounts/<account UUID>`.
 
 Invalid examples:
 - Registration automatically logs the user in.
@@ -228,44 +230,6 @@ Valid examples:
 Invalid examples:
 - Using the refresh-token row identifier as the cookie value.
 - Logging a real refresh-token value.
-
----
-
-### REQ-AUTH-012: Refresh-cookie contract
-The system shall use a single refresh-cookie mechanism compatible with same-site and cross-site frontend/backend deployments.
-
-The `refreshToken` cookie shall be `HttpOnly`, `Secure`, `SameSite=None`, and `Path=/`.
-
-The system shall enforce strict CORS allowlisting for credentialed browser requests.
-
-Rationale:
-Deployment topology is undecided, so the authentication contract must not depend on frontend and backend being same-site.
-
-Valid examples:
-- A same-site deployment and a cross-site deployment both use the same refresh-cookie attributes.
-- Cross-site browser requests with credentials are allowed only from configured trusted origins.
-
-Invalid examples:
-- Requiring `SameSite=Strict` as the production cookie contract.
-- Allowing credentialed browser requests from arbitrary origins.
-
----
-
-### REQ-AUTH-013: CSRF protection for cookie-authenticated auth endpoints
-The system shall enforce CSRF protection for auth endpoints that consume or set the refresh-token cookie.
-
-The CSRF defense shall be compatible with a stateless API, such as a signed double-submit token or an equivalent framework-supported mechanism.
-
-Rationale:
-Using `SameSite=None` makes the refresh cookie cross-site compatible, so cookie-consuming auth endpoints need explicit CSRF protection.
-
-Valid examples:
-- `/auth/refresh` rejects a cross-site request that includes the refresh cookie but lacks a valid CSRF proof.
-- `/auth/logout` requires the same CSRF proof even though logout is idempotent.
-
-Invalid examples:
-- Relying on `SameSite=None` without CSRF protection.
-- Accepting credentialed refresh requests from untrusted origins.
 
 ---
 
@@ -400,7 +364,7 @@ Scenario: Register an unprivileged Account
   Then the system creates an Account with no roles or permissions
   And the response status is 201 Created
   And the response contains the Account identifier
-  And the HTTP Location header points to /accounts/{accountId}
+  And the HTTP Location header points to /api/accounts/{accountId}
 
 Scenario: Reject duplicate registration
   Given an active Account exists with email "user@example.com"
@@ -443,11 +407,6 @@ Scenario: Logout is idempotent
   And the refreshToken cookie is expired
   And any valid presented refresh token is hard-deleted
 
-Scenario: Cross-site refresh request requires CSRF proof
-  Given the refreshToken cookie uses SameSite=None and Secure
-  And the browser sends the refreshToken cookie with a cross-site refresh request
-  When the request lacks a valid CSRF proof
-  Then the system rejects the refresh request
 ```
 
 ## Diagrams
@@ -479,7 +438,6 @@ sequenceDiagram
 ## Open questions
 
 * Should stored refresh-token secrets be hashed at rest instead of stored as raw UUID v4 values?
-* Which concrete CSRF implementation will be used: signed double-submit token, framework-supported CSRF protection, Fetch Metadata with token fallback, or another equivalent mechanism?
 * What exact generic HTTP status and error code should refresh-token failures use?
 * Should successful public Account registration emit a custom Account-created activity event, or is low-level row auditing enough for self-service registration?
 * Documentation follow-up: define the GAM Location domain concept in `docs/ubiquitous-language.md` separately from the HTTP `Location` header.
@@ -494,13 +452,17 @@ sequenceDiagram
 * Multi-factor authentication.
 * "Log out everywhere" or user-facing session management.
 * Public hero pages, informational pages, marketing pages, and public project content endpoints.
-* Frontend storage of access tokens.
-* Choosing the final frontend/backend hosting topology.
 * Account deactivation, restoration, or soft-delete policy.
 
 ## Related ADRs
 
-* ADR-0001: Use cross-site-compatible refresh cookies with CSRF protection
+* [ADR-0007: Use Same-Origin Browser Sessions with Layered CSRF Protection](../../decisions/0007-use-same-origin-browser-sessions-with-layered-csrf-protection.md)
+* [ADR-0001: Use Cross-Site-Compatible Refresh Cookies with CSRF Protection](../../decisions/0001-use-cross-site-compatible-refresh-cookies-with-csrf-protection.md) — superseded.
+
+## Related requirements
+
+* [Browser Session and Frontend Integration](browser-session-and-frontend-integration.md)
+* [Cross-Site Refresh Cookie Compatibility](cross-site-refresh-cookie-compatibility.md) — superseded historical requirements.
 
 ## Related videos
 

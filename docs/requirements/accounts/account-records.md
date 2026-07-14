@@ -175,6 +175,51 @@ Invalid examples:
 - Returning refresh-token identifiers or values in an Account response.
 - Returning `deletedAt` in an ordinary Account response.
 
+---
+
+### REQ-ACCOUNT-008: Current Account context
+The system shall expose `GET /accounts/me` for an authenticated caller to retrieve the caller's current Account context without requiring `ACCOUNT_GET`.
+
+The public route shall resolve under the `/api` base as `GET /api/accounts/me` and shall return this shape:
+
+```json
+{
+  "id": "<account UUID>",
+  "email": "user@example.com",
+  "displayName": "Eduardo",
+  "roles": [
+    {
+      "id": "<role UUID>",
+      "name": "MEMBER",
+      "description": "Member role",
+      "systemManaged": true
+    }
+  ],
+  "permissions": [
+    "ACCOUNT_GET",
+    "EVENT_SEARCH"
+  ]
+}
+```
+
+`roles` shall contain the caller's active role records according to `REQ-ACCOUNT-006`. `permissions` shall contain distinct permission codes currently effective for the caller.
+
+Role names shall be descriptive Account data and shall not be authorization authorities. The endpoint and frontend shall use effective permission codes for capability visibility, while every protected backend operation shall enforce its own authorization rule.
+
+The response shall follow the exclusions in `REQ-ACCOUNT-007`. A missing, soft-deleted, or no-longer-authenticatable current Account shall produce an authentication failure and shall not return partial Account context.
+
+Rationale:
+The frontend needs one current server-derived identity and capability snapshot after session restoration without decoding JWT claims or requiring the Account UUID in a self-view route.
+
+Valid examples:
+- An authenticated Account without `ACCOUNT_GET` retrieves its own current context.
+- A permission removed from the current RBAC state is absent from a later response.
+
+Invalid examples:
+- The response includes refresh-token or row-audit data.
+- The frontend treats `COORD` in `roles` as an authorization authority.
+- An unauthenticated request receives Account context.
+
 ## Acceptance scenarios
 
 ```gherkin
@@ -225,6 +270,14 @@ Scenario: Account response excludes audit metadata
   And the caller may view the Account
   When the caller retrieves the account record
   Then the response does not contain row audit metadata
+
+Scenario: Authenticated Account loads current context
+  Given an authenticated active Account exists
+  And the caller does not have ACCOUNT_GET
+  When the caller requests GET /api/accounts/me
+  Then the system returns the caller's Account record
+  And the response contains distinct current permission codes
+  And the response contains no credentials, tokens, sessions, or audit metadata
 ```
 
 ## Open questions
@@ -245,7 +298,11 @@ Scenario: Account response excludes audit metadata
 
 ## Related ADRs
 
-* None.
+* [ADR-0007: Use Same-Origin Browser Sessions with Layered CSRF Protection](../../decisions/0007-use-same-origin-browser-sessions-with-layered-csrf-protection.md)
+
+## Related requirements
+
+* [Browser Session and Frontend Integration](../authentication/browser-session-and-frontend-integration.md)
 
 ## Related videos
 

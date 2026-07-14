@@ -1,7 +1,9 @@
 # ADR-0001: Use Cross-Site-Compatible Refresh Cookies with CSRF Protection
 
 ## Status
-Accepted
+Superseded
+
+Superseded by [ADR-0007: Use Same-Origin Browser Sessions with Layered CSRF Protection](0007-use-same-origin-browser-sessions-with-layered-csrf-protection.md).
 
 ## Context
 GAM needs one refresh-token transport mechanism that works whether the frontend and backend are deployed on the same site or on different sites.
@@ -90,11 +92,15 @@ Negative consequences:
 - Future agents must understand that `SameSite=None` is safe only when paired with CSRF protection and strict origin allowlisting.
 
 ## Related requirements
-- `docs/requirements/authentication/authentication-and-registration.md`
+- `docs/requirements/authentication/cross-site-refresh-cookie-compatibility.md`
 - REQ-AUTH-012
 - REQ-AUTH-013
 - REQ-AUTH-014
 - REQ-AUTH-017
+
+## Superseding decision
+
+- [ADR-0007: Use Same-Origin Browser Sessions with Layered CSRF Protection](0007-use-same-origin-browser-sessions-with-layered-csrf-protection.md)
 
 ## Related diagrams
 - None.
