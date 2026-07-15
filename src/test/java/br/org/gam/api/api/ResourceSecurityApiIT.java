@@ -87,7 +87,7 @@ class ResourceSecurityApiIT extends BaseApiIntegrationTest {
                 .then()
                 .statusCode(404)
                 .body("status", equalTo(404))
-                .body("error", equalTo("Not Found"));
+                .body("code", equalTo("RESOURCE_NOT_FOUND"));
     }
 
     @Test

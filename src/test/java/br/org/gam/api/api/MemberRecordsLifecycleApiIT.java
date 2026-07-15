@@ -585,7 +585,7 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
                 .statusCode(200)
                 .extract();
 
-        assertThat(resourceIds(activeOnlyResponse.jsonPath().getList("content")))
+        assertThat(resourceIds(activeOnlyResponse.jsonPath().getList("items")))
                 .contains(activeMemberId)
                 .doesNotContain(inactiveMemberId);
 
@@ -596,7 +596,7 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
                 .statusCode(200)
                 .extract();
 
-        assertThat(resourceIds(coordinatorResponse.jsonPath().getList("content")))
+        assertThat(resourceIds(coordinatorResponse.jsonPath().getList("items")))
                 .contains(activeMemberId, inactiveMemberId);
     }
 
@@ -641,7 +641,7 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
             assertThat(response.statusCode())
                     .as("public filter %s %s", searchFilter.get("field"), searchFilter.get("comparationMethod"))
                     .isEqualTo(200);
-            assertThat(resourceIds(response.jsonPath().getList("content")))
+            assertThat(resourceIds(response.jsonPath().getList("items")))
                     .as("public filter %s %s", searchFilter.get("field"), searchFilter.get("comparationMethod"))
                     .contains(targetMemberId);
         }

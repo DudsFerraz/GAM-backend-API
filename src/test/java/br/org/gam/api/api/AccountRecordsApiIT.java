@@ -130,8 +130,8 @@ class AccountRecordsApiIT extends BaseApiIntegrationTest {
                 .extract();
 
         Map<String, Object> page = response.jsonPath().getMap("$");
-        assertThat(page).containsKeys("content", "totalElements");
-        assertThat(accountIds(response.jsonPath().getList("content")))
+        assertThat(page).containsKeys("items", "totalElements");
+        assertThat(accountIds(response.jsonPath().getList("items")))
                 .contains(activeAccountId)
                 .doesNotContain(deletedAccountId);
     }
@@ -170,7 +170,7 @@ class AccountRecordsApiIT extends BaseApiIntegrationTest {
             assertThat(response.statusCode())
                     .as("public filter %s %s", filter.get("field"), filter.get("comparationMethod"))
                     .isEqualTo(200);
-            assertThat(accountIds(response.jsonPath().getList("content")))
+            assertThat(accountIds(response.jsonPath().getList("items")))
                     .as("public filter %s %s", filter.get("field"), filter.get("comparationMethod"))
                     .contains(targetId);
         }
@@ -196,7 +196,7 @@ class AccountRecordsApiIT extends BaseApiIntegrationTest {
                     .post("/accounts/search")
                     .then()
                     .statusCode(400)
-                    .body("error", equalTo("Bad Request"))
+                    .body("code", equalTo("INVALID_SEARCH_FILTER"))
                     .body("message", containsString((String) filter.get("field")));
         }
     }
@@ -260,7 +260,7 @@ class AccountRecordsApiIT extends BaseApiIntegrationTest {
                 .statusCode(200)
                 .extract();
 
-        assertAccountRecord(accountRecord(response.jsonPath().getList("content"), targetId), targetId, "MEMBER");
+        assertAccountRecord(accountRecord(response.jsonPath().getList("items"), targetId), targetId, "MEMBER");
     }
 
     @Test

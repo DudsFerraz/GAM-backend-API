@@ -384,7 +384,7 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
                 .then()
                 .statusCode(200)
                 .extract();
-        assertThat(resourceIds(ownHistory.jsonPath().getList("content")))
+        assertThat(resourceIds(ownHistory.jsonPath().getList("items")))
                 .contains(firstId)
                 .doesNotContain(secondId);
 
@@ -394,7 +394,7 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
                 .then()
                 .statusCode(200)
                 .extract();
-        assertThat(resourceIds(attemptedBypass.jsonPath().getList("content"))).isEmpty();
+        assertThat(resourceIds(attemptedBypass.jsonPath().getList("items"))).isEmpty();
 
         ExtractableResponse<Response> managerHistory = authenticatedJsonRequest(coordinator)
                 .body(searchPayload())
@@ -402,7 +402,7 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
                 .then()
                 .statusCode(200)
                 .extract();
-        assertThat(resourceIds(managerHistory.jsonPath().getList("content"))).contains(firstId, secondId);
+        assertThat(resourceIds(managerHistory.jsonPath().getList("items"))).contains(firstId, secondId);
     }
 
     @Test
@@ -440,7 +440,7 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
             assertThat(response.statusCode())
                     .as("public filter %s %s", searchFilter.get("field"), searchFilter.get("comparationMethod"))
                     .isEqualTo(200);
-            assertThat(resourceIds(response.jsonPath().getList("content")))
+            assertThat(resourceIds(response.jsonPath().getList("items")))
                     .as("public filter %s %s", searchFilter.get("field"), searchFilter.get("comparationMethod"))
                     .contains(solicitationId);
         }
