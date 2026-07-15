@@ -147,23 +147,6 @@ The browser continues to communicate with one origin, and the setup stays close 
 
 CORS is not CSRF protection. Preventing a response from being read does not necessarily prevent a malicious site from attempting to trigger a request. The application still needs correct authentication, authorization, `SameSite`, origin validation, and a CSRF token where applicable.
 
-## Integration checklist
-
-Before considering an integration complete, confirm that:
-
-* the frontend calls the API through `/api/...`;
-* production publishes the frontend and API under the same origin;
-* access tokens are not persisted in `localStorage`, URLs, or logs;
-* the refresh token is `HttpOnly`, `Secure`, `SameSite=Lax`, and path-restricted;
-* `401` triggers one coordinated refresh and at most one retry;
-* initialization obtains CSRF proof, uses `refresh`, and confirms the account with `/api/accounts/me`;
-* login, refresh, and logout use the required CSRF proof and origin validation;
-* state-changing operations do not use `GET`;
-* the backend applies authentication and authorization independently of CORS, `Origin`, or `Referer`;
-* changes to the format or flow are reflected in the OpenAPI contract and relevant tests.
-
-For endpoint discovery, schemas, errors, and generated frontend types, see the [GAM Frontend API Guide](../api/README.md).
-
 ## References
 
 * [OWASP — Cross-Site Request Forgery Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)
