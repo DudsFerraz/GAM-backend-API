@@ -10,6 +10,7 @@ import io.restassured.response.Response;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Value;
 
 import static org.assertj.core.api.Assertions.assertThat;
 @ApiTest
@@ -20,6 +21,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AuthSecurityApiIT extends BaseApiIntegrationTest {
 
     private static final String TRUSTED_ORIGIN = "http://localhost:3000";
+
+    @Value("${jwt.refresh-expiration-ms}")
+    private long refreshTokenLifetimeMs;
 
     @Test
     @DisplayName("REQ-AUTH-013 and REQ-AUTH-007 - valid XSRF proof -> login creates a refresh session")
@@ -50,7 +54,7 @@ class AuthSecurityApiIT extends BaseApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("REQ-AUTH-013, REQ-AUTH-015, and REQ-AUTH-018 - valid XSRF proof -> refresh rotates and logout expires")
+    @DisplayName("REQ-AUTH-013, REQ-AUTH-015, REQ-AUTH-018, REQ-BROWSER-AUTH-002, and REQ-WEB-002 - valid XSRF proof -> refresh rotates and logout expires same-origin cookie")
     void validXsrfProofShouldPermitRefreshRotationAndLogout() {
         String email = uniqueEmail("csrf-session");
         registerAccount(email, TEST_PASSWORD, "CSRF Session");
@@ -85,8 +89,19 @@ class AuthSecurityApiIT extends BaseApiIntegrationTest {
         assertThat(replacementRefreshToken).isNotBlank().isNotEqualTo(oldRefreshToken);
         assertThat(refreshTokenExists(oldRefreshToken)).isFalse();
         assertThat(refreshTokenExists(replacementRefreshToken)).isFalse();
+        assertThat(refreshResponse.header("Set-Cookie"))
+                .contains(
+                        "refreshToken=",
+                        "HttpOnly",
+                        "SameSite=Lax",
+                        "Path=/api/auth",
+                        "Max-Age=" + refreshTokenLifetimeMs / 1000
+                )
+                .contains("Secure")
+                .doesNotContain("Domain=");
         assertThat(logoutResponse.header("Set-Cookie"))
-                .contains("refreshToken=", "Max-Age=0", "HttpOnly", "Secure", "SameSite=None", "Path=/");
+                .contains("refreshToken=", "Max-Age=0", "HttpOnly", "Secure", "SameSite=Lax", "Path=/api/auth")
+                .doesNotContain("Domain=");
     }
 
     @Test

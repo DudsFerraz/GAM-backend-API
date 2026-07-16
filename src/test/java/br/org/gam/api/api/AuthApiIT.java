@@ -322,7 +322,7 @@ class AuthApiIT extends BaseApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("REQ-AUTH-010, REQ-AUTH-011, and REQ-AUTH-012 - login tokens and cookie -> configured secure contract")
+    @DisplayName("REQ-AUTH-007, REQ-AUTH-010, REQ-AUTH-011, REQ-BROWSER-AUTH-002, and REQ-WEB-002 - production login cookie -> same-origin contract")
     void loginTokensAndCookieShouldUseConfiguredSecureContract() {
         String email = uniqueEmail("token-contract");
         registerAccount(email, TEST_PASSWORD, "Token Contract");
@@ -357,11 +357,12 @@ class AuthApiIT extends BaseApiIntegrationTest {
                 .contains(
                         "refreshToken=",
                         "HttpOnly",
-                        "Secure",
-                        "SameSite=None",
-                        "Path=/",
+                        "SameSite=Lax",
+                        "Path=/api/auth",
                         "Max-Age=" + refreshTokenLifetimeMs / 1000
-                );
+                )
+                .contains("Secure")
+                .doesNotContain("Domain=");
     }
 
     @Test
