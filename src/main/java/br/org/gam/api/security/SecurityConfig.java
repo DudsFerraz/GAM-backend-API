@@ -2,12 +2,12 @@ package br.org.gam.api.security;
 
 import br.org.gam.api.security.application.DelegatedAuthenticationEntryPoint;
 import br.org.gam.api.security.jwt.JwtAuthFilter;
-import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpMethod;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -23,12 +23,11 @@ import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
 import org.springframework.security.crypto.password.Pbkdf2PasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.servlet.HandlerExceptionResolver;
 
 @EnableMethodSecurity
 @EnableWebSecurity
@@ -44,8 +43,6 @@ public class SecurityConfig {
     private final JwtAuthFilter jwtAuthFilter;
     private final UserDetailsService userDetailsService;
 
-    @Value("${cors.allowed-origins:}")
-    private String allowedOrigins;
     private final DelegatedAuthenticationEntryPoint authEntryPoint;
 
     public SecurityConfig(JwtAuthFilter jwtAuthFilter, UserDetailsService userDetailsService, DelegatedAuthenticationEntryPoint authEntryPoint) {
@@ -62,40 +59,20 @@ public class SecurityConfig {
         return new DelegatingPasswordEncoder("pbkdf2", encoders);
     }
 
-
     @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.stream(allowedOrigins.split(","))
-                .map(String::trim)
-                .filter(origin -> !origin.isBlank())
-                .toList());
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList(
-                "Authorization",
-                "Content-Type",
-                "Accept",
-                "X-XSRF-TOKEN",
-                "X-CSRF-TOKEN"
-        ));
-        configuration.setAllowCredentials(true);
-
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-        return source;
-    }
-
-    @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, CorsConfigurationSource corsConfigurationSource) throws Exception {
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            CanonicalOriginFilter canonicalOriginFilter,
+            @Value("${app.auth.cookie.secure:true}") boolean cookieSecure
+    ) throws Exception {
         CookieCsrfTokenRepository csrfTokenRepository = CookieCsrfTokenRepository.withHttpOnlyFalse();
         csrfTokenRepository.setCookieName("XSRF-TOKEN");
         csrfTokenRepository.setHeaderName("X-XSRF-TOKEN");
-        csrfTokenRepository.setCookiePath("/");
-        csrfTokenRepository.setSecure(true);
-        csrfTokenRepository.setCookieCustomizer(cookie -> cookie.sameSite("None"));
+        csrfTokenRepository.setCookiePath("/api/auth");
+        csrfTokenRepository.setSecure(cookieSecure);
+        csrfTokenRepository.setCookieCustomizer(cookie -> cookie.sameSite("Lax"));
 
         http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(csrfTokenRepository)
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
@@ -106,7 +83,9 @@ public class SecurityConfig {
                                 "/api/openapi.json", "/api/openapi.json/**", "/api/openapi.json.yaml",
                                 "/api/swagger-ui/**", "/swagger-ui/**", "/webjars/**"
                         ).permitAll()
-                        .requestMatchers("/auth/login", "/auth/register", "/auth/refresh", "/auth/logout").permitAll()
+                        .requestMatchers(
+                                "/auth/csrf", "/auth/login", "/auth/register", "/auth/refresh", "/auth/logout"
+                        ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/events/*").permitAll()
                         .anyRequest().authenticated()
                 )
@@ -114,9 +93,18 @@ public class SecurityConfig {
                         .authenticationEntryPoint(authEntryPoint))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider())
+                .addFilterAfter(canonicalOriginFilter, CsrfFilter.class)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    @Bean
+    CanonicalOriginFilter canonicalOriginFilter(
+            @Value("${GAM_PUBLIC_ORIGIN}") String publicOrigin,
+            @Qualifier("handlerExceptionResolver") HandlerExceptionResolver exceptionResolver
+    ) {
+        return new CanonicalOriginFilter(publicOrigin, exceptionResolver);
     }
 
     private boolean requiresCsrfProof(HttpServletRequest request) {

@@ -39,11 +39,15 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 @ActiveProfiles("test")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 public abstract class BaseApiIntegrationTest {
 
     protected static final String TEST_PASSWORD = "ApiTest-password-123";
+    protected static final String TRUSTED_ORIGIN = "https://test.example";
+    protected static final String UNTRUSTED_ORIGIN = "https://untrusted.example";
     private static final String TEST_JWT_SECRET = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
 
     private static final DockerImageName POSTGRES_IMAGE = DockerImageName.parse("postgres:18-alpine");
@@ -169,21 +173,59 @@ public abstract class BaseApiIntegrationTest {
 
     protected ExtractableResponse<Response> login(String email, String password) {
         Map<String, Object> payload = loginPayload(email, password);
-        String csrfToken = jsonRequest()
-                .body(payload)
-                .post("/auth/login")
-                .then()
-                .extract()
+        String csrfToken = csrfBootstrap()
                 .cookie("XSRF-TOKEN");
 
-        return jsonRequest()
-                .cookie("XSRF-TOKEN", csrfToken)
-                .header("X-XSRF-TOKEN", csrfToken)
+        return csrfRequest(csrfToken)
                 .body(payload)
                 .post("/auth/login")
                 .then()
                 .statusCode(200)
                 .extract();
+    }
+
+    protected ExtractableResponse<Response> csrfBootstrap() {
+        return jsonRequest()
+                .get("/auth/csrf")
+                .then()
+                .statusCode(200)
+                .extract();
+    }
+
+    protected RequestSpecification csrfRequest(String csrfToken) {
+        return csrfRequest(csrfToken, TRUSTED_ORIGIN, null);
+    }
+
+    protected RequestSpecification csrfRequest(String csrfToken, String origin, String referer) {
+        RequestSpecification request = jsonRequest()
+                .cookie("XSRF-TOKEN", csrfToken)
+                .header("X-XSRF-TOKEN", csrfToken);
+        if (origin != null) {
+            request.header("Origin", origin);
+        }
+        if (referer != null) {
+            request.header("Referer", referer);
+        }
+        return request;
+    }
+
+    protected void assertPublicApiLocation(ExtractableResponse<Response> response, String resourcePath) {
+        assertThat(response.header("Location")).isEqualTo("/api" + resourcePath);
+    }
+
+    protected RequestSpecification withUntrustedForwardingHeaders(RequestSpecification request) {
+        return request
+                .header("Host", "internal.invalid")
+                .header("X-Forwarded-Host", "attacker.invalid")
+                .header("X-Forwarded-Proto", "http");
+    }
+
+    protected RequestSpecification withCanonicalForwardingHeaders(RequestSpecification request) {
+        return request
+                .header("Host", "internal.invalid")
+                .header("X-Forwarded-Host", "test.example")
+                .header("X-Forwarded-Proto", "https")
+                .header("X-Forwarded-Port", "443");
     }
 
     protected void grantRole(UUID accountId, String roleName) {

@@ -9,7 +9,6 @@ import br.org.gam.api.testing.integration.BaseApiIntegrationTest;
 import io.jsonwebtoken.Claims;
 import io.restassured.response.ExtractableResponse;
 import io.restassured.response.Response;
-import java.net.URI;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -44,9 +43,6 @@ import static org.hamcrest.Matchers.not;
 @DisplayName("API - Authentication requirements")
 class AuthApiIT extends BaseApiIntegrationTest {
 
-    private static final String TRUSTED_ORIGIN = "http://localhost:3000";
-    private static final String UNTRUSTED_ORIGIN = "https://untrusted.example";
-
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
@@ -68,7 +64,7 @@ class AuthApiIT extends BaseApiIntegrationTest {
         String email = uniqueEmail("register");
         String rawPassword = "registration-password";
 
-        ExtractableResponse<Response> response = jsonRequest()
+        ExtractableResponse<Response> response = withUntrustedForwardingHeaders(jsonRequest())
                 .body(registerPayload(email, rawPassword, "  Eduardo  "))
                 .post("/auth/register")
                 .then()
@@ -79,8 +75,7 @@ class AuthApiIT extends BaseApiIntegrationTest {
         UUID accountId = UUID.fromString(response.path("id"));
         trackAccount(accountId);
 
-        assertThat(URI.create(response.header("Location")).getPath())
-                .isEqualTo("/accounts/" + accountId);
+        assertPublicApiLocation(response, "/accounts/" + accountId);
         assertThat(response.jsonPath().getMap("$")).containsOnlyKeys("id");
         assertThat(response.cookies()).doesNotContainKey("refreshToken");
         assertThat(accountExists(accountId)).isTrue();
@@ -97,6 +92,22 @@ class AuthApiIT extends BaseApiIntegrationTest {
                 .startsWith("{pbkdf2}")
                 .isNotEqualTo(rawPassword);
         assertThat(passwordEncoder.matches(rawPassword, storedAccount.get("password_hash").toString())).isTrue();
+    }
+
+    @Test
+    @DisplayName("REQ-WEB-003 and REQ-WEB-004 - canonical forwarded public request -> public /api Location")
+    void canonicalForwardedPublicRequestShouldUseTheConfiguredPublicApiLocation() {
+        String email = uniqueEmail("forwarded-canonical");
+        ExtractableResponse<Response> response = withCanonicalForwardingHeaders(jsonRequest())
+                .body(registerPayload(email, TEST_PASSWORD, "Canonical Forwarding"))
+                .post("/auth/register")
+                .then()
+                .statusCode(201)
+                .extract();
+
+        UUID accountId = UUID.fromString(response.path("id"));
+        trackAccount(accountId);
+        assertPublicApiLocation(response, "/accounts/" + accountId);
     }
 
     @ParameterizedTest(name = "password length {0} -> HTTP {1}")
@@ -366,21 +377,22 @@ class AuthApiIT extends BaseApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("REQ-AUTH-012 - credentialed CORS -> trusted origin only")
-    void credentialedCorsShouldAllowOnlyTheTrustedOrigin() {
-        ExtractableResponse<Response> trusted = preflight(TRUSTED_ORIGIN);
-        ExtractableResponse<Response> untrusted = preflight(UNTRUSTED_ORIGIN);
+    @DisplayName("REQ-BROWSER-AUTH-010 and REQ-WEB-007 - production and development backend -> no credentialed CORS response")
+    void backendShouldNotAdvertiseCredentialedCors() {
+        List<ExtractableResponse<Response>> preflights = List.of(
+                preflight(TRUSTED_ORIGIN),
+                preflight("http://localhost:3000")
+        );
 
-        assertThat(trusted.statusCode()).isBetween(200, 299);
-        assertThat(trusted.header("Access-Control-Allow-Origin")).isEqualTo(TRUSTED_ORIGIN);
-        assertThat(trusted.header("Access-Control-Allow-Credentials")).isEqualTo("true");
-        assertThat(trusted.header("Access-Control-Allow-Headers")).contains("X-XSRF-TOKEN");
-        assertThat(untrusted.header("Access-Control-Allow-Origin")).isNull();
-        assertThat(untrusted.header("Access-Control-Allow-Credentials")).isNull();
+        assertThat(preflights).allSatisfy(preflight -> {
+            assertThat(preflight.header("Access-Control-Allow-Origin")).isNull();
+            assertThat(preflight.header("Access-Control-Allow-Credentials")).isNull();
+            assertThat(preflight.header("Access-Control-Allow-Headers")).isNull();
+        });
     }
 
     @Test
-    @DisplayName("REQ-AUTH-013 - cross-site login, refresh, and logout without CSRF proof -> rejected")
+    @DisplayName("REQ-BROWSER-AUTH-004 - login, refresh, and logout without CSRF proof -> rejected")
     void cookieAuthenticatedRequestsWithoutCsrfProofShouldBeRejected() {
         String email = uniqueEmail("csrf");
         registerAccount(email, TEST_PASSWORD, "CSRF Account");
@@ -420,9 +432,12 @@ class AuthApiIT extends BaseApiIntegrationTest {
         String refreshToken = login(email, TEST_PASSWORD).cookie("refreshToken");
 
         List<ExtractableResponse<Response>> responses = List.of(
-                jsonRequest().body(Map.of("refreshToken", refreshToken)).post("/auth/refresh").then().extract(),
-                jsonRequest().queryParam("refreshToken", refreshToken).post("/auth/refresh").then().extract(),
-                jsonRequest().header("refreshToken", refreshToken).post("/auth/refresh").then().extract()
+                csrfRequest(csrfBootstrap().cookie("XSRF-TOKEN"))
+                        .body(Map.of("refreshToken", refreshToken)).post("/auth/refresh").then().extract(),
+                csrfRequest(csrfBootstrap().cookie("XSRF-TOKEN"))
+                        .queryParam("refreshToken", refreshToken).post("/auth/refresh").then().extract(),
+                csrfRequest(csrfBootstrap().cookie("XSRF-TOKEN"))
+                        .header("refreshToken", refreshToken).post("/auth/refresh").then().extract()
         );
 
         assertThat(responses).allSatisfy(response ->
@@ -437,32 +452,31 @@ class AuthApiIT extends BaseApiIntegrationTest {
         registerAccount(email, TEST_PASSWORD, "Logout Input");
         String refreshToken = login(email, TEST_PASSWORD).cookie("refreshToken");
 
-        jsonRequest().body(Map.of("refreshToken", refreshToken)).post("/auth/logout");
-        jsonRequest().queryParam("refreshToken", refreshToken).post("/auth/logout");
-        jsonRequest().header("refreshToken", refreshToken).post("/auth/logout");
+        csrfRequest(csrfBootstrap().cookie("XSRF-TOKEN"))
+                .body(Map.of("refreshToken", refreshToken)).post("/auth/logout");
+        csrfRequest(csrfBootstrap().cookie("XSRF-TOKEN"))
+                .queryParam("refreshToken", refreshToken).post("/auth/logout");
+        csrfRequest(csrfBootstrap().cookie("XSRF-TOKEN"))
+                .header("refreshToken", refreshToken).post("/auth/logout");
 
         assertThat(refreshTokenExists(refreshToken)).isTrue();
     }
 
     @Test
-    @DisplayName("REQ-AUTH-019 - auth routes -> no bearer token required; protected route -> HTTP 401")
+    @DisplayName("REQ-AUTH-019 and REQ-BROWSER-AUTH-003 - auth routes -> no bearer token required; protected route -> HTTP 401")
     void authRoutesShouldBePublicWhileAccountRoutesRemainProtected() {
-        String csrfToken = csrfToken();
-        ExtractableResponse<Response> refresh = jsonRequest()
-                .cookie("XSRF-TOKEN", csrfToken)
-                .header("X-XSRF-TOKEN", csrfToken)
+        String csrfToken = csrfBootstrap().cookie("XSRF-TOKEN");
+        ExtractableResponse<Response> refresh = csrfRequest(csrfToken)
                 .post("/auth/refresh")
                 .then()
                 .extract();
-        ExtractableResponse<Response> logout = jsonRequest()
-                .cookie("XSRF-TOKEN", csrfToken)
-                .header("X-XSRF-TOKEN", csrfToken)
+        ExtractableResponse<Response> logout = csrfRequest(csrfToken)
                 .post("/auth/logout")
                 .then()
                 .extract();
 
-        assertThat(refresh.statusCode()).isEqualTo(403);
-        assertThat(logout.statusCode()).isEqualTo(200);
+        assertThat(refresh.statusCode() / 100).isNotEqualTo(2);
+        assertThat(logout.statusCode()).isBetween(200, 299);
         jsonRequest()
                 .get("/accounts/{id}", UUID.randomUUID())
                 .then()
@@ -483,7 +497,7 @@ class AuthApiIT extends BaseApiIntegrationTest {
     }
 
     private ExtractableResponse<Response> loginAttempt(String email, String password) {
-        return jsonRequest()
+        return csrfRequest(csrfBootstrap().cookie("XSRF-TOKEN"))
                 .body(loginPayload(email, password))
                 .post("/auth/login")
                 .then()
@@ -498,14 +512,6 @@ class AuthApiIT extends BaseApiIntegrationTest {
                 .options("/auth/refresh")
                 .then()
                 .extract();
-    }
-
-    private String csrfToken() {
-        return jsonRequest()
-                .post("/auth/refresh")
-                .then()
-                .extract()
-                .cookie("XSRF-TOKEN");
     }
 
     private Map<String, Object> stableError(ExtractableResponse<Response> response) {

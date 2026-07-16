@@ -24,7 +24,16 @@ class BrowserSessionConfigurationTest {
     @DisplayName("REQ-WEB-002 - production HTTPS origin and secure cookie -> accepted")
     void productionHttpsOriginAndSecureCookieShouldBeAccepted() {
         BrowserSessionConfiguration configuration = configuration(
-                "https://app.example.com", true, "test");
+                "https://app.example.com", true, "prod");
+
+        assertThatCode(configuration::validate).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("REQ-WEB-002 - production HTTPS origin with non-default port -> accepted")
+    void productionHttpsOriginWithNonDefaultPortShouldBeAccepted() {
+        BrowserSessionConfiguration configuration = configuration(
+                "https://app.example.com:8443", true, "prod");
 
         assertThatCode(configuration::validate).doesNotThrowAnyException();
     }
@@ -73,19 +82,19 @@ class BrowserSessionConfigurationTest {
 
     private static Stream<Arguments> invalidOriginAndCookieCombinations() {
         return Stream.of(
-                Arguments.of("http://localhost:3000", true, "test"),
-                Arguments.of("http://localhost:3000", false, "test"),
-                Arguments.of("https://app.example.com", false, "test"),
+                Arguments.of("http://localhost:3000", true, "prod"),
+                Arguments.of("http://localhost:3000", false, "prod"),
+                Arguments.of("https://app.example.com", false, "prod"),
                 Arguments.of("http://app.example.com", false, "dev"),
                 Arguments.of("http://192.168.1.10:3000", false, "dev"),
-                Arguments.of("https://app.example.com/", true, "test"),
-                Arguments.of("https://app.example.com/path", true, "test"),
-                Arguments.of("https://app.example.com?redirect=/", true, "test"),
-                Arguments.of("https://app.example.com?", true, "test"),
-                Arguments.of("https://app.example.com#", true, "test"),
-                Arguments.of("https://user:password@app.example.com", true, "test"),
-                Arguments.of("https://app.example.com:443", true, "test"),
-                Arguments.of("not-an-origin", true, "test")
+                Arguments.of("https://app.example.com/", true, "prod"),
+                Arguments.of("https://app.example.com/path", true, "prod"),
+                Arguments.of("https://app.example.com?redirect=/", true, "prod"),
+                Arguments.of("https://app.example.com?", true, "prod"),
+                Arguments.of("https://app.example.com#", true, "prod"),
+                Arguments.of("https://user:password@app.example.com", true, "prod"),
+                Arguments.of("https://app.example.com:443", true, "prod"),
+                Arguments.of("not-an-origin", true, "prod")
         );
     }
 

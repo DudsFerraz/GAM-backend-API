@@ -7,6 +7,7 @@ import br.org.gam.api.testing.annotation.SecurityTest;
 import io.restassured.response.ExtractableResponse;
 import io.restassured.response.Response;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -50,14 +51,15 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
         Map<String, Object> components = object(contract, "components");
         Map<String, Object> securitySchemes = object(components, "securitySchemes");
         Map<String, Object> bearerAuth = object(securitySchemes, "bearerAuth");
+        assertThat(paths).containsKeys("/auth/login", "/auth/csrf", "/accounts/{id}", "/roles/{roleId}");
         List<Map<String, Object>> publicAuthenticationOperations = List.of(
                 object(object(paths, "/auth/register"), "post"),
                 object(object(paths, "/auth/login"), "post"),
                 object(object(paths, "/auth/refresh"), "post"),
-                object(object(paths, "/auth/logout"), "post")
+                object(object(paths, "/auth/logout"), "post"),
+                object(object(paths, "/auth/csrf"), "get")
         );
 
-        assertThat(paths).containsKeys("/auth/login", "/accounts/{id}", "/roles/{roleId}");
         assertThat(paths).doesNotContainKeys("/actuator/health", "/actuator/metrics", "/error");
         assertThat(contract.get("security"))
                 .isEqualTo(List.of(Map.of("bearerAuth", List.of())));
@@ -69,10 +71,135 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
     }
 
     @Test
+    @DisplayName("REQ-OPENAPI-005 and REQ-BROWSER-AUTH-003/004 - authentication contract -> CSRF bootstrap and browser proof inputs are documented")
+    @SuppressWarnings("unchecked")
+    void authenticationContractShouldDocumentCsrfBootstrapAndBrowserProof() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> paths = object(contract, "paths");
+        Map<String, Object> components = object(contract, "components");
+        assertThat(paths).containsKey("/auth/csrf");
+
+        Map<String, Object> csrf = object(object(paths, "/auth/csrf"), "get");
+        Map<String, Object> csrfResponse = object(object(csrf, "responses"), "200");
+        Map<String, Object> csrfJson = object(object(csrfResponse, "content"), "application/json");
+        Map<String, Object> csrfSchema = resolveSchema(contract, object(csrfJson, "schema"));
+        Map<String, Object> csrfProperties = object(csrfSchema, "properties");
+
+        assertThat(csrf).containsEntry("security", List.of());
+        assertThat((List<String>) csrfSchema.get("required"))
+                .containsExactlyInAnyOrder("token", "headerName");
+        assertThat(csrfProperties).containsKeys("token", "headerName");
+        assertThat(object(csrfProperties, "headerName")).containsEntry("example", "X-XSRF-TOKEN");
+        assertThat(object(csrfResponse, "headers")).containsKeys("Cache-Control", "Set-Cookie");
+
+        assertHeaderParameter(object(object(paths, "/auth/login"), "post"), "X-XSRF-TOKEN");
+        assertHeaderParameter(object(object(paths, "/auth/refresh"), "post"), "X-XSRF-TOKEN");
+        assertHeaderParameter(object(object(paths, "/auth/logout"), "post"), "X-XSRF-TOKEN");
+        assertCookieParameter(object(object(paths, "/auth/refresh"), "post"), "refreshToken");
+        assertCookieParameter(object(object(paths, "/auth/logout"), "post"), "refreshToken");
+        assertThat(components).containsKey("schemas");
+    }
+
+    @Test
+    @DisplayName("REQ-OPENAPI-005 and REQ-BROWSER-AUTH-002 - authentication responses -> refresh cookie lifecycle is documented")
+    void authenticationResponsesShouldDocumentRefreshCookieLifecycle() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> paths = object(contract, "paths");
+
+        assertSetCookieEffect(
+                contract,
+                object(object(paths, "/auth/login"), "post"),
+                "set", "establish", "issue"
+        );
+        assertSetCookieEffect(
+                contract,
+                object(object(paths, "/auth/refresh"), "post"),
+                "set", "replace", "rotate"
+        );
+        assertSetCookieEffect(
+                contract,
+                object(object(paths, "/auth/logout"), "post"),
+                "expire", "clear", "delete", "max-age=0"
+        );
+    }
+
+    @Test
     @DisplayName("REQ-OPENAPI-002 - non-development Swagger UI configuration -> every request method is read-only")
     void nonDevelopmentSwaggerUiShouldDisableInteractiveRequestExecution() {
         Map<String, Object> configuration = swaggerUiConfiguration();
 
         assertThat(strings(configuration, "supportedSubmitMethods")).isEmpty();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> resolveSchema(Map<String, Object> contract, Map<String, Object> schema) {
+        Object reference = schema.get("$ref");
+        if (reference == null) {
+            return schema;
+        }
+        String schemaName = reference.toString().substring(reference.toString().lastIndexOf('/') + 1);
+        return object(object(contract, "components"), "schemas").get(schemaName) instanceof Map<?, ?> resolved
+                ? (Map<String, Object>) resolved
+                : Map.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertHeaderParameter(Map<String, Object> operation, String name) {
+        List<Map<String, Object>> parameters = (List<Map<String, Object>>) operation.get("parameters");
+        assertThat(parameters)
+                .anySatisfy(parameter -> assertThat(parameter)
+                        .containsEntry("name", name)
+                        .containsEntry("in", "header"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertCookieParameter(Map<String, Object> operation, String name) {
+        List<Map<String, Object>> parameters = (List<Map<String, Object>>) operation.get("parameters");
+        assertThat(parameters)
+                .anySatisfy(parameter -> assertThat(parameter)
+                        .containsEntry("name", name)
+                        .containsEntry("in", "cookie"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertSetCookieEffect(
+            Map<String, Object> contract,
+            Map<String, Object> operation,
+            String... actionTerms
+    ) {
+        Map<String, Object> successResponse = object(object(operation, "responses"), "200");
+        Object headersValue = successResponse.get("headers");
+        assertThat(headersValue)
+                .as("%s 200 response headers", operation.get("operationId"))
+                .isInstanceOf(Map.class);
+        Map<String, Object> headers = (Map<String, Object>) headersValue;
+        assertThat(headers)
+                .as("%s 200 response headers", operation.get("operationId"))
+                .containsKey("Set-Cookie");
+        assertThat(headers.get("Set-Cookie"))
+                .as("%s Set-Cookie response header", operation.get("operationId"))
+                .isInstanceOf(Map.class);
+        Map<String, Object> setCookieHeader = resolveHeader(
+                contract,
+                (Map<String, Object>) headers.get("Set-Cookie")
+        );
+        String description = setCookieHeader.getOrDefault("description", "")
+                .toString()
+                .toLowerCase(Locale.ROOT);
+
+        assertThat(description).contains("refreshtoken");
+        assertThat(List.of(actionTerms)).anyMatch(description::contains);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> resolveHeader(Map<String, Object> contract, Map<String, Object> header) {
+        Object reference = header.get("$ref");
+        if (reference == null) {
+            return header;
+        }
+        String headerName = reference.toString().substring(reference.toString().lastIndexOf('/') + 1);
+        return object(object(contract, "components"), "headers").get(headerName) instanceof Map<?, ?> resolved
+                ? (Map<String, Object>) resolved
+                : Map.of();
     }
 }

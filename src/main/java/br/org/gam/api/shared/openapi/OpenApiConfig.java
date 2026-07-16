@@ -16,6 +16,7 @@ import io.swagger.v3.oas.models.media.NumberSchema;
 import io.swagger.v3.oas.models.media.ObjectSchema;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.media.StringSchema;
+import io.swagger.v3.oas.models.headers.Header;
 import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.tags.Tag;
@@ -91,6 +92,7 @@ public class OpenApiConfig {
             openApi.setComponents(components);
             components.addSchemas("ApiErrorDTO", apiErrorSchema());
             requireLocationResponseFields(components);
+            requireCsrfBootstrapResponseFields(components);
             components.getSchemas().remove("Pageable");
 
             openApi.getPaths().forEach((path, pathItem) -> pathItem.readOperations().forEach(operation -> {
@@ -100,6 +102,8 @@ public class OpenApiConfig {
                 }
                 documentSuccessStatus(operation);
                 documentPagination(operation);
+                documentBrowserAuthenticationInputs(operation);
+                documentBrowserAuthenticationCookieResponses(operation);
                 documentErrorResponses(operation);
                 addExamples(openApi, operation);
             }));
@@ -110,6 +114,13 @@ public class OpenApiConfig {
         Schema<?> location = components.getSchemas().get("LocationRDTO");
         if (location != null) {
             location.setRequired(List.of("id", "name", "city", "state", "countryCode"));
+        }
+    }
+
+    private void requireCsrfBootstrapResponseFields(Components components) {
+        Schema<?> csrfBootstrap = components.getSchemas().get("CsrfBootstrapRDTO");
+        if (csrfBootstrap != null) {
+            csrfBootstrap.setRequired(List.of("token", "headerName"));
         }
     }
 
@@ -154,6 +165,7 @@ public class OpenApiConfig {
                 || "/auth/login".equals(path)
                 || "/auth/refresh".equals(path)
                 || "/auth/logout".equals(path)
+                || "/auth/csrf".equals(path)
                 || "/events/{id}".equals(path);
     }
 
@@ -209,6 +221,46 @@ public class OpenApiConfig {
         operation.addParametersItem(pageParameter());
         operation.addParametersItem(sizeParameter());
         operation.addParametersItem(sortParameter(operation.getOperationId()));
+    }
+
+    private void documentBrowserAuthenticationInputs(io.swagger.v3.oas.models.Operation operation) {
+        String operationId = operation.getOperationId();
+        if (Set.of("login", "refreshAccessToken", "logout").contains(operationId)) {
+            operation.addParametersItem(new Parameter()
+                    .name("X-XSRF-TOKEN")
+                    .in("header")
+                    .required(true)
+                    .description("CSRF proof obtained from GET /auth/csrf.")
+                    .schema(new StringSchema()));
+        }
+        if ("refreshAccessToken".equals(operationId) || "logout".equals(operationId)) {
+            operation.addParametersItem(new Parameter()
+                    .name("refreshToken")
+                    .in("cookie")
+                    .required("refreshAccessToken".equals(operationId))
+                    .description("Browser-managed HttpOnly refresh cookie; never enter it in Swagger authorization.")
+                    .schema(new StringSchema()));
+        }
+    }
+
+    private void documentBrowserAuthenticationCookieResponses(io.swagger.v3.oas.models.Operation operation) {
+        String description = switch (operation.getOperationId()) {
+            case "login" -> "Sets the browser-managed refreshToken cookie to establish the authentication session.";
+            case "refreshAccessToken" -> "Sets and rotates the browser-managed refreshToken cookie.";
+            case "logout" -> "Expires the browser-managed refreshToken cookie with Max-Age=0.";
+            default -> null;
+        };
+        if (description == null) {
+            return;
+        }
+
+        ApiResponse successResponse = operation.getResponses().get("200");
+        if (successResponse != null) {
+            successResponse.addHeaderObject(
+                    "Set-Cookie",
+                    new Header().description(description).schema(new StringSchema())
+            );
+        }
     }
 
     private Parameter pageParameter() {

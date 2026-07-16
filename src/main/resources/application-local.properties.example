@@ -12,5 +12,3 @@ app.dev-fixtures.standard-password=123456
 
 spring.jpa.show-sql=
 spring.jpa.properties.hibernate.format_sql=
-
-cors.allowed-origins=
