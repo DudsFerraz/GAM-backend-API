@@ -4,6 +4,9 @@ spring.datasource.password=
 
 jwt.secret-key=
 
+# Required browser-session origin. Use the HTTPS public origin outside the dev profile.
+GAM_PUBLIC_ORIGIN=
+
 # Dev fixture accounts seeded by db/dev-migration/afterMigrate.sql use this password.
 app.dev-fixtures.standard-password=123456
 

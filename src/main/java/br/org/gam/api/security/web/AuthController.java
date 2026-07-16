@@ -34,15 +34,17 @@ public class AuthController {
     private final LoginAccount loginAccount;
     private final Long refreshTokenExpirationMs;
     private final RefreshTokenService refreshTokenService;
+    private final boolean cookieSecure;
 
     public AuthController(RegisterAccount registerAccountService, LoginAccount loginAccount,
                           @Value("${jwt.refresh-expiration-ms}") Long refreshTokenExpirationMs,
                           RefreshTokenService refreshTokenService,
-                          @Value("${app.auth.cookie.secure:true}") Boolean ignoredCookieSecure) {
+                          @Value("${app.auth.cookie.secure:true}") boolean cookieSecure) {
         this.registerAccountService = registerAccountService;
         this.loginAccount = loginAccount;
         this.refreshTokenExpirationMs = refreshTokenExpirationMs;
         this.refreshTokenService = refreshTokenService;
+        this.cookieSecure = cookieSecure;
     }
 
     @Operation(operationId = "registerAccount")
@@ -117,10 +119,10 @@ public class AuthController {
     private void setRefreshTokenCookie(HttpServletResponse response, String token, long maxAgeMs) {
         ResponseCookie cookie = ResponseCookie.from(REFRESH_TOKEN_COOKIE, token)
                 .httpOnly(true)
-                .secure(true)
-                .path("/")
+                .secure(cookieSecure)
+                .path("/api/auth")
                 .maxAge(maxAgeMs / 1000)
-                .sameSite("None")
+                .sameSite("Lax")
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }

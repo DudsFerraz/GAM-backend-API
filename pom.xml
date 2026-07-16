@@ -321,6 +321,7 @@
 							<arguments>
 								<argument>--server.port=8085</argument>
 								<argument>--spring.docker.compose.enabled=false</argument>
+								<argument>--GAM_PUBLIC_ORIGIN=https://localhost:8085</argument>
 							</arguments>
 						</configuration>
 						<executions>
