@@ -53,6 +53,6 @@ Do not use a substring check for origins, such as `contains("gam.org.br")`. Do n
 
 ## Contract and source of truth
 
-Use the [OpenAPI workflow](openapi-workflow.md) to inspect endpoint paths, request shapes, responses, and security requirements. Use the [Browser Session and Frontend Integration](../requirements/authentication/browser-session-and-frontend-integration.md) requirement for authentication behavior.
+Use the [OpenAPI workflow](../openapi-workflow.md) to inspect endpoint paths, request shapes, responses, and security requirements. Use the [Browser Session and Frontend Integration](../../requirements/authentication/browser-session-and-frontend-integration.md) requirement for authentication behavior.
 
 When this guide conflicts with an accepted Requirement Specification, report the conflict and follow the requirement until the guide is corrected.
