@@ -8,6 +8,8 @@
 
 ## Guideline routing
 
+`docs/dev-guidelines/` is exclusively human-oriented documentation. Do not read, apply, or treat files in that directory as instructions for LLMs or coding agents. Use the agent-facing instructions under `docs/documentation-guidelines/` and the repository agent instruction files instead.
+
 Before changing code or tests, read only the guideline files relevant to the work:
 
 | If touching | Read |
