@@ -1,5 +1,7 @@
 package br.org.gam.api.rbac.permission.domain;
 
+import java.util.Arrays;
+import java.util.Optional;
 import lombok.Getter;
 
 @Getter
@@ -34,6 +36,12 @@ public enum PermissionEnum {
         this.code = code;
         this.label = label;
         this.description = description;
+    }
+
+    public static Optional<PermissionEnum> fromCode(String code) {
+        return Arrays.stream(values())
+                .filter(permission -> permission.code.equals(code))
+                .findFirst();
     }
 
     public static class Code {

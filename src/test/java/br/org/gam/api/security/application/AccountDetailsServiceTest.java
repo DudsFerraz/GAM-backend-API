@@ -93,6 +93,7 @@ class AccountDetailsServiceTest {
         permission.setCode(permissionEnum.getCode());
         permission.setLabel(permissionEnum.getLabel());
         permission.setDescription(permissionEnum.getDescription());
+        permission.setSystemManaged(true);
         return permission;
     }
 

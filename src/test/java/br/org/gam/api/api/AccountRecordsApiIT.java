@@ -3,15 +3,23 @@ package br.org.gam.api.api;
 import br.org.gam.api.testing.annotation.ApiTest;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.IntegrationTest;
+import br.org.gam.api.testing.annotation.PersistenceTest;
 import br.org.gam.api.testing.annotation.SecurityTest;
 import br.org.gam.api.testing.integration.BaseApiIntegrationTest;
 import io.restassured.response.ExtractableResponse;
 import io.restassured.response.Response;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.assertj.core.api.SoftAssertions;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -24,6 +32,31 @@ import static org.hamcrest.Matchers.not;
 @SecurityTest
 @DisplayName("API - Account Records")
 class AccountRecordsApiIT extends BaseApiIntegrationTest {
+
+    private final List<UUID> currentContextRoleIds = new ArrayList<>();
+    private final List<UUID> currentContextPermissionIds = new ArrayList<>();
+    private final List<UUID> currentContextRolePermissionIds = new ArrayList<>();
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @AfterEach
+    void cleanupCurrentContextRbacFixtures() {
+        for (UUID rolePermissionId : currentContextRolePermissionIds) {
+            jdbcTemplate.update("DELETE FROM role_permissions WHERE id = ?", rolePermissionId);
+        }
+        for (UUID roleId : currentContextRoleIds) {
+            jdbcTemplate.update("DELETE FROM account_roles WHERE role_id = ?", roleId);
+            jdbcTemplate.update("DELETE FROM role_permissions WHERE role_id = ?", roleId);
+            jdbcTemplate.update("DELETE FROM roles WHERE id = ?", roleId);
+        }
+        for (UUID permissionId : currentContextPermissionIds) {
+            jdbcTemplate.update("DELETE FROM permissions WHERE id = ?", permissionId);
+        }
+        currentContextRolePermissionIds.clear();
+        currentContextRoleIds.clear();
+        currentContextPermissionIds.clear();
+    }
 
     @Test
     @DisplayName("REQ-ACCOUNT-001 - unauthenticated lookup -> HTTP 401")
@@ -301,6 +334,258 @@ class AccountRecordsApiIT extends BaseApiIntegrationTest {
         assertThat((List<?>) accountRecord.get("roles")).isEmpty();
     }
 
+    @Test
+    @DisplayName("REQ-ACCOUNT-008 - unauthenticated current-context request -> HTTP 401 without Account data")
+    void unauthenticatedCurrentContextShouldReturnUnauthorizedWithoutAccountData() {
+        ExtractableResponse<Response> response = jsonRequest()
+                .get("/accounts/me")
+                .then()
+                .statusCode(401)
+                .body("status", equalTo(401))
+                .extract();
+
+        assertThat(response.jsonPath().getMap("$"))
+                .doesNotContainKeys("id", "email", "displayName", "roles", "permissions");
+    }
+
+    @Test
+    @DisplayName("REQ-ACCOUNT-008 and REQ-BROWSER-AUTH-006 - refresh cookie without bearer token -> HTTP 401")
+    void refreshCookieAloneShouldNotAuthenticateCurrentContext() {
+        AuthSession visitor = registerAndLogin("VISITOR");
+
+        ExtractableResponse<Response> response = jsonRequest()
+                .cookie("refreshToken", visitor.refreshToken())
+                .get("/accounts/me")
+                .then()
+                .statusCode(401)
+                .body("status", equalTo(401))
+                .extract();
+
+        assertThat(response.jsonPath().getMap("$"))
+                .doesNotContainKeys("id", "email", "displayName", "roles", "permissions");
+    }
+
+    @Test
+    @DisplayName("REQ-ACCOUNT-008 - literal /accounts/me without ACCOUNT_GET -> dedicated current-context route succeeds")
+    void currentContextWithoutAccountGetShouldResolveTheDedicatedRoute() {
+        AuthSession visitor = registerAndLogin("VISITOR");
+
+        Map<String, Object> currentContext = authenticatedJsonRequest(visitor)
+                .get("/accounts/me")
+                .then()
+                .statusCode(200)
+                .extract()
+                .jsonPath()
+                .getMap("$");
+
+        assertCurrentContextShape(currentContext, visitor.accountId(), visitor.email(), "API VISITOR");
+        assertThat(roleNames(currentContext)).containsExactly("VISITOR");
+        assertPermissions(currentContext).isEmpty();
+    }
+
+    @Test
+    @DisplayName("REQ-ACCOUNT-008 - no active roles or permissions -> empty lists")
+    void currentContextWithoutActiveRolesOrPermissionsShouldReturnEmptyLists() {
+        String email = uniqueEmail();
+        String displayName = "Current Account Without Roles";
+        UUID accountId = registerAccount(email, TEST_PASSWORD, displayName);
+        ExtractableResponse<Response> loginResponse = login(email, TEST_PASSWORD);
+        AuthSession session = new AuthSession(
+                accountId,
+                email,
+                TEST_PASSWORD,
+                loginResponse.path("token"),
+                loginResponse.cookie("refreshToken")
+        );
+
+        Map<String, Object> currentContext = authenticatedJsonRequest(session)
+                .get("/accounts/me")
+                .then()
+                .statusCode(200)
+                .extract()
+                .jsonPath()
+                .getMap("$");
+
+        assertCurrentContextShape(currentContext, accountId, email, displayName);
+        assertThat(roleNames(currentContext)).isEmpty();
+        assertPermissions(currentContext).isEmpty();
+    }
+
+    @Test
+    @DisplayName("REQ-ACCOUNT-008 - permission granted through multiple roles -> one effective permission code")
+    void duplicatePermissionGrantsShouldReturnDistinctEffectivePermissionCodes() {
+        AuthSession coordinator = registerAndLogin("COORD");
+        grantRole(coordinator.accountId(), "MEMBER");
+
+        Map<String, Object> currentContext = authenticatedJsonRequest(coordinator)
+                .get("/accounts/me")
+                .then()
+                .statusCode(200)
+                .extract()
+                .jsonPath()
+                .getMap("$");
+
+        assertThat(roleNames(currentContext)).containsExactlyInAnyOrder("COORD", "MEMBER");
+        assertPermissions(currentContext)
+                .contains("ACCOUNT_GET", "EVENT_SEARCH")
+                .doesNotContain("COORD", "MEMBER", "ROLE_COORD", "ROLE_MEMBER")
+                .doesNotHaveDuplicates();
+    }
+
+    @Test
+    @PersistenceTest
+    @DisplayName("REQ-ACCOUNT-008 and REQ-BROWSER-AUTH-008 - soft-deleted role-permission link -> same token omits permission but retains role")
+    void softDeletedRolePermissionShouldBeResynchronizedWithoutRemovingTheRole() {
+        AuthSession account = registerAndLogin(null);
+        String roleName = "CURRENT_CONTEXT_" + UUID.randomUUID().toString().substring(0, 8);
+        UUID roleId = createCurrentContextRole(roleName);
+        UUID rolePermissionId = linkCurrentContextPermission(roleId, permissionId("EVENT_SEARCH"));
+        grantRole(account.accountId(), roleName);
+
+        Map<String, Object> initialContext = authenticatedJsonRequest(account)
+                .get("/accounts/me")
+                .then()
+                .statusCode(200)
+                .extract()
+                .jsonPath()
+                .getMap("$");
+        assertThat(roleNames(initialContext)).containsExactly(roleName);
+        assertPermissions(initialContext).containsExactly("EVENT_SEARCH");
+
+        jdbcTemplate.update(
+                "UPDATE role_permissions SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+                rolePermissionId
+        );
+
+        Map<String, Object> updatedContext = authenticatedJsonRequest(account)
+                .get("/accounts/me")
+                .then()
+                .statusCode(200)
+                .extract()
+                .jsonPath()
+                .getMap("$");
+
+        assertThat(roleNames(updatedContext)).containsExactly(roleName);
+        assertPermissions(updatedContext).isEmpty();
+    }
+
+    @Test
+    @PersistenceTest
+    @DisplayName("REQ-RBAC-005 and REQ-ACCOUNT-008 - stale system Permission on a custom Role -> preserved but grants no authority")
+    void staleSystemPermissionShouldNotAppearInCurrentContext() {
+        AuthSession account = registerAndLogin(null);
+        String roleName = "STALE_PERMISSION_ROLE_" + shortFixtureId();
+        UUID roleId = createCurrentContextRole(roleName);
+        String stalePermissionCode = "STALE_PERMISSION_" + shortFixtureId();
+        UUID stalePermissionId = createCurrentContextPermission(stalePermissionCode, true);
+        linkCurrentContextPermission(roleId, stalePermissionId);
+        grantRole(account.accountId(), roleName);
+
+        Map<String, Object> currentContext = authenticatedJsonRequest(account)
+                .get("/accounts/me")
+                .then()
+                .statusCode(200)
+                .extract()
+                .jsonPath()
+                .getMap("$");
+
+        assertThat(roleNames(currentContext)).containsExactly(roleName);
+        assertPermissions(currentContext).doesNotContain(stalePermissionCode);
+    }
+
+    @Test
+    @PersistenceTest
+    @DisplayName("REQ-RBAC-005 and REQ-ACCOUNT-008 - stale system Role assignment -> hidden and grants no authority")
+    void staleSystemRoleShouldNotAppearInCurrentContextOrGrantPermissions() {
+        AuthSession account = registerAndLogin(null);
+        String staleRoleName = "STALE_SYSTEM_ROLE_" + shortFixtureId();
+        UUID staleRoleId = createCurrentContextRole(staleRoleName, true);
+        linkCurrentContextPermission(staleRoleId, permissionId("EVENT_SEARCH"));
+        grantRole(account.accountId(), staleRoleName);
+
+        Map<String, Object> currentContext = authenticatedJsonRequest(account)
+                .get("/accounts/me")
+                .then()
+                .statusCode(200)
+                .extract()
+                .jsonPath()
+                .getMap("$");
+
+        assertThat(roleNames(currentContext)).doesNotContain(staleRoleName);
+        assertPermissions(currentContext).doesNotContain("EVENT_SEARCH");
+    }
+
+    @Test
+    @PersistenceTest
+    @DisplayName("REQ-RBAC-003/005 - stale system-role bundle link -> absent from context and cannot authorize backend reads")
+    void staleSystemRoleBundleLinkShouldNotGrantBackendAuthority() {
+        AuthSession member = registerAndLogin("MEMBER");
+        UUID memberRoleId = activeRoleId("MEMBER");
+        linkCurrentContextPermission(memberRoleId, permissionId("ROLE_GET"));
+
+        Map<String, Object> currentContext = authenticatedJsonRequest(member)
+                .get("/accounts/me")
+                .then()
+                .statusCode(200)
+                .extract()
+                .jsonPath()
+                .getMap("$");
+        ExtractableResponse<Response> catalogResponse = authenticatedJsonRequest(member)
+                .get("/roles/{roleId}", memberRoleId)
+                .then()
+                .extract();
+
+        SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(permissions(currentContext)).doesNotContain("ROLE_GET");
+            softly.assertThat(catalogResponse.statusCode()).isEqualTo(403);
+        });
+    }
+
+    @Test
+    @DisplayName("REQ-ACCOUNT-008 and REQ-BROWSER-AUTH-008 - same valid token after role removal -> current permissions are resynchronized")
+    void laterCurrentContextRequestShouldReflectRemovedEffectivePermissionUsingTheSameToken() {
+        AuthSession member = registerAndLogin("MEMBER");
+
+        Map<String, Object> initialContext = authenticatedJsonRequest(member)
+                .get("/accounts/me")
+                .then()
+                .statusCode(200)
+                .extract()
+                .jsonPath()
+                .getMap("$");
+        assertPermissions(initialContext).contains("EVENT_SEARCH");
+
+        softDeleteAccountRole(member.accountId(), "MEMBER");
+
+        Map<String, Object> updatedContext = authenticatedJsonRequest(member)
+                .get("/accounts/me")
+                .then()
+                .statusCode(200)
+                .extract()
+                .jsonPath()
+                .getMap("$");
+
+        assertThat(roleNames(updatedContext)).isEmpty();
+        assertPermissions(updatedContext).doesNotContain("EVENT_SEARCH");
+    }
+
+    @Test
+    @DisplayName("REQ-ACCOUNT-008 - soft-deleted current Account with a still-issued token -> HTTP 401 without partial context")
+    void softDeletedCurrentAccountShouldReturnUnauthorizedWithoutPartialContext() {
+        AuthSession visitor = registerAndLogin("VISITOR");
+        softDeleteAccount(visitor.accountId());
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(visitor)
+                .get("/accounts/me")
+                .then()
+                .statusCode(401)
+                .body("status", equalTo(401))
+                .extract();
+
+        assertThat(response.jsonPath().getMap("$"))
+                .doesNotContainKeys("id", "email", "displayName", "roles", "permissions");
+    }
+
     private String uniqueEmail() {
         return "account-records-" + UUID.randomUUID() + "@example.com";
     }
@@ -328,6 +613,110 @@ class AccountRecordsApiIT extends BaseApiIntegrationTest {
                 .filter(accountRecord -> accountId.toString().equals(accountRecord.get("id")))
                 .findFirst()
                 .orElseThrow();
+    }
+
+    private UUID createCurrentContextRole(String roleName) {
+        return createCurrentContextRole(roleName, false);
+    }
+
+    private UUID createCurrentContextRole(String roleName, boolean systemManaged) {
+        UUID roleId = UUID.randomUUID();
+        Timestamp now = Timestamp.from(Instant.now());
+        jdbcTemplate.update(
+                "INSERT INTO roles (id, name, description, system_managed, created_at, updated_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?)",
+                roleId,
+                roleName,
+                "Current Account context persistence fixture",
+                systemManaged,
+                now,
+                now
+        );
+        currentContextRoleIds.add(roleId);
+        return roleId;
+    }
+
+    private UUID createCurrentContextPermission(String permissionCode, boolean systemManaged) {
+        UUID permissionId = UUID.randomUUID();
+        Timestamp now = Timestamp.from(Instant.now());
+        jdbcTemplate.update(
+                "INSERT INTO permissions "
+                        + "(id, code, label, description, system_managed, created_at, updated_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                permissionId,
+                permissionCode,
+                "Stale permission fixture",
+                "Preserved permission absent from the accepted registry",
+                systemManaged,
+                now,
+                now
+        );
+        currentContextPermissionIds.add(permissionId);
+        return permissionId;
+    }
+
+    private UUID linkCurrentContextPermission(UUID roleId, UUID permissionId) {
+        UUID rolePermissionId = UUID.randomUUID();
+        jdbcTemplate.update(
+                "INSERT INTO role_permissions (id, role_id, permission_id, created_at) VALUES (?, ?, ?, ?)",
+                rolePermissionId,
+                roleId,
+                permissionId,
+                Timestamp.from(Instant.now())
+        );
+        currentContextRolePermissionIds.add(rolePermissionId);
+        return rolePermissionId;
+    }
+
+    private UUID activeRoleId(String roleName) {
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM roles WHERE name = ? AND deleted_at IS NULL",
+                UUID.class,
+                roleName
+        );
+    }
+
+    private String shortFixtureId() {
+        return UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    private static void assertCurrentContextShape(
+            Map<String, Object> currentContext,
+            UUID accountId,
+            String email,
+            String displayName
+    ) {
+        assertThat(currentContext)
+                .containsOnlyKeys("id", "email", "displayName", "roles", "permissions")
+                .containsEntry("id", accountId.toString())
+                .containsEntry("email", email)
+                .containsEntry("displayName", displayName);
+        assertThat(currentContext.get("roles")).isInstanceOf(List.class);
+        assertThat(currentContext.get("permissions")).isInstanceOf(List.class);
+
+        roles(currentContext).forEach(role -> assertThat(role)
+                .containsOnlyKeys("id", "name", "description", "systemManaged"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> roles(Map<String, Object> currentContext) {
+        return (List<Map<String, Object>>) currentContext.get("roles");
+    }
+
+    private static List<String> roleNames(Map<String, Object> currentContext) {
+        return roles(currentContext).stream()
+                .map(role -> (String) role.get("name"))
+                .toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static org.assertj.core.api.ListAssert<String> assertPermissions(Map<String, Object> currentContext) {
+        return assertThat(permissions(currentContext));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> permissions(Map<String, Object> currentContext) {
+        return (List<String>) currentContext.get("permissions");
     }
 
     @SuppressWarnings("unchecked")

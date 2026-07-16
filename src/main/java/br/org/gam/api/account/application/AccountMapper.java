@@ -5,6 +5,7 @@ import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.rbac.accountRole.application.AccountRolesRDTO;
 import br.org.gam.api.rbac.accountRole.persistence.AccountRoleEntity;
+import br.org.gam.api.rbac.role.domain.SystemRole;
 import br.org.gam.api.rbac.role.application.RoleMapper;
 import br.org.gam.api.rbac.role.application.RoleRDTO;
 import br.org.gam.api.shared.auditing.IgnoreFullAuditFields;
@@ -51,6 +52,11 @@ public interface AccountMapper {
         if (accountRoles == null) {
             return new AccountRolesRDTO();
         }
-        return new AccountRolesRDTO(accountRolesToRoleRDTOs(accountRoles));
+        List<AccountRoleEntity> currentRoleAssignments = accountRoles.stream()
+                .filter(accountRole -> accountRole.getRole() != null)
+                .filter(accountRole -> !accountRole.getRole().isSystemManaged()
+                        || SystemRole.fromCode(accountRole.getRole().getName()).isPresent())
+                .toList();
+        return new AccountRolesRDTO(accountRolesToRoleRDTOs(currentRoleAssignments));
     }
 }

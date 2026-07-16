@@ -1,5 +1,6 @@
 package br.org.gam.api.account.application;
 
+import br.org.gam.api.account.application.useCases.getCurrentAccountContext.CurrentAccountContextRDTO;
 import br.org.gam.api.rbac.accountRole.application.AccountRolesRDTO;
 import br.org.gam.api.shared.domain.GamEmail;
 import br.org.gam.api.testing.annotation.StructuralTest;
@@ -35,6 +36,29 @@ class AccountRecordSerializationTest {
 
         assertThat(response.path("roles").isArray()).isTrue();
         assertThat(response.path("roles")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("REQ-ACCOUNT-008 - null current-context collections -> exact response with empty arrays")
+    void nullCurrentContextCollectionsShouldSerializeAsEmptyArrays() throws Exception {
+        CurrentAccountContextRDTO currentContext = new CurrentAccountContextRDTO(
+                UUID.randomUUID(),
+                GamEmail.of("current-context@example.com"),
+                "Current Context",
+                null,
+                null
+        );
+
+        JsonNode response = objectMapper.readTree(objectMapper.writeValueAsString(currentContext));
+
+        assertThat(response.size()).isEqualTo(5);
+        assertThat(response.has("id")).isTrue();
+        assertThat(response.has("email")).isTrue();
+        assertThat(response.has("displayName")).isTrue();
+        assertThat(response.path("roles").isArray()).isTrue();
+        assertThat(response.path("roles")).isEmpty();
+        assertThat(response.path("permissions").isArray()).isTrue();
+        assertThat(response.path("permissions")).isEmpty();
     }
 
     private JsonNode serialize(AccountRolesRDTO roles) throws Exception {

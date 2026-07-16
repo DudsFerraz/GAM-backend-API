@@ -93,6 +93,7 @@ public class OpenApiConfig {
             components.addSchemas("ApiErrorDTO", apiErrorSchema());
             requireLocationResponseFields(components);
             requireCsrfBootstrapResponseFields(components);
+            requireCurrentAccountContextResponseFields(components);
             components.getSchemas().remove("Pageable");
 
             openApi.getPaths().forEach((path, pathItem) -> pathItem.readOperations().forEach(operation -> {
@@ -105,6 +106,7 @@ public class OpenApiConfig {
                 documentBrowserAuthenticationInputs(operation);
                 documentBrowserAuthenticationCookieResponses(operation);
                 documentErrorResponses(operation);
+                documentCurrentAccountContext(operation);
                 addExamples(openApi, operation);
             }));
         };
@@ -121,6 +123,17 @@ public class OpenApiConfig {
         Schema<?> csrfBootstrap = components.getSchemas().get("CsrfBootstrapRDTO");
         if (csrfBootstrap != null) {
             csrfBootstrap.setRequired(List.of("token", "headerName"));
+        }
+    }
+
+    private void requireCurrentAccountContextResponseFields(Components components) {
+        Schema<?> currentAccountContext = components.getSchemas().get("CurrentAccountContextRDTO");
+        if (currentAccountContext != null) {
+            currentAccountContext.setRequired(List.of("id", "email", "displayName", "roles", "permissions"));
+
+            Schema<?> permissions = currentAccountContext.getProperties().get("permissions");
+            permissions.setItems(new StringSchema());
+            permissions.setUniqueItems(true);
         }
     }
 
@@ -318,6 +331,30 @@ public class OpenApiConfig {
         operation.getResponses().putIfAbsent("403", errorResponse(403, "FORBIDDEN", "The authenticated account is not allowed to perform this operation."));
         operation.getResponses().putIfAbsent("404", errorResponse(404, "NOT_FOUND", "The requested resource was not found."));
         operation.getResponses().putIfAbsent("409", errorResponse(409, "CONFLICT", "The request conflicts with the current resource state."));
+    }
+
+    private void documentCurrentAccountContext(io.swagger.v3.oas.models.Operation operation) {
+        if (!"getCurrentAccountContext".equals(operation.getOperationId())) {
+            return;
+        }
+
+        operation.getResponses().keySet().removeIf(status -> !Set.of("200", "401").contains(status));
+        io.swagger.v3.oas.models.media.MediaType successJson = operation.getResponses()
+                .get("200")
+                .getContent()
+                .get("application/json");
+        successJson.setExample(Map.of(
+                "id", "019f6343-321a-7c90-a096-a551e8f88eb4",
+                "email", "member@example.test",
+                "displayName", "Example Member",
+                "roles", List.of(Map.of(
+                        "id", "019f6343-321a-7c90-a096-a551e8f88eb5",
+                        "name", "MEMBER",
+                        "description", "Standard authenticated member access",
+                        "systemManaged", true
+                )),
+                "permissions", List.of("ACCOUNT_GET", "EVENT_SEARCH")
+        ));
     }
 
     private ApiResponse errorResponse(int status, String code, String description) {

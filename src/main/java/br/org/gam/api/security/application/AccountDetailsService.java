@@ -4,7 +4,10 @@ import br.org.gam.api.shared.domain.GamEmail;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.account.persistence.AccountRepository;
 import br.org.gam.api.rbac.accountRole.persistence.AccountRoleEntity;
+import br.org.gam.api.rbac.permission.domain.PermissionEnum;
 import br.org.gam.api.rbac.permission.persistence.PermissionEntity;
+import br.org.gam.api.rbac.role.domain.SystemRole;
+import br.org.gam.api.rbac.role.persistence.RoleEntity;
 import br.org.gam.api.rbac.rolePermission.persistence.RolePermissionEntity;
 import java.util.HashSet;
 import java.util.Set;
@@ -52,17 +55,25 @@ public class AccountDetailsService implements UserDetailsService {
 
         if (accountEntity.getAccountRoles() != null) {
             for (AccountRoleEntity accountRole : accountEntity.getAccountRoles()) {
-
-                var role = accountRole.getRole();
+                RoleEntity role = accountRole.getRole();
                 if (role == null) continue;
+
+                SystemRole systemRole = null;
+                if (role.isSystemManaged()) {
+                    systemRole = SystemRole.fromCode(role.getName()).orElse(null);
+                    if (systemRole == null) continue;
+                }
 
                 if (role.getRolePermissions() != null) {
                     for (RolePermissionEntity rolePermission : role.getRolePermissions()) {
                         PermissionEntity permission = rolePermission.getPermission();
+                        if (permission == null || !permission.isSystemManaged()) continue;
 
-                        if (permission != null) {
-                            authorities.add(new SimpleGrantedAuthority(permission.getCode()));
-                        }
+                        PermissionEnum currentPermission = PermissionEnum.fromCode(permission.getCode()).orElse(null);
+                        if (currentPermission == null) continue;
+                        if (systemRole != null && !systemRole.includes(currentPermission)) continue;
+
+                        authorities.add(new SimpleGrantedAuthority(currentPermission.getCode()));
                     }
                 }
             }

@@ -124,6 +124,85 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
     }
 
     @Test
+    @DisplayName("REQ-ACCOUNT-008 and REQ-OPENAPI-003/005 - current Account context -> API-relative protected operation and exact schema")
+    void currentAccountContextShouldBeDocumentedAsAnApiRelativeBearerOperation() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> paths = object(contract, "paths");
+
+        assertThat(paths)
+                .containsKey("/accounts/me")
+                .doesNotContainKey("/api/accounts/me");
+
+        Map<String, Object> operation = object(object(paths, "/accounts/me"), "get");
+        assertThat(operation).containsEntry("operationId", "getCurrentAccountContext");
+        assertThat(operation.getOrDefault("security", contract.get("security")))
+                .isEqualTo(List.of(Map.of("bearerAuth", List.of())));
+        assertThat(operation.get("summary").toString())
+                .containsIgnoringCase("current Account context");
+        assertThat(operation.get("description").toString())
+                .containsIgnoringCase("authenticated Account")
+                .containsIgnoringCase("effective permission")
+                .doesNotContain("Performs the documented GAM operation");
+        assertThat(operation).doesNotContainKeys("parameters", "requestBody");
+
+        Map<String, Object> responses = object(operation, "responses");
+        assertThat(responses).containsOnlyKeys("200", "401");
+
+        Map<String, Object> successResponse = object(responses, "200");
+        Map<String, Object> successJson = object(object(successResponse, "content"), "application/json");
+        Map<String, Object> currentContextSchema = resolveSchema(contract, object(successJson, "schema"));
+        Map<String, Object> properties = object(currentContextSchema, "properties");
+        Map<String, Object> example = object(successJson, "example");
+
+        assertThat(example).containsOnlyKeys("id", "email", "displayName", "roles", "permissions");
+        assertThat(example.get("email").toString())
+                .endsWith("@example.test")
+                .isNotEqualTo("Synthetic GAM value");
+        assertThat(example.get("displayName").toString())
+                .isNotBlank()
+                .isNotEqualTo("Synthetic GAM value");
+        assertThat(objects(example, "roles"))
+                .singleElement()
+                .satisfies(role -> assertThat(role)
+                        .containsEntry("name", "MEMBER")
+                        .containsEntry("description", "Standard authenticated member access")
+                        .containsEntry("systemManaged", true));
+        assertThat(strings(example, "permissions"))
+                .contains("ACCOUNT_GET", "EVENT_SEARCH")
+                .doesNotHaveDuplicates();
+
+        assertThat(strings(currentContextSchema, "required"))
+                .containsExactlyInAnyOrder("id", "email", "displayName", "roles", "permissions");
+        assertThat(properties).containsOnlyKeys("id", "email", "displayName", "roles", "permissions");
+        assertThat(object(properties, "id"))
+                .containsEntry("type", "string")
+                .containsEntry("format", "uuid");
+        assertThat(object(properties, "email")).containsEntry("type", "string");
+        assertThat(object(properties, "displayName")).containsEntry("type", "string");
+
+        Map<String, Object> rolesSchema = object(properties, "roles");
+        Map<String, Object> roleSchema = resolveSchema(contract, object(rolesSchema, "items"));
+        assertThat(rolesSchema).containsEntry("type", "array");
+        assertThat(strings(roleSchema, "required"))
+                .containsExactlyInAnyOrder("id", "name", "description", "systemManaged");
+        assertThat(object(roleSchema, "properties"))
+                .containsOnlyKeys("id", "name", "description", "systemManaged");
+
+        Map<String, Object> permissionsSchema = object(properties, "permissions");
+        assertThat(permissionsSchema)
+                .containsEntry("type", "array")
+                .containsEntry("uniqueItems", true);
+        assertThat(object(permissionsSchema, "items")).containsEntry("type", "string");
+
+        Map<String, Object> unauthorizedResponse = object(responses, "401");
+        Map<String, Object> unauthorizedJson = object(object(unauthorizedResponse, "content"), "application/json");
+        Map<String, Object> errorSchema = resolveSchema(contract, object(unauthorizedJson, "schema"));
+        assertThat(object(errorSchema, "properties"))
+                .containsKeys("timestamp", "status", "code", "message", "details")
+                .doesNotContainKey("error");
+    }
+
+    @Test
     @DisplayName("REQ-OPENAPI-002 - non-development Swagger UI configuration -> every request method is read-only")
     void nonDevelopmentSwaggerUiShouldDisableInteractiveRequestExecution() {
         Map<String, Object> configuration = swaggerUiConfiguration();

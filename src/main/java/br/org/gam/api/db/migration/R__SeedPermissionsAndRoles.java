@@ -9,30 +9,14 @@ import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.EnumMap;
-import java.util.EnumSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import org.flywaydb.core.api.migration.BaseJavaMigration;
 import org.flywaydb.core.api.migration.Context;
 import org.springframework.stereotype.Component;
 
-import static br.org.gam.api.rbac.permission.domain.PermissionEnum.*;
-
 @Component
 public class R__SeedPermissionsAndRoles extends BaseJavaMigration {
-    private static final Set<PermissionEnum> COORD_PERMISSIONS = EnumSet.allOf(PermissionEnum.class);
-
-    private static final Set<PermissionEnum> MEMBER_PERMISSIONS = EnumSet.of(
-            MEMBER_GET,
-            ACCOUNT_GET,
-            EVENT_SEARCH,
-            EVENT_GET_PRESENCES,
-            EVENT_GET_MEMBER
-    );
-
-    private static final Set<PermissionEnum> VISITOR_PERMISSIONS = EnumSet.noneOf(PermissionEnum.class);
-
     @Override
     public void migrate(Context context) throws Exception {
         Connection connection = context.getConnection();
@@ -123,18 +107,16 @@ public class R__SeedPermissionsAndRoles extends BaseJavaMigration {
             for (PermissionEnum permission : PermissionEnum.values()) {
                 UUID permissionId = permissionIds.get(permission);
 
-                linkPermissionToRole(roleIds.get(SystemRole.SUDO), permissionId, now, checkRolePermStmt, insertRolePermStmt);
-
-                if (COORD_PERMISSIONS.contains(permission)) {
-                    linkPermissionToRole(roleIds.get(SystemRole.COORD), permissionId, now, checkRolePermStmt, insertRolePermStmt);
-                }
-
-                if (MEMBER_PERMISSIONS.contains(permission)) {
-                    linkPermissionToRole(roleIds.get(SystemRole.MEMBER), permissionId, now, checkRolePermStmt, insertRolePermStmt);
-                }
-
-                if (VISITOR_PERMISSIONS.contains(permission)) {
-                    linkPermissionToRole(roleIds.get(SystemRole.VISITOR), permissionId, now, checkRolePermStmt, insertRolePermStmt);
+                for (SystemRole role : SystemRole.values()) {
+                    if (role.includes(permission)) {
+                        linkPermissionToRole(
+                                roleIds.get(role),
+                                permissionId,
+                                now,
+                                checkRolePermStmt,
+                                insertRolePermStmt
+                        );
+                    }
                 }
             }
         }
