@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-GAM needs a durable contract for registering lifetime Members, reading and searching Member records, and changing a Member between active and inactive participation.
+GAM needs a durable contract for registering lifetime Members, reading and searching Member records, reading a Member's presence history, and changing a Member between active and inactive participation.
 
 Account registration creates an identity only. It does not create membership. A Coordinator may register a Member directly, while an Account may separately use the membership-solicitation workflow. Both paths must preserve one lifetime Member per Account and keep Member status synchronized with the Account's lifecycle-owned authorization role.
 
@@ -13,6 +13,7 @@ The current implementation and tests predate this Requirement Specification and 
 ## Ubiquitous Language
 - `direct Member registration`: A Coordinator-authorized workflow that creates an active Member for an existing Account without a membership solicitation.
 - `Member status`: The Member's current participation state, either `ACTIVE` or `INACTIVE`.
+- `linked-Account access`: Access to a Member's own record or presence history granted because the authenticated Account is the Account immutably linked to that Member.
 - `activation reason`: The Coordinator-supplied reason for directly registering or reactivating a Member, or the approval reason that establishes membership through a solicitation.
 - `deactivation reason`: The Coordinator-supplied reason for changing an active Member to inactive.
 
@@ -193,25 +194,13 @@ Invalid examples:
 
 ---
 
-### REQ-MEMBER-008: Member record authorization and status visibility
-The system shall expose `GET /members/{memberId}` for direct Member lookup and `POST /members/search` for paginated Member search.
+### REQ-MEMBER-008: Member record authorization and status visibility (superseded)
+This requirement is superseded by `REQ-MEMBER-013`, `REQ-MEMBER-014`, and `REQ-MEMBER-015`.
 
-Direct lookup shall require `MEMBER_GET`. Search shall require `MEMBER_SEARCH`.
+The superseded rule required `MEMBER_GET` for every direct Member lookup, required `MEMBER_SEARCH` for Member search, and allowed only callers with `MEMBER_GET_NON_ACTIVE` to see inactive Members. It did not provide linked-Account access to the Member record and did not define Member presence-history visibility.
 
-Callers without `MEMBER_GET_NON_ACTIVE` shall see only `ACTIVE` Members through lookup and search. A caller with `MEMBER_GET_NON_ACTIVE` may also see `INACTIVE` Members.
-
-A direct lookup for a missing, soft-deleted, or status-hidden Member shall return `404 Not Found`. Pending and rejected membership solicitations shall never appear as Member records.
-
-Rationale:
-Inactive membership is restricted operational information, while active Member visibility follows the ordinary Member-read permissions.
-
-Valid examples:
-- A caller with `MEMBER_GET` reads an active Member.
-- A caller with `MEMBER_SEARCH` and `MEMBER_GET_NON_ACTIVE` searches active and inactive Members.
-
-Invalid examples:
-- A caller without `MEMBER_GET_NON_ACTIVE` retrieves an inactive Member.
-- A rejected applicant appears in Member search.
+Rationale for supersession:
+An authenticated Account must retain access to its own lifetime Member record and presence history after deactivation replaces its `MEMBER` Role with `VISITOR`. Collection discovery and access to other Members remain permission-gated.
 
 ---
 
@@ -236,7 +225,7 @@ Member lookup, search, and successful direct registration shall return this Memb
 
 The response shall not expose Account roles, credentials, tokens, authentication sessions, soft-delete fields, or row audit metadata.
 
-`MEMBER_GET_NON_ACTIVE` shall expand which Member statuses are visible but shall not change the response fields.
+The authorization path that makes a Member visible shall not change the response fields.
 
 Rationale:
 Member records need contact and linked identity information without exposing authorization internals or low-level persistence metadata.
@@ -267,7 +256,7 @@ Invalid examples:
 | `createdAt` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` |
 | `updatedAt` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` |
 
-Empty filters shall return a paginated page of all Members visible to the caller. Search shall apply the status visibility from `REQ-MEMBER-008` in addition to caller-supplied filters.
+Empty filters shall return a paginated page of all Members visible to the caller. Search shall apply the status visibility from `REQ-MEMBER-014` in addition to caller-supplied filters.
 
 Unsupported methods and invalid filter values shall identify the public field. Unknown fields shall return the generic message `Unknown filter field.` and shall not expose submitted field names or persistence paths.
 
@@ -318,6 +307,97 @@ The business mutation, role synchronization, and activity-log row shall commit t
 Rationale:
 The audit history should represent one business intention rather than every database write caused by that intention.
 
+---
+
+### REQ-MEMBER-013: Direct Member lookup visibility
+The system shall expose `GET /members/{memberId}` for authenticated direct Member lookup.
+
+An authenticated Account shall be allowed to read the Member record linked to that same Account regardless of whether the Member is `ACTIVE` or `INACTIVE`. Linked-Account access shall not require `MEMBER_GET` or `MEMBER_GET_NON_ACTIVE`.
+
+For a Member linked to another Account:
+
+- reading an `ACTIVE` Member shall require `MEMBER_GET`; and
+- reading an `INACTIVE` Member shall require both `MEMBER_GET` and `MEMBER_GET_NON_ACTIVE`.
+
+`MEMBER_GET_NON_ACTIVE` shall be an additional status-visibility permission and shall not grant direct lookup without `MEMBER_GET`.
+
+Eligibility for linked-Account access shall be determined only by the immutable Member-to-Account linkage from `REQ-MEMBER-001`. Matching email addresses, names, Roles, permissions, or historical associations shall not establish linked-Account access.
+
+A lookup for a missing or soft-deleted Member shall return `404 Not Found`. A caller whose Account is not linked to the target Member and who has `MEMBER_GET` but not `MEMBER_GET_NON_ACTIVE` shall receive `404 Not Found` when requesting an inactive Member. Pending and rejected membership solicitations shall never appear as Member records.
+
+Rationale:
+A Member must retain access to their own lifetime membership information after deactivation removes ordinary Member permissions. Access to another person's inactive membership remains restricted operational information.
+
+Valid examples:
+- An authenticated Account with only `VISITOR` reads its own linked inactive Member record.
+- A caller with `MEMBER_GET` reads another active Member.
+- A caller with `MEMBER_GET` and `MEMBER_GET_NON_ACTIVE` reads another inactive Member.
+
+Invalid examples:
+- An Account claims linked-Account access because its email matches data associated with another Member.
+- A caller uses `MEMBER_GET_NON_ACTIVE` without `MEMBER_GET` to read another inactive Member.
+- Linked-Account access exposes a soft-deleted Member.
+
+---
+
+### REQ-MEMBER-014: Member search authorization and status visibility
+The system shall expose `POST /members/search` for authenticated paginated Member search. Search shall require `MEMBER_SEARCH` for every caller.
+
+Linked-Account access from `REQ-MEMBER-013` shall not grant Member search. `MEMBER_GET`, `MEMBER_GET_NON_ACTIVE`, or knowledge of the caller's own Member identifier shall not substitute for `MEMBER_SEARCH`.
+
+A caller with `MEMBER_SEARCH` but without `MEMBER_GET_NON_ACTIVE` shall receive only `ACTIVE` Members. A caller with both permissions may receive `ACTIVE` and `INACTIVE` Members. `MEMBER_GET_NON_ACTIVE` shall not grant search without `MEMBER_SEARCH`.
+
+Status visibility shall be applied in addition to every caller-supplied filter. A filter requesting inactive Members shall not bypass the permission boundary. Status-hidden Members shall be omitted from the page rather than causing the search to fail.
+
+The accepted public filter vocabulary and comparison methods are defined by `REQ-MEMBER-010`.
+
+Rationale:
+Direct self-access is not collection discovery. Search remains a separately granted capability, and inactive membership remains restricted within search results.
+
+Valid examples:
+- A caller with only `MEMBER_SEARCH` receives active Members when searching with empty filters.
+- A caller with `MEMBER_SEARCH` and `MEMBER_GET_NON_ACTIVE` searches active and inactive Members.
+
+Invalid examples:
+- An Account without `MEMBER_SEARCH` searches only for its own Member record.
+- A caller with only `MEMBER_GET_NON_ACTIVE` performs Member search.
+- A status filter exposes inactive Members to a caller without non-active visibility.
+
+---
+
+### REQ-MEMBER-015: Member presence-history visibility
+The system shall expose `GET /members/{memberId}/presences` for authenticated paginated access to a Member's presence history.
+
+An authenticated Account shall be allowed to read the presence history of its own linked Member regardless of Member status. Linked-Account access shall not require `PRESENCES_SEARCH` or `MEMBER_GET_NON_ACTIVE`.
+
+For a Member linked to another Account:
+
+- reading an `ACTIVE` Member's presence history shall require `PRESENCES_SEARCH`; and
+- reading an `INACTIVE` Member's presence history shall require both `PRESENCES_SEARCH` and `MEMBER_GET_NON_ACTIVE`.
+
+`MEMBER_GET` and `MEMBER_SEARCH` shall not substitute for `PRESENCES_SEARCH`. `MEMBER_GET_NON_ACTIVE` shall expand which Member statuses are visible but shall not independently grant presence-history access.
+
+The system shall return:
+
+- `401 Unauthorized` when the request is unauthenticated;
+- `403 Forbidden` when the target Member is visible but the authenticated caller has neither linked-Account access nor `PRESENCES_SEARCH`; and
+- `404 Not Found` when the target Member is missing or soft-deleted, or when the target Member is inactive, the authenticated Account is not linked to that Member, and the caller lacks `MEMBER_GET_NON_ACTIVE`.
+
+Eligibility for linked-Account access shall use only the immutable Member-to-Account linkage from `REQ-MEMBER-001`. A failed visibility or authorization check shall expose no presence data.
+
+Rationale:
+Members need access to their own participation history, while presence history belonging to other Members is operational information. Applying inactive visibility to the parent Member prevents the presence endpoint from bypassing Member status privacy.
+
+Valid examples:
+- An authenticated Account with only `VISITOR` reads its own inactive Member's presence history.
+- A caller with `PRESENCES_SEARCH` reads an active Member's presence history.
+- A caller with `PRESENCES_SEARCH` and `MEMBER_GET_NON_ACTIVE` reads an inactive Member's presence history.
+
+Invalid examples:
+- A caller uses `MEMBER_GET` as a substitute for `PRESENCES_SEARCH`.
+- A caller with `PRESENCES_SEARCH` but without `MEMBER_GET_NON_ACTIVE` reads an inactive Member's presence history.
+- Linked-Account access exposes the presence history of a soft-deleted Member.
+
 ## Acceptance scenarios
 
 ```gherkin
@@ -360,16 +440,83 @@ Scenario: Hide inactive Member without non-active visibility
   When the caller requests GET /members/{memberId}
   Then the system returns 404 Not Found
 
+Scenario: Inactive Member reads own record without general Member permissions
+  Given an INACTIVE Member is linked to the authenticated Account
+  And the Account has neither MEMBER_GET nor MEMBER_GET_NON_ACTIVE
+  When the Account requests GET /members/{memberId} for its own linked Member
+  Then the system returns the Member record
+
 Scenario: Search cannot bypass status visibility
   Given active and inactive Members exist
   And the caller has MEMBER_SEARCH but not MEMBER_GET_NON_ACTIVE
   When the caller searches with empty filters
   Then the response contains active Members only
+
+Scenario: Linked-Account access does not grant Member search
+  Given a Member is linked to the authenticated Account
+  And the Account does not have MEMBER_SEARCH
+  When the Account searches with a filter for its own Member identifier
+  Then the system returns 403 Forbidden
+
+Scenario: Inactive Member reads own presence history
+  Given an INACTIVE Member is linked to the authenticated Account
+  And the Account has neither PRESENCES_SEARCH nor MEMBER_GET_NON_ACTIVE
+  When the Account requests GET /members/{memberId}/presences for its own linked Member
+  Then the system returns the paginated presence history
+
+Scenario: Presence search cannot bypass inactive Member visibility
+  Given an INACTIVE Member is linked to another Account
+  And the caller has PRESENCES_SEARCH but not MEMBER_GET_NON_ACTIVE
+  When the caller requests GET /members/{memberId}/presences
+  Then the system returns 404 Not Found
+
+Scenario: Deny another visible Member's presence history without permission
+  Given an ACTIVE Member is linked to another Account
+  And the caller does not have PRESENCES_SEARCH
+  When the caller requests GET /members/{memberId}/presences
+  Then the system returns 403 Forbidden
 ```
 
 ## Diagrams
 
 * [Member Lifecycle and Membership Solicitation](../../diagrams/member-lifecycle-and-solicitation.md)
+
+```mermaid
+flowchart TD
+    Request["Member read request"] --> Auth{"Authenticated?"}
+    Auth -- "No" --> Unauthorized["401 Unauthorized"]
+    Auth -- "Yes" --> Operation{"Operation"}
+
+    Operation -- "Direct lookup" --> DirectExists{"Member exists and is not soft-deleted?"}
+    DirectExists -- "No" --> DirectHidden["404 Not Found"]
+    DirectExists -- "Yes" --> DirectLinked{"Authenticated Account is linked to Member?"}
+    DirectLinked -- "Yes" --> DirectVisible["Return visible Member"]
+    DirectLinked -- "No" --> MemberGet{"Has MEMBER_GET?"}
+    MemberGet -- "No" --> DirectForbidden["403 Forbidden"]
+    MemberGet -- "Yes" --> DirectStatus{"Member ACTIVE?"}
+    DirectStatus -- "Yes" --> DirectVisible
+    DirectStatus -- "No" --> DirectNonActive{"Has MEMBER_GET_NON_ACTIVE?"}
+    DirectNonActive -- "Yes" --> DirectVisible
+    DirectNonActive -- "No" --> DirectHidden
+
+    Operation -- "Member search" --> MemberSearch{"Has MEMBER_SEARCH?"}
+    MemberSearch -- "No" --> SearchForbidden["403 Forbidden"]
+    MemberSearch -- "Yes" --> SearchNonActive{"Has MEMBER_GET_NON_ACTIVE?"}
+    SearchNonActive -- "No" --> ActivePage["Return matching ACTIVE Members"]
+    SearchNonActive -- "Yes" --> AllPage["Return matching ACTIVE and INACTIVE Members"]
+
+    Operation -- "Member presences" --> PresenceExists{"Member exists and is not soft-deleted?"}
+    PresenceExists -- "No" --> PresenceHidden["404 Not Found"]
+    PresenceExists -- "Yes" --> PresenceLinked{"Authenticated Account is linked to Member?"}
+    PresenceLinked -- "Yes" --> PresenceVisible["Return paginated presence history"]
+    PresenceLinked -- "No" --> PresenceStatus{"Member ACTIVE?"}
+    PresenceStatus -- "Yes" --> PresenceSearch{"Has PRESENCES_SEARCH?"}
+    PresenceStatus -- "No" --> PresenceNonActive{"Has MEMBER_GET_NON_ACTIVE?"}
+    PresenceNonActive -- "No" --> PresenceHidden
+    PresenceNonActive -- "Yes" --> PresenceSearch
+    PresenceSearch -- "Yes" --> PresenceVisible
+    PresenceSearch -- "No" --> PresenceForbidden["403 Forbidden"]
+```
 
 ## Open questions
 
@@ -383,6 +530,8 @@ Scenario: Search cannot bypass status visibility
 * Account deactivation, deletion, or restoration workflows.
 * Manually adding or dropping lifecycle-owned `MEMBER` and `VISITOR` roles.
 * Reading activity-log history through Member endpoints.
+* Event-centric presence visibility, including `GET /events/{eventId}/presences`.
+* Presence registration, editing, removal, response-field definition, or other presence lifecycle behavior.
 * Test structure or implementation strategy.
 
 ## Related ADRs
