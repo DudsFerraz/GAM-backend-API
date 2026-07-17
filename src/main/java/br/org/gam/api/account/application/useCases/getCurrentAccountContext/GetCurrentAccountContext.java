@@ -5,7 +5,9 @@ import br.org.gam.api.account.application.AccountMapper;
 import br.org.gam.api.account.application.AccountRDTO;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.security.SecurityUtils;
+import br.org.gam.api.shared.exception.NotFoundException;
 import java.util.UUID;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,7 +30,12 @@ public class GetCurrentAccountContext {
 
     @Transactional(readOnly = true)
     public CurrentAccountContextRDTO get(UUID accountId) {
-        AccountEntity accountEntity = accountEntityLoader.requiredById(accountId);
+        AccountEntity accountEntity;
+        try {
+            accountEntity = accountEntityLoader.requiredById(accountId);
+        } catch (NotFoundException ignored) {
+            throw new UsernameNotFoundException("Current Account is no longer authenticatable");
+        }
         AccountRDTO account = accountMapper.entityToRDTO(accountEntity);
 
         return new CurrentAccountContextRDTO(

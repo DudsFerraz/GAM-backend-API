@@ -1,5 +1,6 @@
 package br.org.gam.api.api;
 
+import br.org.gam.api.security.application.AccountDetails;
 import br.org.gam.api.testing.annotation.ApiTest;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.IntegrationTest;
@@ -8,6 +9,11 @@ import br.org.gam.api.testing.annotation.SecurityTest;
 import br.org.gam.api.testing.integration.BaseApiIntegrationTest;
 import io.restassured.response.ExtractableResponse;
 import io.restassured.response.Response;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -19,7 +25,15 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.security.SecurityProperties;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -31,7 +45,10 @@ import static org.hamcrest.Matchers.not;
 @IntegrationTest
 @SecurityTest
 @DisplayName("API - Account Records")
+@Import(AccountRecordsApiIT.CurrentAccountDisappearanceTestConfiguration.class)
 class AccountRecordsApiIT extends BaseApiIntegrationTest {
+
+    private static final String DISAPPEAR_CURRENT_ACCOUNT_HEADER = "X-Test-Disappear-Current-Account";
 
     private final List<UUID> currentContextRoleIds = new ArrayList<>();
     private final List<UUID> currentContextPermissionIds = new ArrayList<>();
@@ -584,6 +601,56 @@ class AccountRecordsApiIT extends BaseApiIntegrationTest {
 
         assertThat(response.jsonPath().getMap("$"))
                 .doesNotContainKeys("id", "email", "displayName", "roles", "permissions");
+    }
+
+    @Test
+    @PersistenceTest
+    @DisplayName("REQ-ACCOUNT-008 - Account disappears after authentication -> HTTP 401 without partial context")
+    void currentAccountDisappearingAfterAuthenticationShouldReturnUnauthorizedWithoutPartialContext() {
+        AuthSession visitor = registerAndLogin("VISITOR");
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(visitor)
+                .header(DISAPPEAR_CURRENT_ACCOUNT_HEADER, "true")
+                .get("/accounts/me")
+                .then()
+                .statusCode(401)
+                .body("status", equalTo(401))
+                .extract();
+
+        assertThat(response.jsonPath().getMap("$"))
+                .doesNotContainKeys("id", "email", "displayName", "roles", "permissions");
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class CurrentAccountDisappearanceTestConfiguration {
+
+        @Bean
+        FilterRegistrationBean<OncePerRequestFilter> currentAccountDisappearanceFilter(JdbcTemplate jdbcTemplate) {
+            OncePerRequestFilter filter = new OncePerRequestFilter() {
+                @Override
+                protected void doFilterInternal(
+                        HttpServletRequest request,
+                        HttpServletResponse response,
+                        FilterChain filterChain
+                ) throws ServletException, IOException {
+                    if ("true".equals(request.getHeader(DISAPPEAR_CURRENT_ACCOUNT_HEADER))) {
+                        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+                        if (authentication != null && authentication.getPrincipal() instanceof AccountDetails accountDetails) {
+                            jdbcTemplate.update(
+                                    "UPDATE accounts SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+                                    accountDetails.getId()
+                            );
+                        }
+                    }
+                    filterChain.doFilter(request, response);
+                }
+            };
+
+            FilterRegistrationBean<OncePerRequestFilter> registration = new FilterRegistrationBean<>(filter);
+            registration.setOrder(SecurityProperties.DEFAULT_FILTER_ORDER + 1);
+            registration.addUrlPatterns("/accounts/me");
+            return registration;
+        }
     }
 
     private String uniqueEmail() {
