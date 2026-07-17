@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.env.MockEnvironment;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -36,6 +37,27 @@ class BrowserSessionConfigurationTest {
                 "https://app.example.com:8443", true, "prod");
 
         assertThatCode(configuration::validate).doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 65535})
+    @DisplayName("REQ-WEB-002 - BVA valid explicit TCP port -> accepted")
+    void validExplicitTcpPortShouldBeAccepted(int port) {
+        BrowserSessionConfiguration configuration = configuration(
+                "https://app.example.com:" + port, true, "prod");
+
+        assertThatCode(configuration::validate).doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 65536})
+    @DisplayName("REQ-WEB-002 - BVA invalid explicit TCP port -> startup configuration error")
+    void invalidExplicitTcpPortShouldFailStartupValidation(int port) {
+        BrowserSessionConfiguration configuration = configuration(
+                "https://app.example.com:" + port, true, "prod");
+
+        assertThatThrownBy(configuration::validate)
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test

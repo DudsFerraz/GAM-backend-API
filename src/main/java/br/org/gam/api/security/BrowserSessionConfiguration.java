@@ -71,19 +71,24 @@ public class BrowserSessionConfiguration {
         }
 
         String scheme = origin.getScheme();
-        if (scheme == null
-                || (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme))
+        if ((!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme))
                 || origin.getHost() == null
                 || origin.getHost().isBlank()
                 || origin.getUserInfo() != null
                 || hasText(origin.getRawPath())
                 || origin.getRawQuery() != null
                 || origin.getRawFragment() != null
+                || usesInvalidExplicitPort(origin)
                 || usesExplicitDefaultPort(origin, scheme)) {
             throw invalidOrigin();
         }
 
         return origin;
+    }
+
+    private boolean usesInvalidExplicitPort(URI origin) {
+        int port = origin.getPort();
+        return port != -1 && (port < 1 || port > 65535);
     }
 
     private boolean usesExplicitDefaultPort(URI origin, String scheme) {
@@ -108,6 +113,7 @@ public class BrowserSessionConfiguration {
 
     private IllegalStateException invalidOrigin() {
         return new IllegalStateException(
-                "GAM_PUBLIC_ORIGIN must be a valid absolute HTTP(S) origin without path, query, fragment, user info, or an explicit default port.");
+                "GAM_PUBLIC_ORIGIN must be a valid absolute HTTP(S) origin without path, query, fragment, "
+                        + "user info, an invalid TCP port, or an explicit default port.");
     }
 }
