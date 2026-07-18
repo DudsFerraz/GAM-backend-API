@@ -27,6 +27,7 @@ This document is not a Requirement Specification. It defines canonical terms, di
 | **GamPhoneNumber** | The common primitive for a normalized, dialable phone number.                                                                                                                                | None                 | PhoneNumber, MyPhoneNumber       |
 | **GamLocation**    | An independently persisted, reusable physical place where GAM activities may occur and which multiple Events may reference.                                                                  | None                 | Location                         |
 | **Event**          | The shared persisted record for a GAM activity, including its identity, time range, GamLocation, type, audience restriction, and lifecycle state.                                            | None                 | Activity record                  |
+| **Presence**       | The persisted historical fact that a Member's attendance at an Event was confirmed. At most one active Presence may exist for one Event and Member pair.                                    | None                 | RSVP, planned attendance         |
 | **Generic Event**  | An Event created through the common Event workflow because it requires no specialized Oratorio, Missa, or other type-specific data.                                                          | None                 | Generic activity                 |
 | **UUID**           | The convention that persisted GAM resources use UUID values as public and internal identifiers.                                                                                              | id                   | Numeric ID, database sequence ID |
 | **lifecycle-owned Role** | The `MEMBER` or `VISITOR` system Role whose assignment is controlled exclusively by Member lifecycle workflows. | None | None |
@@ -50,8 +51,10 @@ This document is not a Requirement Specification. It defines canonical terms, di
 - A **GamName** is composed of `firstName` and `surname`.
 - A **GamLocation** may be referenced by multiple Events and may exist without an Event reference.
 - An **Event** references one **GamLocation**.
+- A **Presence** references exactly one **Member** and one **Event**.
+- Removing a **Presence** ends its active identity without erasing its preserved historical row; the same Member and Event may later receive a new Presence with a new UUID.
 - A **Generic Event** is an **Event** whose type is `GENERIC`.
-- **UUID** is used to identify persisted resources such as Accounts, Members, Oratorianos, Events, GamLocations, Roles, and Permissions.
+- **UUID** is used to identify persisted resources such as Accounts, Members, Oratorianos, Events, Presences, GamLocations, Roles, and Permissions.
 - The **Proxy** serves the frontend and API from the **Canonical Public Origin** while keeping backend and database application ports private.
 
 ## Usage rules

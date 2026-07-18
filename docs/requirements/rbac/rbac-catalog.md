@@ -62,7 +62,7 @@ The RBAC catalog shall maintain a code-defined registry of system permissions. T
 | Accounts | `ACCOUNT_GET`, `ACCOUNT_SEARCH`, `ACCOUNT_ROLE_MANAGE` |
 | Events | `EVENT_CREATE`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `EVENT_GET_COORD`, `EVENT_MANAGE` |
 | GamLocations | `GAM_LOCATION_GET`, `GAM_LOCATION_CREATE`, `GAM_LOCATION_MANAGE` |
-| Presences | `PRESENCES_SEARCH` |
+| Presences | `PRESENCES_SEARCH`, `PRESENCE_REGISTER`, `PRESENCE_EDIT`, `PRESENCE_REMOVE` |
 | RBAC catalog | `ROLE_GET`, `PERMISSION_GET` |
 
 Each system permission shall have a stable machine `code`, a human-readable `label`, and a `description`. Permission codes shall not be renamed after this Requirement Specification is accepted.
@@ -91,6 +91,9 @@ The accepted display metadata for every system permission is:
 | `GAM_LOCATION_CREATE` | `Create GAM locations` | `Allows creating GamLocation records` |
 | `GAM_LOCATION_MANAGE` | `Manage GAM locations` | `Allows updating and removing GamLocation records` |
 | `PRESENCES_SEARCH` | `Search presences` | `Allows searching presences` |
+| `PRESENCE_REGISTER` | `Register presences` | `Allows recording Member attendance at Events` |
+| `PRESENCE_EDIT` | `Edit presences` | `Allows editing observations on Member attendance records` |
+| `PRESENCE_REMOVE` | `Remove presences` | `Allows removing mistaken Member attendance records` |
 | `ROLE_GET` | `View roles` | `Allows reading role catalog entries` |
 | `PERMISSION_GET` | `View permissions` | `Allows reading permission catalog entries` |
 
@@ -116,7 +119,7 @@ The current baseline shall seed these active permission bundles:
 | Role | Permissions |
 | --- | --- |
 | `SUDO` | Every permission in the accepted system permission registry. |
-| `COORD` | `MEMBER_GET`, `MEMBER_SEARCH`, `MEMBER_ACTIVATION`, `MEMBER_GET_NON_ACTIVE`, `MEMBER_MANAGE`, `ACCOUNT_GET`, `ACCOUNT_SEARCH`, `ACCOUNT_ROLE_MANAGE`, `EVENT_CREATE`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `EVENT_GET_COORD`, `EVENT_MANAGE`, `GAM_LOCATION_GET`, `GAM_LOCATION_CREATE`, `GAM_LOCATION_MANAGE`, `PRESENCES_SEARCH`, `ROLE_GET`, and `PERMISSION_GET`. |
+| `COORD` | `MEMBER_GET`, `MEMBER_SEARCH`, `MEMBER_ACTIVATION`, `MEMBER_GET_NON_ACTIVE`, `MEMBER_MANAGE`, `ACCOUNT_GET`, `ACCOUNT_SEARCH`, `ACCOUNT_ROLE_MANAGE`, `EVENT_CREATE`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `EVENT_GET_COORD`, `EVENT_MANAGE`, `GAM_LOCATION_GET`, `GAM_LOCATION_CREATE`, `GAM_LOCATION_MANAGE`, `PRESENCES_SEARCH`, `PRESENCE_REGISTER`, `PRESENCE_EDIT`, `PRESENCE_REMOVE`, `ROLE_GET`, and `PERMISSION_GET`. |
 | `MEMBER` | `MEMBER_GET`, `ACCOUNT_GET`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, and `GAM_LOCATION_GET`. |
 | `VISITOR` | No permissions. |
 
@@ -390,6 +393,12 @@ Scenario: Future permission does not automatically expand COORD authority
   Then SUDO receives the new permission
   And COORD does not receive the new permission
 
+Scenario: Baseline Coordinator receives Presence mutation permissions
+  Given PRESENCE_REGISTER, PRESENCE_EDIT, and PRESENCE_REMOVE are in the accepted permission registry
+  When the repeatable RBAC seed synchronizes the baseline COORD bundle
+  Then COORD receives all three Presence mutation permissions
+  And MEMBER and VISITOR receive none of them through their baseline bundles
+
 Scenario: Stale registry data is fail-closed
   Given a persisted system Permission or system-role bundle link is absent from the accepted registry
   When an Account authenticates or an authorized caller reads the ordinary RBAC catalog
@@ -515,6 +524,10 @@ flowchart LR
 ## Related ADRs
 
 * [ADR-0003: Keep stale RBAC registry data fail-closed](../../decisions/0003-keep-stale-rbac-registry-data-fail-closed.md)
+
+## Related requirements
+
+* [Member Event Presences](../presences/member-event-presences.md)
 
 ## Related videos
 

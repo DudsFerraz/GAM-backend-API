@@ -368,6 +368,8 @@ Invalid examples:
 ### REQ-MEMBER-015: Member presence-history visibility
 The system shall expose `GET /members/{memberId}/presences` for authenticated paginated access to a Member's presence history.
 
+The Presence response representation, active-only visibility, ordering, client-selectable sorting, and absence of product filters shall follow `REQ-PRESENCE-007` and `REQ-PRESENCE-010`.
+
 An authenticated Account shall be allowed to read the presence history of its own linked Member regardless of Member status. Linked-Account access shall not require `PRESENCES_SEARCH` or `MEMBER_GET_NON_ACTIVE`.
 
 For a Member linked to another Account:
@@ -546,6 +548,7 @@ flowchart TD
 * [UUID Identity](../common/uuid.md)
 * [Account Role Management](../rbac/account-role-management.md)
 * [RBAC Catalog](../rbac/rbac-catalog.md)
+* [Member Event Presences](../presences/member-event-presences.md)
 
 ## Related videos
 

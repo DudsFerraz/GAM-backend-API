@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Superseded
+
+Superseded by [ADR-0012: Serialize Event and Presence Mutations](0012-serialize-event-and-presence-mutations.md).
 
 ## Context
 

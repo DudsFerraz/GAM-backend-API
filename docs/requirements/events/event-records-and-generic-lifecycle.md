@@ -283,22 +283,14 @@ A normalized no-op shall return `200 OK` and the complete current representation
 
 ---
 
-### REQ-EVENT-016: Protected Generic Event deletion
+### REQ-EVENT-016: Protected Generic Event deletion (superseded)
 
-`DELETE /events/{id}` shall soft-delete an active Generic Event only when:
+This requirement is superseded by `REQ-EVENT-019`.
 
-- its effective status is `SCHEDULED`, `COMPLETED`, or `CANCELLED`; and
-- no active or soft-deleted Presence record references it.
+The superseded rule allowed soft deletion of a `SCHEDULED`, `COMPLETED`, or `CANCELLED` Generic Event only when no active or soft-deleted Presence referenced it. Any historical Presence therefore blocked correction of a mistakenly duplicated Event permanently through the normal API.
 
-A `LOCKED` or `FINALIZED` Event shall first be reopened to `COMPLETED`; otherwise deletion shall return `409 EVENT_STATUS_TRANSITION_NOT_ALLOWED`.
-
-Any Presence reference shall return `409 Conflict` with code `EVENT_HAS_PRESENCES`. Structured details shall contain the Event UUID and total active-plus-soft-deleted Presence reference count.
-
-Deletion shall require `EVENT_MANAGE`, current audience visibility, and a JSON body containing a normalized 1-to-2,000-character `reason`. Missing permission shall return `403`; missing visibility, a missing Event, or an already soft-deleted Event shall return `404 RESOURCE_NOT_FOUND`.
-
-Successful deletion shall return `204 No Content` and emit one `EVENT_DELETED` activity in the same transaction. The activity shall target the Event UUID, store the required reason, and include `title`, `type`, prior effective `status`, and `gamLocationId` metadata. Activity failure shall roll back deletion.
-
-A soft-deleted Event shall be excluded from common get and search. It shall continue to count as a historical GamLocation reference under `REQ-GAM-LOCATION-010`. Restoration and hard deletion remain developer-maintenance concerns.
+Rationale for supersession:
+Presence removal already preserves the attendance row and its activity history. Requiring removed Presences to block Event soft deletion prevents Coordinators from correcting a duplicate Event after attendance was briefly recorded against it, even though neither the Event nor its removed Presences would be physically erased.
 
 ---
 
@@ -321,9 +313,30 @@ Presence creation and Event deletion shall not both commit when racing for the s
 - Presence creation may commit first, after which deletion fails with `EVENT_HAS_PRESENCES`; or
 - deletion may commit first, after which Presence creation fails because the Event is no longer active.
 
-A committed Presence shall never reference a soft-deleted Event. The coordination strategy is documented in Proposed ADR-0011.
+A committed active Presence shall never reference a soft-deleted Event. The coordination strategy is documented in ADR-0012.
 
 Event creation and GamLocation relinking shall also retain the concurrency guarantees of `REQ-GAM-LOCATION-013` and ADR-0010.
+
+---
+
+### REQ-EVENT-019: Protected Generic Event deletion after Presence correction
+
+`DELETE /events/{id}` shall soft-delete an active Generic Event only when:
+
+- its effective status is `SCHEDULED`, `COMPLETED`, or `CANCELLED`; and
+- no active Presence record references it.
+
+A `LOCKED` or `FINALIZED` Event shall first be reopened to `COMPLETED`; otherwise deletion shall return `409 EVENT_STATUS_TRANSITION_NOT_ALLOWED`.
+
+One or more active Presence references shall return `409 Conflict` with code `EVENT_HAS_PRESENCES`. Structured details shall contain the Event UUID and active Presence reference count.
+
+Removed Presences shall not block Event deletion. Their historical records, activities, and immutable relationships to the Member and Event shall remain preserved after the Event is soft-deleted.
+
+Deletion shall require `EVENT_MANAGE`, current audience visibility, and a JSON body containing a normalized 1-to-2,000-character `reason`. Missing permission shall return `403`; missing visibility, a missing Event, or an already soft-deleted Event shall return `404 RESOURCE_NOT_FOUND`.
+
+Successful deletion shall return `204 No Content` and emit one `EVENT_DELETED` activity in the same transaction. The activity shall target the Event UUID, store the required reason, and include `title`, `type`, prior effective `status`, and `gamLocationId` metadata. Activity failure shall roll back deletion.
+
+A soft-deleted Event shall be excluded from common get and search. It shall continue to count as a historical GamLocation reference under `REQ-GAM-LOCATION-010`. Restoration and hard deletion remain developer-maintenance concerns.
 
 ## Acceptance scenarios
 
@@ -433,17 +446,26 @@ Scenario: Normalized no-op update is not audited
   Then the response is 200 OK
   And no persistence mutation or EVENT_UPDATED activity occurs
 
-Scenario: Historical Presence blocks deletion
-  Given a visible Generic Event has a soft-deleted Presence reference
+Scenario: Active Presence blocks deletion
+  Given a visible Generic Event has an active Presence reference
   And the caller has EVENT_MANAGE
   When the caller deletes the Event with a valid reason
   Then the response is 409 EVENT_HAS_PRESENCES
   And the Event remains active
   And no EVENT_DELETED activity is recorded
 
+Scenario: Removed Presences allow duplicate Event deletion
+  Given a visible duplicate Generic Event has only soft-deleted Presence references
+  And the caller has EVENT_MANAGE
+  When the caller deletes the Event with a valid reason
+  Then the response is 204 No Content
+  And the Event is soft-deleted
+  And the removed Presences remain preserved
+  And one EVENT_DELETED activity stores the reason
+
 Scenario: Delete an eligible Generic Event
   Given a visible Generic Event is COMPLETED
-  And no Presence references it
+  And no active Presence references it
   And the caller has EVENT_MANAGE
   When the caller deletes the Event with a valid reason
   Then the response is 204 No Content
@@ -493,7 +515,7 @@ The command transitions in this diagram apply to Generic Events. `SCHEDULED -> C
 * Specialized Oratorio or Missa creation, editing, cancellation, closure, reopening, or deletion rules.
 * Type-specific data returned by specialized endpoints.
 * Addition of Event types beyond `GENERIC`, `ORATORIO`, and `MISSA`.
-* Presence request shapes, permissions, and mutation contracts beyond the status-based closure, Event deletion protection, and concurrency safety stated here.
+* Presence request shapes, permissions, retrieval, and mutation contracts owned by the Member Event Presences Requirement Specification.
 * Event restoration and developer hard deletion.
 * Changing an Event's type.
 * Temporary free-text Event places or locationless Generic Events.
@@ -503,7 +525,8 @@ The command transitions in this diagram apply to Generic Events. `SCHEDULED -> C
 ## Related ADRs
 
 * [ADR-0010: Serialize GamLocation Mutation and Event Linking](../../decisions/0010-serialize-gam-location-mutation-and-event-linking.md)
-* [ADR-0011: Serialize Event Mutation and Presence Linking](../../decisions/0011-serialize-event-mutation-and-presence-linking.md) (Proposed)
+* [ADR-0011: Serialize Event Mutation and Presence Linking](../../decisions/0011-serialize-event-mutation-and-presence-linking.md) (Superseded)
+* [ADR-0012: Serialize Event and Presence Mutations](../../decisions/0012-serialize-event-and-presence-mutations.md)
 
 ## Related requirements
 
@@ -511,6 +534,7 @@ The command transitions in this diagram apply to Generic Events. `SCHEDULED -> C
 * [GamLocation Records](../gam-locations/gam-location-records.md)
 * [RBAC Catalog](../rbac/rbac-catalog.md)
 * [OpenAPI and Frontend API Documentation](../platform/openapi-and-frontend-api-documentation.md)
+* [Member Event Presences](../presences/member-event-presences.md)
 
 ## Related videos
 
