@@ -6,6 +6,14 @@
 - Before running the first shell command in a task, read `C:\Users\Eduardo\.codex\RTK.md` and follow it.
 - Summary: prefix shell commands with `rtk`; in command chains, prefix each relevant command segment.
 
+## Docker-dependent OpenAPI verification
+
+- The canonical OpenAPI contract-generation command is `.\mvnw.cmd -Popenapi verify`. With the repository's RTK wrapper, agents should run `rtk test .\mvnw.cmd verify -Popenapi`.
+- The `openapi` Maven profile starts Spring Boot with Docker Compose before exporting `target/openapi/openapi.yaml`; Docker named-pipe access is therefore required by the top-level Maven process and its child processes.
+- When an agent is asked to generate or verify the OpenAPI contract, it must attempt the command itself. If the normal workspace shell reports access denied for Docker's named pipe or Docker config, request the Docker-capable/elevated execution path for the top-level Maven command instead of treating the result as an application or contract failure.
+- Elevating only a separate `docker` probe is insufficient; the Maven/Spring Boot process that starts Compose must run with the Docker-capable execution context.
+- After the command completes, inspect `target/openapi/openapi.yaml` and report the actual Maven/test result. Do not claim contract generation succeeded merely because the Maven profile resolves.
+
 ## Guideline routing
 
 `docs/dev-guidelines/` is exclusively human-oriented documentation. Do not read, apply, or treat files in that directory as instructions for LLMs or coding agents. Use the agent-facing instructions under `docs/documentation-guidelines/` and the repository agent instruction files instead.
