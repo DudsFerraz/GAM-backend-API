@@ -10,6 +10,7 @@ import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.rbac.permission.domain.PermissionEnum;
 import br.org.gam.api.security.application.AccountDetails;
 import br.org.gam.api.security.SecurityUtils;
+import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.testing.annotation.StructuralTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.util.List;
@@ -27,6 +28,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -52,39 +54,112 @@ class MemberSecurityTest {
     class Structural {
 
         @Test
-        @DisplayName("active member -> visible")
-        void activeMemberShouldBeVisible() {
+        @DisplayName("REQ-MEMBER-013 - linked inactive Member without general read permissions -> visible")
+        void linkedInactiveMemberShouldBeVisibleById() {
             MemberSecurity memberSecurity = new MemberSecurity(getMemberInstance, securityUtils);
-            MemberEntity member = member(MemberStatus.ACTIVE, UUID.randomUUID());
+            UUID loggedAccountId = UUID.randomUUID();
+            UUID targetMemberId = UUID.randomUUID();
+            AccountDetails accountDetails = accountDetails(loggedAccountId, List.of());
+            SecurityContextHolder.getContext().setAuthentication(
+                    new TestingAuthenticationToken(accountDetails, "password", accountDetails.getAuthorities())
+            );
+            when(getMemberInstance.requiredById(targetMemberId))
+                    .thenReturn(member(targetMemberId, MemberStatus.INACTIVE, loggedAccountId));
 
-            assertThat(memberSecurity.canGetMember(member)).isTrue();
+            assertThat(memberSecurity.canGetMemberById(targetMemberId)).isTrue();
             verifyNoInteractions(securityUtils);
         }
 
         @Test
-        @DisplayName("REQ-MEMBER-008 - inactive Member with MEMBER_GET_NON_ACTIVE -> visible")
-        void nonActiveMemberWithAuthorityShouldBeVisible() {
+        @DisplayName("REQ-MEMBER-013 - another active Member with MEMBER_GET -> visible")
+        void activeMemberWithMemberGetShouldBeVisibleById() {
             MemberSecurity memberSecurity = new MemberSecurity(getMemberInstance, securityUtils);
-            MemberEntity member = member(MemberStatus.INACTIVE, UUID.randomUUID());
+            UUID targetMemberId = UUID.randomUUID();
+            authenticate(UUID.randomUUID(), PermissionEnum.MEMBER_GET.getCode());
+            when(getMemberInstance.requiredById(targetMemberId))
+                    .thenReturn(member(targetMemberId, MemberStatus.ACTIVE, UUID.randomUUID()));
+            when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of(PermissionEnum.MEMBER_GET.getCode()));
 
-            when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of(PermissionEnum.MEMBER_GET_NON_ACTIVE.getCode()));
-
-            assertThat(memberSecurity.canGetMember(member)).isTrue();
+            assertThat(memberSecurity.canGetMemberById(targetMemberId)).isTrue();
         }
 
         @Test
-        @DisplayName("REQ-MEMBER-008 - inactive Member without MEMBER_GET_NON_ACTIVE -> hidden")
-        void nonActiveMemberWithoutAuthorityShouldBeHidden() {
+        @DisplayName("REQ-MEMBER-013 - MEMBER_GET_NON_ACTIVE without MEMBER_GET -> direct lookup denied")
+        void nonActiveVisibilityAloneShouldNotGrantDirectLookup() {
             MemberSecurity memberSecurity = new MemberSecurity(getMemberInstance, securityUtils);
-            MemberEntity member = member(MemberStatus.INACTIVE, UUID.randomUUID());
+            UUID targetMemberId = UUID.randomUUID();
+            authenticate(UUID.randomUUID(), PermissionEnum.MEMBER_GET_NON_ACTIVE.getCode());
+            when(getMemberInstance.requiredById(targetMemberId))
+                    .thenReturn(member(targetMemberId, MemberStatus.ACTIVE, UUID.randomUUID()));
+            when(securityUtils.getLoggedUserAuthorities())
+                    .thenReturn(Set.of(PermissionEnum.MEMBER_GET_NON_ACTIVE.getCode()));
 
-            when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of("MEMBER_GET"));
-
-            assertThat(memberSecurity.canGetMember(member)).isFalse();
+            assertThat(memberSecurity.canGetMemberById(targetMemberId)).isFalse();
         }
 
         @Test
-        @DisplayName("missing authentication for member presences -> hidden")
+        @DisplayName("REQ-MEMBER-013 - another inactive Member without read permissions -> direct lookup denied")
+        void inactiveMemberWithoutReadPermissionsShouldReturnCapabilityDenial() {
+            MemberSecurity memberSecurity = new MemberSecurity(getMemberInstance, securityUtils);
+            UUID targetMemberId = UUID.randomUUID();
+            authenticate(UUID.randomUUID());
+            when(getMemberInstance.requiredById(targetMemberId))
+                    .thenReturn(member(targetMemberId, MemberStatus.INACTIVE, UUID.randomUUID()));
+            when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of());
+
+            assertThat(memberSecurity.canGetMemberById(targetMemberId)).isFalse();
+        }
+
+        @Test
+        @DisplayName("REQ-MEMBER-013 - another inactive Member without non-active visibility -> not found")
+        void inactiveMemberWithoutNonActiveVisibilityShouldBeHiddenById() {
+            MemberSecurity memberSecurity = new MemberSecurity(getMemberInstance, securityUtils);
+            UUID targetMemberId = UUID.randomUUID();
+            authenticate(UUID.randomUUID(), PermissionEnum.MEMBER_GET.getCode());
+            when(getMemberInstance.requiredById(targetMemberId))
+                    .thenReturn(member(targetMemberId, MemberStatus.INACTIVE, UUID.randomUUID()));
+            when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of(PermissionEnum.MEMBER_GET.getCode()));
+
+            assertThatThrownBy(() -> memberSecurity.canGetMemberById(targetMemberId))
+                    .isInstanceOf(NotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("REQ-MEMBER-013 - another inactive Member with both read permissions -> visible")
+        void inactiveMemberWithCompleteReadPermissionsShouldBeVisibleById() {
+            MemberSecurity memberSecurity = new MemberSecurity(getMemberInstance, securityUtils);
+            UUID targetMemberId = UUID.randomUUID();
+            authenticate(
+                    UUID.randomUUID(),
+                    PermissionEnum.MEMBER_GET.getCode(),
+                    PermissionEnum.MEMBER_GET_NON_ACTIVE.getCode()
+            );
+            when(getMemberInstance.requiredById(targetMemberId))
+                    .thenReturn(member(targetMemberId, MemberStatus.INACTIVE, UUID.randomUUID()));
+            when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of(
+                    PermissionEnum.MEMBER_GET.getCode(),
+                    PermissionEnum.MEMBER_GET_NON_ACTIVE.getCode()
+            ));
+
+            assertThat(memberSecurity.canGetMemberById(targetMemberId)).isTrue();
+        }
+
+        @Test
+        @DisplayName("REQ-MEMBER-013 - missing Member direct lookup -> not found")
+        void missingMemberLookupShouldRemainNotFound() {
+            MemberSecurity memberSecurity = new MemberSecurity(getMemberInstance, securityUtils);
+            UUID targetMemberId = UUID.randomUUID();
+            authenticate(UUID.randomUUID(), PermissionEnum.MEMBER_GET.getCode());
+            when(getMemberInstance.requiredById(targetMemberId))
+                    .thenThrow(NotFoundException.resource("Member", targetMemberId));
+
+            assertThatThrownBy(() -> memberSecurity.canGetMemberById(targetMemberId))
+                    .isInstanceOf(NotFoundException.class);
+            verifyNoInteractions(securityUtils);
+        }
+
+        @Test
+        @DisplayName("REQ-MEMBER-015 - missing authentication for Member presences -> hidden")
         void missingAuthenticationForMemberPresencesShouldBeHidden() {
             MemberSecurity memberSecurity = new MemberSecurity(getMemberInstance, securityUtils);
 
@@ -93,32 +168,87 @@ class MemberSecurityTest {
         }
 
         @Test
-        @DisplayName("presence search authority -> visible")
-        void presenceSearchAuthorityShouldBeVisible() {
-            MemberSecurity memberSecurity = new MemberSecurity(getMemberInstance, securityUtils);
-            UUID loggedAccountId = UUID.randomUUID();
-            AccountDetails accountDetails = accountDetails(loggedAccountId, List.of(new SimpleGrantedAuthority(PermissionEnum.PRESENCES_SEARCH.getCode())));
-            SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(accountDetails, "password", accountDetails.getAuthorities()));
-
-            assertThat(memberSecurity.canGetMemberPresences(UUID.randomUUID())).isTrue();
-            verifyNoInteractions(getMemberInstance);
-        }
-
-        @Test
-        @DisplayName("target member account matches logged account -> visible")
-        void targetMemberAccountMatchesLoggedAccountShouldBeVisible() {
+        @DisplayName("REQ-MEMBER-015 - linked inactive Member without general permissions -> presence history visible")
+        void linkedInactiveMemberPresenceHistoryShouldBeVisible() {
             MemberSecurity memberSecurity = new MemberSecurity(getMemberInstance, securityUtils);
             UUID loggedAccountId = UUID.randomUUID();
             UUID targetMemberId = UUID.randomUUID();
             AccountDetails accountDetails = accountDetails(loggedAccountId, List.of());
-            SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken(accountDetails, "password", accountDetails.getAuthorities()));
-            when(getMemberInstance.requiredById(targetMemberId)).thenReturn(member(MemberStatus.ACTIVE, loggedAccountId));
+            SecurityContextHolder.getContext().setAuthentication(
+                    new TestingAuthenticationToken(accountDetails, "password", accountDetails.getAuthorities())
+            );
+            when(getMemberInstance.requiredById(targetMemberId))
+                    .thenReturn(member(targetMemberId, MemberStatus.INACTIVE, loggedAccountId));
+
+            assertThat(memberSecurity.canGetMemberPresences(targetMemberId)).isTrue();
+            verifyNoInteractions(securityUtils);
+        }
+
+        @Test
+        @DisplayName("REQ-MEMBER-015 - PRESENCES_SEARCH with active resolved Member -> presence history visible")
+        void presenceSearchShouldExposeResolvedActiveMemberHistory() {
+            MemberSecurity memberSecurity = new MemberSecurity(getMemberInstance, securityUtils);
+            UUID targetMemberId = UUID.randomUUID();
+            authenticate(UUID.randomUUID(), PermissionEnum.PRESENCES_SEARCH.getCode());
+            when(getMemberInstance.requiredById(targetMemberId))
+                    .thenReturn(member(targetMemberId, MemberStatus.ACTIVE, UUID.randomUUID()));
+            when(securityUtils.getLoggedUserAuthorities())
+                    .thenReturn(Set.of(PermissionEnum.PRESENCES_SEARCH.getCode()));
 
             assertThat(memberSecurity.canGetMemberPresences(targetMemberId)).isTrue();
         }
 
         @Test
-        @DisplayName("target member account differs from logged account -> hidden")
+        @DisplayName("REQ-MEMBER-015 - PRESENCES_SEARCH without inactive visibility -> not found")
+        void presenceSearchShouldNotBypassInactiveMemberVisibility() {
+            MemberSecurity memberSecurity = new MemberSecurity(getMemberInstance, securityUtils);
+            UUID targetMemberId = UUID.randomUUID();
+            authenticate(UUID.randomUUID(), PermissionEnum.PRESENCES_SEARCH.getCode());
+            when(getMemberInstance.requiredById(targetMemberId))
+                    .thenReturn(member(targetMemberId, MemberStatus.INACTIVE, UUID.randomUUID()));
+            when(securityUtils.getLoggedUserAuthorities())
+                    .thenReturn(Set.of(PermissionEnum.PRESENCES_SEARCH.getCode()));
+
+            assertThatThrownBy(() -> memberSecurity.canGetMemberPresences(targetMemberId))
+                    .isInstanceOf(NotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("REQ-MEMBER-015 - complete inactive presence permissions -> presence history visible")
+        void completeInactivePresencePermissionsShouldExposeHistory() {
+            MemberSecurity memberSecurity = new MemberSecurity(getMemberInstance, securityUtils);
+            UUID targetMemberId = UUID.randomUUID();
+            authenticate(
+                    UUID.randomUUID(),
+                    PermissionEnum.PRESENCES_SEARCH.getCode(),
+                    PermissionEnum.MEMBER_GET_NON_ACTIVE.getCode()
+            );
+            when(getMemberInstance.requiredById(targetMemberId))
+                    .thenReturn(member(targetMemberId, MemberStatus.INACTIVE, UUID.randomUUID()));
+            when(securityUtils.getLoggedUserAuthorities()).thenReturn(Set.of(
+                    PermissionEnum.PRESENCES_SEARCH.getCode(),
+                    PermissionEnum.MEMBER_GET_NON_ACTIVE.getCode()
+            ));
+
+            assertThat(memberSecurity.canGetMemberPresences(targetMemberId)).isTrue();
+        }
+
+        @Test
+        @DisplayName("REQ-MEMBER-015 - missing Member with PRESENCES_SEARCH -> not found")
+        void presenceSearchShouldResolveTheParentMember() {
+            MemberSecurity memberSecurity = new MemberSecurity(getMemberInstance, securityUtils);
+            UUID targetMemberId = UUID.randomUUID();
+            authenticate(UUID.randomUUID(), PermissionEnum.PRESENCES_SEARCH.getCode());
+            when(getMemberInstance.requiredById(targetMemberId))
+                    .thenThrow(NotFoundException.resource("Member", targetMemberId));
+
+            assertThatThrownBy(() -> memberSecurity.canGetMemberPresences(targetMemberId))
+                    .isInstanceOf(NotFoundException.class);
+            verifyNoInteractions(securityUtils);
+        }
+
+        @Test
+        @DisplayName("REQ-MEMBER-015 - another active Member without PRESENCES_SEARCH -> hidden")
         void targetMemberAccountDiffersFromLoggedAccountShouldBeHidden() {
             MemberSecurity memberSecurity = new MemberSecurity(getMemberInstance, securityUtils);
             UUID targetMemberId = UUID.randomUUID();
@@ -131,11 +261,26 @@ class MemberSecurityTest {
     }
 
     private static MemberEntity member(MemberStatus status, UUID accountId) {
+        return member(UUID.randomUUID(), status, accountId);
+    }
+
+    private static MemberEntity member(UUID memberId, MemberStatus status, UUID accountId) {
         AccountEntity account = account(accountId);
         MemberEntity member = new MemberEntity();
+        member.setId(memberId);
         member.setStatus(status);
         member.setAccount(account);
         return member;
+    }
+
+    private static void authenticate(UUID accountId, String... permissionCodes) {
+        List<SimpleGrantedAuthority> authorities = java.util.Arrays.stream(permissionCodes)
+                .map(SimpleGrantedAuthority::new)
+                .toList();
+        AccountDetails accountDetails = accountDetails(accountId, authorities);
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken(accountDetails, "password", accountDetails.getAuthorities())
+        );
     }
 
     private static AccountDetails accountDetails(UUID accountId, List<SimpleGrantedAuthority> authorities) {

@@ -55,7 +55,7 @@ public class MemberController {
                 .body(responseDTO);
     }
 
-    @PreAuthorize("hasAuthority('" + PermissionEnum.Code.MEMBER_GET + "')")
+    @PreAuthorize("@memberSecurity.canGetMemberById(#id)")
     @Operation(operationId = "getMember")
     @GetMapping("/{id}")
     public ResponseEntity<MemberRDTO> getMemberById(@PathVariable UUID id) {
