@@ -526,7 +526,7 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
     }
 
     @Test
-    @DisplayName("REQ-MEMBER-008 and REQ-MEMBER-011 - missing or soft-deleted Member -> HTTP 404")
+    @DisplayName("REQ-MEMBER-011 and REQ-MEMBER-013 - missing or soft-deleted Member -> HTTP 404")
     void unavailableMemberLookupShouldReturnNotFound() {
         AuthSession coordinator = newSession("COORD");
 
@@ -548,12 +548,16 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
     }
 
     @Test
-    @DisplayName("REQ-MEMBER-008 and REQ-MEMBER-011 - caller without read/search permissions -> HTTP 403")
+    @DisplayName("REQ-MEMBER-011, REQ-MEMBER-013, and REQ-MEMBER-014 - existing Member or search without capability -> HTTP 403")
     void missingReadPermissionsShouldReturnForbidden() {
+        AuthSession coordinator = newSession("COORD");
         AuthSession visitor = newSession("VISITOR");
+        UUID targetAccountId = newAccount("Forbidden lookup target");
+        UUID memberId = registerMember(coordinator, targetAccountId);
+        forceMemberState(memberId, targetAccountId, "ACTIVE", "MEMBER");
 
         authenticatedJsonRequest(visitor)
-                .get("/members/{id}", UUID.randomUUID())
+                .get("/members/{id}", memberId)
                 .then()
                 .statusCode(403)
                 .body("status", equalTo(403));
