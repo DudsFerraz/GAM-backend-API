@@ -26,6 +26,18 @@
 - Ensure every quoted Maven `-D` argument has a closing quote. An unterminated quote can leave an interactive PowerShell terminal waiting for continuation input and look like a hung verification.
 - Prefer batching related integration-test classes in one Maven invocation when they share Spring and Testcontainers infrastructure. Separate invocations cannot reuse the previous Maven JVM, Spring test-context cache, or static Testcontainers container.
 
+## Verification scope selection
+
+- Use the narrowest verification that can disprove the current change during implementation. A full `verify` or `-Popenapi verify` is a final broad gate, not the default edit-feedback loop.
+- Iterate with focused unit or structural tests first. Use focused Failsafe commands only for the affected integration, API, security, or persistence behavior, and batch related classes when they share infrastructure.
+- For OpenAPI annotations, schemas, examples, or operation metadata, run the focused Web MVC contract suites first: `OpenApiDocumentationApiIT`, `OpenApiDocumentationDevelopmentApiIT` when relevant, `OpenApiOperationCompletenessApiIT`, and `OpenApiSharedSchemasApiIT`. These suites intentionally validate the generated contract without starting PostgreSQL, Flyway, Hibernate, or Testcontainers.
+- `OpenApiRuntimeSmokeApiIT` is the single full-stack check that the runtime OpenAPI endpoint is exposed. Run it when OpenAPI runtime wiring, security, routing, or shared integration support changes; it also runs as part of the final broad gate.
+- Endpoint work must still satisfy the OpenAPI definition of done. After focused checks are green and the implementation is stable, run the canonical `rtk test .\mvnw.cmd verify -Popenapi` once before the final handoff or merge decision, then inspect the generated contract.
+- If all tests already passed for the unchanged worktree and only the later OpenAPI application startup or export failed, do not rerun the test suites merely to retry that infrastructure phase. After correcting the startup or environment cause, use `rtk test .\mvnw.cmd verify -Popenapi "-DskipTests"`, inspect `target/openapi/openapi.yaml`, and report explicitly that this was contract generation after an earlier green test run, not a new full test verification.
+- When a broad gate exposes a fixture or implementation problem, reproduce and repair it with focused tests. Rerun the broad gate once after the known findings are resolved instead of after each individual edit.
+- Do not run the OpenAPI profile for changes that provably do not touch an HTTP contract unless the developer, handoff, or final gate explicitly requires it.
+- Report each verification level precisely: focused tests, runtime smoke, contract generation with tests skipped, and full verification are different claims.
+
 ## Docker-dependent Maven verification
 
 - Integration, API, security, and persistence tests based on `BaseApiIntegrationTest` start PostgreSQL through Testcontainers and require Docker named-pipe access in the top-level Maven process and its child processes.
