@@ -6,12 +6,35 @@
 - Before running the first shell command in a task, read `C:\Users\Eduardo\.codex\RTK.md` and follow it.
 - Summary: prefix shell commands with `rtk`; in command chains, prefix each relevant command segment.
 
-## Docker-dependent OpenAPI verification
+## Long-running Maven verification
+
+- Maven verification commands in this repository may legitimately be quiet for extended periods because RTK filters output while Maven, Spring Boot, Hibernate, Flyway, Testcontainers, and Docker initialize. Lack of streamed output alone is not evidence of a hang.
+- Agents must give Maven verification a timeout appropriate to its scope instead of relying on a shell tool's short default timeout:
+  - focused unit or structural tests: at least 2 minutes;
+  - focused integration, API, security, or persistence tests: at least 5 minutes;
+  - full `verify` or `-Popenapi verify`: at least 10 minutes.
+- A long process timeout does not authorize a blocking wait longer than 60 seconds. Start the command with the full process timeout, then follow a yielded/running command in increments of at most 60 seconds while keeping the developer informed.
+- Do not start a duplicate Maven verification because the first invocation is quiet. Check or wait on the existing process first.
+- Treat a runner or tool timeout as inconclusive, not as a test failure. Inspect available Maven output and test reports, then continue waiting or rerun once with a sufficient timeout. Report a test failure only when Maven or a test report records one.
+- During focused iteration, do not add `clean` unless a clean build is required by the task. Repeated clean builds discard incremental compilation and materially increase feedback time.
+- A focused Failsafe invocation must compile current main and test sources before running the selected integration test. Use this shape:
+
+  ```powershell
+  rtk test .\mvnw.cmd test-compile failsafe:integration-test failsafe:verify "-Dit.test=ExampleApiIT"
+  ```
+
+- Ensure every quoted Maven `-D` argument has a closing quote. An unterminated quote can leave an interactive PowerShell terminal waiting for continuation input and look like a hung verification.
+- Prefer batching related integration-test classes in one Maven invocation when they share Spring and Testcontainers infrastructure. Separate invocations cannot reuse the previous Maven JVM, Spring test-context cache, or static Testcontainers container.
+
+## Docker-dependent Maven verification
+
+- Integration, API, security, and persistence tests based on `BaseApiIntegrationTest` start PostgreSQL through Testcontainers and require Docker named-pipe access in the top-level Maven process and its child processes.
+- Run Docker-dependent Maven verification through `rtk test`, not through a sandboxed fallback such as `rtk proxy`. If the workspace shell reports access denied for Docker's named pipe or Docker configuration, request the Docker-capable/elevated execution path for the top-level Maven command and rerun it once there.
+- Elevating only a separate `docker` probe is insufficient. Do not interpret Docker access denial, Testcontainers environment discovery failure, or the resulting class-initialization errors as an application or contract failure.
 
 - The canonical OpenAPI contract-generation command is `.\mvnw.cmd -Popenapi verify`. With the repository's RTK wrapper, agents should run `rtk test .\mvnw.cmd verify -Popenapi`.
 - The `openapi` Maven profile starts Spring Boot with Docker Compose before exporting `target/openapi/openapi.yaml`; Docker named-pipe access is therefore required by the top-level Maven process and its child processes.
 - When an agent is asked to generate or verify the OpenAPI contract, it must attempt the command itself. If the normal workspace shell reports access denied for Docker's named pipe or Docker config, request the Docker-capable/elevated execution path for the top-level Maven command instead of treating the result as an application or contract failure.
-- Elevating only a separate `docker` probe is insufficient; the Maven/Spring Boot process that starts Compose must run with the Docker-capable execution context.
 - After the command completes, inspect `target/openapi/openapi.yaml` and report the actual Maven/test result. Do not claim contract generation succeeded merely because the Maven profile resolves.
 
 ## Guideline routing
@@ -28,7 +51,7 @@ Before changing code or tests, read only the guideline files relevant to the wor
 | Mermaid diagrams | `docs/documentation-guidelines/README.md`, `docs/documentation-guidelines/diagrams.md` |
 | Swagger/OpenAPI documentation structure or prose | `docs/documentation-guidelines/README.md`, `docs/documentation-guidelines/openapi.md` |
 | Video documentation | `docs/documentation-guidelines/README.md`, `docs/documentation-guidelines/videos.md` |
-| Agent-facing workflow, role boundaries, or handoffs | `docs/dev-guidelines/agent-workflow.md`, the relevant skill under `.agents/skills/` |
+| Agent-facing workflow, role boundaries, or handoffs | The relevant skill under `.agents/skills/`; do not read `docs/dev-guidelines/` |
 | Source-of-truth priority or documentation conflicts | `docs/documentation-guidelines/README.md`, `docs/documentation-guidelines/source-of-truth.md` |
 | Package placement, layer boundaries, or feature/module structure | `docs/software-guidelines/package-organization.md` |
 | Controllers, routes, request/response shapes, HTTP status codes, or endpoint authorization | `docs/software-guidelines/controllers-and-http-api.md`, `docs/software-guidelines/openapi-documentation.md` |
