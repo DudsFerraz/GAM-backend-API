@@ -31,7 +31,7 @@ public record ApiErrorDTO(
     }
 
     public static ApiErrorDTO from(HttpStatus status, ApplicationException exception) {
-        Map<String, Object> details = new LinkedHashMap<>();
+        Map<String, Object> details = new LinkedHashMap<>(exception.getDetails());
         if (exception.getResource() != null) {
             details.put("resource", exception.getResource());
         }

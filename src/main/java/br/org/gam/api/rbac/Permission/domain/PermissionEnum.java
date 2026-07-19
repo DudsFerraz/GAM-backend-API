@@ -23,6 +23,10 @@ public enum PermissionEnum {
     EVENT_GET_COORD(Code.EVENT_GET_COORD, "View coordinator events", "Allows viewing events requiring coordinator access"),
     EVENT_MANAGE(Code.EVENT_MANAGE, "Manage events", "Allows managing events"),
 
+    GAM_LOCATION_GET(Code.GAM_LOCATION_GET, "View GAM locations", "Allows directly viewing active GamLocation records"),
+    GAM_LOCATION_CREATE(Code.GAM_LOCATION_CREATE, "Create GAM locations", "Allows creating GamLocation records"),
+    GAM_LOCATION_MANAGE(Code.GAM_LOCATION_MANAGE, "Manage GAM locations", "Allows updating and removing GamLocation records"),
+
     PRESENCES_SEARCH(Code.PRESENCES_SEARCH, "Search presences", "Allows searching presences"),
 
     ROLE_GET(Code.ROLE_GET, "View roles", "Allows reading role catalog entries"),
@@ -61,6 +65,10 @@ public enum PermissionEnum {
         public static final String EVENT_GET_MEMBER = "EVENT_GET_MEMBER";
         public static final String EVENT_GET_COORD = "EVENT_GET_COORD";
         public static final String EVENT_MANAGE = "EVENT_MANAGE";
+
+        public static final String GAM_LOCATION_GET = "GAM_LOCATION_GET";
+        public static final String GAM_LOCATION_CREATE = "GAM_LOCATION_CREATE";
+        public static final String GAM_LOCATION_MANAGE = "GAM_LOCATION_MANAGE";
 
         public static final String PRESENCES_SEARCH = "PRESENCES_SEARCH";
 

@@ -2,7 +2,7 @@ package br.org.gam.api.event.web;
 
 import br.org.gam.api.event.application.EventRDTO;
 import br.org.gam.api.event.application.useCases.createEvent.CreateEvent;
-import br.org.gam.api.event.application.useCases.createEvent.CreateEventDTO;
+import br.org.gam.api.event.application.useCases.createEvent.CreateGenericEventDTO;
 import br.org.gam.api.event.application.useCases.createEvent.CreateEventRDTO;
 import br.org.gam.api.event.application.useCases.GetEvent;
 import br.org.gam.api.event.application.useCases.SearchEvents;
@@ -42,7 +42,7 @@ public class EventController {
     @PreAuthorize("hasAuthority('" + PermissionEnum.Code.EVENT_CREATE + "')")
     @Operation(operationId = "createEvent")
     @PostMapping
-    public ResponseEntity<CreateEventRDTO> createEvent(@RequestBody @Valid CreateEventDTO dto){
+    public ResponseEntity<CreateEventRDTO> createEvent(@RequestBody @Valid CreateGenericEventDTO dto){
 
         CreateEventRDTO responseDTO = createEvent.create(dto);
 

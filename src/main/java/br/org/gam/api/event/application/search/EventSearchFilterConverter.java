@@ -42,11 +42,14 @@ public class EventSearchFilterConverter implements SearchFilterConverter<EventEn
                     Set.of(ComparationMethods.LIKE),
                     Map.of(ComparationMethods.LIKE, SearchValueParsers::text)
             )),
-            Map.entry("locationId", SearchFilterDefinition.path(
-                    "locationId",
+            Map.entry("gamLocationId", SearchFilterDefinition.path(
+                    "gamLocationId",
                     "location.id",
-                    Set.of(ComparationMethods.EQUALS),
-                    Map.of(ComparationMethods.EQUALS, SearchValueParsers::uuid)
+                    Set.of(ComparationMethods.EQUALS, ComparationMethods.IN),
+                    Map.of(
+                            ComparationMethods.EQUALS, SearchValueParsers::uuid,
+                            ComparationMethods.IN, SearchValueParsers.in(SearchValueParsers::uuid)
+                    )
             )),
             Map.entry("requiredPermissionId", SearchFilterDefinition.path(
                     "requiredPermissionId",

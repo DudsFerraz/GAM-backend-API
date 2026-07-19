@@ -15,7 +15,7 @@ public class PaginationWebConfiguration implements WebMvcConfigurer {
     private static final int MAX_PAGE_SIZE = 100;
 
     private static final Map<String, Set<String>> SORT_FIELDS = Map.of(
-            "/locations", Set.of("name", "city", "state", "countryCode"),
+            "/gam-locations", Set.of("name", "city", "state", "countryCode"),
             "/accounts", Set.of("email", "displayName", "createdAt"),
             "/members", Set.of("firstName", "surname", "birthDate", "status"),
             "/events", Set.of("title", "beginDate", "endDate", "type", "status"),

@@ -31,7 +31,7 @@ public class SoftDeletedRecordMaintenanceJob implements ApplicationRunner {
             "permissions",
             "account_roles",
             "role_permissions",
-            "locations",
+            "gam_locations",
             "events",
             "members",
             "presences",

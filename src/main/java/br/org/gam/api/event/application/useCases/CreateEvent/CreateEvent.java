@@ -2,10 +2,11 @@ package br.org.gam.api.event.application.useCases.createEvent;
 
 import br.org.gam.api.event.application.EventMapper;
 import br.org.gam.api.event.domain.Event;
+import br.org.gam.api.event.domain.EventType;
 import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.event.persistence.EventRepository;
-import br.org.gam.api.location.application.LocationEntityLoader;
-import br.org.gam.api.location.persistence.LocationEntity;
+import br.org.gam.api.gamLocation.application.GamLocationEntityLoader;
+import br.org.gam.api.gamLocation.persistence.GamLocationEntity;
 import br.org.gam.api.rbac.permission.application.PermissionEntityLoader;
 import br.org.gam.api.rbac.permission.persistence.PermissionEntity;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
@@ -17,16 +18,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class CreateEvent {
 
     private final EventRepository eventRepository;
-    private final LocationEntityLoader getLocationInstanceService;
+    private final GamLocationEntityLoader gamLocationEntityLoader;
     private final EventMapper eventMapper;
     private final PermissionEntityLoader getPermissionInstance;
     private final ActivityEvents activityEvents;
 
-    public CreateEvent(EventRepository eventRepository, LocationEntityLoader getLocationInstanceService,
+    public CreateEvent(EventRepository eventRepository, GamLocationEntityLoader gamLocationEntityLoader,
                        EventMapper eventMapper, PermissionEntityLoader getPermissionInstance,
                        ActivityEvents activityEvents) {
         this.eventRepository = eventRepository;
-        this.getLocationInstanceService = getLocationInstanceService;
+        this.gamLocationEntityLoader = gamLocationEntityLoader;
         this.eventMapper = eventMapper;
         this.getPermissionInstance = getPermissionInstance;
         this.activityEvents = activityEvents;
@@ -38,12 +39,30 @@ public class CreateEvent {
     }
 
     @Transactional
+    public CreateEventRDTO create(CreateGenericEventDTO dto) {
+        return create(new CreateEventDTO(
+                dto.title(),
+                dto.description(),
+                dto.gamLocationId(),
+                dto.requiredPermissionId(),
+                dto.beginDate(),
+                dto.endDate(),
+                EventType.GENERIC
+        ));
+    }
+
+    @Transactional
     public CreateEventRDTO create(CreateEventDTO dto, boolean audit) {
 
-        LocationEntity eventLocation = getLocationInstanceService.requiredById(dto.locationId());
-        PermissionEntity requiredPermission = getPermissionInstance.requiredById(dto.requiredPermissionId());
+        GamLocationEntity eventLocation = gamLocationEntityLoader.requiredByIdForUpdate(dto.gamLocationId());
+        PermissionEntity requiredPermission = dto.requiredPermissionId() == null
+                ? null
+                : getPermissionInstance.requiredById(dto.requiredPermissionId());
 
-        Event newEvent = Event.register(dto.title(), dto.description(), dto.beginDate(), dto.endDate(), dto.type());
+        Event newEvent = Event.register(
+                dto.title(), dto.description(), dto.beginDate(), dto.endDate(),
+                dto.type() == null ? EventType.GENERIC : dto.type()
+        );
 
         EventEntity newEventEntity = eventMapper.domainToEntity(newEvent);
         newEventEntity.setLocation(eventLocation);
@@ -57,7 +76,7 @@ public class CreateEvent {
                     savedEventEntity.getTitle(),
                     newEvent.getType(),
                     newEvent.getStatus(),
-                    dto.locationId(),
+                    dto.gamLocationId(),
                     dto.requiredPermissionId()
             );
         }

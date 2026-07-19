@@ -11,6 +11,9 @@ import java.util.HashMap;
 import br.org.gam.api.shared.activitylog.events.MissaCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.OratorioCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.PresenceRegisteredActivity;
+import br.org.gam.api.shared.activitylog.events.GamLocationCreatedActivity;
+import br.org.gam.api.shared.activitylog.events.GamLocationRemovedActivity;
+import br.org.gam.api.shared.activitylog.events.GamLocationUpdatedActivity;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -121,19 +124,21 @@ public class ActivityLogEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void handle(EventCreatedActivity activity) {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("eventId", activity.eventId());
+        metadata.put("eventType", activity.eventType().name());
+        metadata.put("status", activity.status().name());
+        metadata.put("gamLocationId", activity.gamLocationId());
+        if (activity.requiredPermissionId() != null) {
+            metadata.put("requiredPermissionId", activity.requiredPermissionId());
+        }
         activityLogger.log(
                 ActivityAction.EVENT_CREATED,
                 ActivityTargetType.EVENT,
                 activity.eventId(),
                 null,
                 "Event created: " + activity.title(),
-                Map.of(
-                        "eventId", activity.eventId(),
-                        "eventType", activity.eventType().name(),
-                        "status", activity.status().name(),
-                        "locationId", activity.locationId(),
-                        "requiredPermissionId", activity.requiredPermissionId()
-                )
+                metadata
         );
     }
 
@@ -180,6 +185,42 @@ public class ActivityLogEventListener {
                         "memberId", activity.memberId(),
                         "eventId", activity.eventId()
                 )
+        );
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    public void handle(GamLocationCreatedActivity activity) {
+        activityLogger.log(
+                ActivityAction.GAM_LOCATION_CREATED,
+                ActivityTargetType.GAM_LOCATION,
+                activity.locationId(),
+                null,
+                "GamLocation created",
+                Map.of()
+        );
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    public void handle(GamLocationUpdatedActivity activity) {
+        activityLogger.log(
+                ActivityAction.GAM_LOCATION_UPDATED,
+                ActivityTargetType.GAM_LOCATION,
+                activity.locationId(),
+                null,
+                "GamLocation updated",
+                Map.of("changedFields", activity.changedFields())
+        );
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    public void handle(GamLocationRemovedActivity activity) {
+        activityLogger.log(
+                ActivityAction.GAM_LOCATION_REMOVED,
+                ActivityTargetType.GAM_LOCATION,
+                activity.locationId(),
+                activity.reason(),
+                "GamLocation removed",
+                Map.of("name", activity.name())
         );
     }
 

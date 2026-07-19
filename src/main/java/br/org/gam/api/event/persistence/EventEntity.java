@@ -2,7 +2,7 @@ package br.org.gam.api.event.persistence;
 
 import br.org.gam.api.event.domain.EventStatus;
 import br.org.gam.api.event.domain.EventType;
-import br.org.gam.api.location.persistence.LocationEntity;
+import br.org.gam.api.gamLocation.persistence.GamLocationEntity;
 import br.org.gam.api.rbac.permission.persistence.PermissionEntity;
 import br.org.gam.api.shared.auditing.FullAuditableEntity;
 import jakarta.persistence.*;
@@ -32,9 +32,9 @@ public class EventEntity extends FullAuditableEntity {
     @Column(name = "description")
     private String description;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "location_id", referencedColumnName = "id")
-    private LocationEntity location;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "gam_location_id", referencedColumnName = "id", nullable = false)
+    private GamLocationEntity location;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "required_permission_id", referencedColumnName = "id")

@@ -47,7 +47,7 @@ public class OpenApiConfig {
 
     private static final Set<String> CREATED_OPERATIONS = Set.of(
             "createEvent",
-            "createLocation",
+            "createGamLocation",
             "createMember",
             "submitMembershipSolicitation",
             "assignAccountRole",
@@ -57,14 +57,15 @@ public class OpenApiConfig {
     private static final Set<String> NO_CONTENT_OPERATIONS = Set.of(
             "activateMember",
             "deactivateMember",
-            "dropAccountRole"
+            "dropAccountRole",
+            "removeGamLocation"
     );
 
     private static final Set<String> PAGED_OPERATIONS = Set.of(
             "searchAccounts",
             "searchEvents",
             "getEventPresences",
-            "getLocations",
+            "listGamLocations",
             "searchMembers",
             "getMemberPresences",
             "searchMembershipSolicitations"
@@ -84,14 +85,14 @@ public class OpenApiConfig {
                     new Tag().name("Membership Solicitations"),
                     new Tag().name("Members"),
                     new Tag().name("Events"),
-                    new Tag().name("Locations"),
+                    new Tag().name("GamLocations"),
                     new Tag().name("RBAC"),
                     new Tag().name("Accounts")
             ));
             Components components = openApi.getComponents() == null ? new Components() : openApi.getComponents();
             openApi.setComponents(components);
             components.addSchemas("ApiErrorDTO", apiErrorSchema());
-            requireLocationResponseFields(components);
+            requireGamLocationResponseFields(components);
             requireCsrfBootstrapResponseFields(components);
             requireCurrentAccountContextResponseFields(components);
             components.getSchemas().remove("Pageable");
@@ -105,6 +106,7 @@ public class OpenApiConfig {
                 documentPagination(operation);
                 documentBrowserAuthenticationInputs(operation);
                 documentBrowserAuthenticationCookieResponses(operation);
+                documentLocationResponseHeader(operation);
                 documentErrorResponses(operation);
                 documentCurrentAccountContext(operation);
                 addExamples(openApi, operation);
@@ -112,10 +114,13 @@ public class OpenApiConfig {
         };
     }
 
-    private void requireLocationResponseFields(Components components) {
-        Schema<?> location = components.getSchemas().get("LocationRDTO");
+    private void requireGamLocationResponseFields(Components components) {
+        Schema<?> location = components.getSchemas().get("GamLocationRDTO");
         if (location != null) {
-            location.setRequired(List.of("id", "name", "city", "state", "countryCode"));
+            location.setRequired(List.of(
+                    "id", "name", "street", "city", "state", "postalCode",
+                    "countryCode", "latitude", "longitude"
+            ));
         }
     }
 
@@ -160,8 +165,8 @@ public class OpenApiConfig {
         if (path.startsWith("/events")) {
             return "Events";
         }
-        if (path.startsWith("/locations")) {
-            return "Locations";
+        if (path.startsWith("/gam-locations")) {
+            return "GamLocations";
         }
         if (path.startsWith("/roles") || path.startsWith("/permissions") || path.contains("/roles")) {
             return "RBAC";
@@ -276,6 +281,19 @@ public class OpenApiConfig {
         }
     }
 
+    private void documentLocationResponseHeader(io.swagger.v3.oas.models.Operation operation) {
+        if (!"createGamLocation".equals(operation.getOperationId())) {
+            return;
+        }
+
+        ApiResponse createdResponse = operation.getResponses().get("201");
+        if (createdResponse != null) {
+            createdResponse.addHeaderObject("Location", new Header()
+                    .description("URI of the created GamLocation resource.")
+                    .schema(new StringSchema()));
+        }
+    }
+
     private Parameter pageParameter() {
         IntegerSchema schema = new IntegerSchema();
         schema.setDefault(0);
@@ -318,7 +336,7 @@ public class OpenApiConfig {
             case "searchAccounts" -> List.of("email", "displayName", "createdAt");
             case "searchEvents" -> List.of("title", "beginDate", "endDate", "type", "status");
             case "getEventPresences", "getMemberPresences" -> List.of("createdAt", "updatedAt");
-            case "getLocations" -> List.of("name", "city", "state", "countryCode");
+            case "listGamLocations" -> List.of("name", "city", "state", "countryCode");
             case "searchMembers" -> List.of("firstName", "surname", "birthDate", "status");
             case "searchMembershipSolicitations" -> List.of("status", "createdAt", "updatedAt");
             default -> List.of();
@@ -330,7 +348,27 @@ public class OpenApiConfig {
         operation.getResponses().putIfAbsent("401", errorResponse(401, "UNAUTHORIZED", "Authentication is required."));
         operation.getResponses().putIfAbsent("403", errorResponse(403, "FORBIDDEN", "The authenticated account is not allowed to perform this operation."));
         operation.getResponses().putIfAbsent("404", errorResponse(404, "NOT_FOUND", "The requested resource was not found."));
-        operation.getResponses().putIfAbsent("409", errorResponse(409, "CONFLICT", "The request conflicts with the current resource state."));
+        String conflictCode = switch (operation.getOperationId()) {
+            case "createGamLocation", "updateGamLocation" -> "GAM_LOCATION_ALREADY_EXISTS";
+            case "removeGamLocation" -> "GAM_LOCATION_IN_USE";
+            default -> "CONFLICT";
+        };
+        Map<String, Object> conflictDetails = "removeGamLocation".equals(operation.getOperationId())
+                ? Map.of(
+                        "resource", "GamLocation",
+                        "identifier", "019f6343-321a-7c90-a096-a551e8f88eb4",
+                        "eventReferenceCount", 2
+                )
+                : Map.of();
+        operation.getResponses().putIfAbsent(
+                "409",
+                errorResponse(
+                        409,
+                        conflictCode,
+                        "The request conflicts with the current resource state.",
+                        conflictDetails
+                )
+        );
     }
 
     private void documentCurrentAccountContext(io.swagger.v3.oas.models.Operation operation) {
@@ -358,6 +396,10 @@ public class OpenApiConfig {
     }
 
     private ApiResponse errorResponse(int status, String code, String description) {
+        return errorResponse(status, code, description, Map.of());
+    }
+
+    private ApiResponse errorResponse(int status, String code, String description, Map<String, Object> details) {
         return new ApiResponse()
                 .description(description)
                 .content(new io.swagger.v3.oas.models.media.Content().addMediaType(
@@ -369,7 +411,7 @@ public class OpenApiConfig {
                                         "status", status,
                                         "code", code,
                                         "message", description,
-                                        "details", Map.of()
+                                        "details", details
                                 ))
                 ));
     }

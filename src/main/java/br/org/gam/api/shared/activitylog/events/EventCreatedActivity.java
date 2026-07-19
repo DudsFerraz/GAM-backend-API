@@ -9,7 +9,7 @@ public record EventCreatedActivity(
         String title,
         EventType eventType,
         EventStatus status,
-        UUID locationId,
+        UUID gamLocationId,
         UUID requiredPermissionId
 ) {
 }

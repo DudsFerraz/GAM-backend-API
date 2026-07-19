@@ -13,6 +13,10 @@ import br.org.gam.api.rbac.role.application.RoleEntityLoader;
 import br.org.gam.api.shared.activitylog.events.MissaCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.OratorioCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.PresenceRegisteredActivity;
+import br.org.gam.api.shared.activitylog.events.GamLocationCreatedActivity;
+import br.org.gam.api.shared.activitylog.events.GamLocationRemovedActivity;
+import br.org.gam.api.shared.activitylog.events.GamLocationUpdatedActivity;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.context.ApplicationEventPublisher;
@@ -98,10 +102,10 @@ public class ActivityEvents {
                 new AccountRoleRemovedActivity(accountRoleId, accountId, roleId, roleName, reason));
     }
 
-    public void eventCreated(UUID eventId, String title, EventType eventType, EventStatus status, UUID locationId,
+    public void eventCreated(UUID eventId, String title, EventType eventType, EventStatus status, UUID gamLocationId,
                              UUID requiredPermissionId) {
         applicationEventPublisher.publishEvent(new EventCreatedActivity(
-                eventId, title, eventType, status, locationId, requiredPermissionId));
+                eventId, title, eventType, status, gamLocationId, requiredPermissionId));
     }
 
     public void missaCreated(UUID missaId, UUID eventId) {
@@ -114,6 +118,18 @@ public class ActivityEvents {
 
     public void presenceRegistered(UUID presenceId, UUID memberId, UUID eventId) {
         applicationEventPublisher.publishEvent(new PresenceRegisteredActivity(presenceId, memberId, eventId));
+    }
+
+    public void gamLocationCreated(UUID locationId) {
+        applicationEventPublisher.publishEvent(new GamLocationCreatedActivity(locationId));
+    }
+
+    public void gamLocationUpdated(UUID locationId, List<String> changedFields) {
+        applicationEventPublisher.publishEvent(new GamLocationUpdatedActivity(locationId, List.copyOf(changedFields)));
+    }
+
+    public void gamLocationRemoved(UUID locationId, String reason, String name) {
+        applicationEventPublisher.publishEvent(new GamLocationRemovedActivity(locationId, reason, name));
     }
 
     public void developerMaintenance(ActivityAction action, UUID targetId, String table, String reason, String summary,

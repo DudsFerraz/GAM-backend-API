@@ -8,5 +8,6 @@ public enum ActivityTargetType {
     MISSA,
     ORATORIO,
     PRESENCE,
+    GAM_LOCATION,
     MAINTENANCE_RECORD
 }
