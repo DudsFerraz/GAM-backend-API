@@ -4,9 +4,9 @@
 Accepted
 
 ## Context
-GAM needs a durable contract for registering lifetime Members, reading and searching Member records, reading a Member's presence history, and changing a Member between active and inactive participation.
+GAM needs a durable contract for registering lifetime Members, reading and searching Member records, reading a Member's presence history, changing a Member between active and inactive participation, and granting or revoking Coordinator responsibility.
 
-Account registration creates an identity only. It does not create membership. A Coordinator may register a Member directly, while an Account may separately use the membership-solicitation workflow. Both paths must preserve one lifetime Member per Account and keep Member status synchronized with the Account's lifecycle-owned authorization role.
+Account registration creates an identity only. It does not create membership. A Coordinator may register a Member directly, while an Account may separately use the membership-solicitation workflow. Both paths must preserve one lifetime Member per Account and keep Member status and Coordinator designation synchronized with the Account's lifecycle-owned authorization Roles.
 
 The current implementation and tests predate this Requirement Specification and were used only as discovery material and conversation prompts. This document defines the intended behavior.
 
@@ -16,6 +16,7 @@ The current implementation and tests predate this Requirement Specification and 
 - `linked-Account access`: Access to a Member's own record or presence history granted because the authenticated Account is the Account immutably linked to that Member.
 - `activation reason`: The Coordinator-supplied reason for directly registering or reactivating a Member, or the approval reason that establishes membership through a solicitation.
 - `deactivation reason`: The Coordinator-supplied reason for changing an active Member to inactive.
+- `Coordinator lifecycle operation`: A grant or revoke of Coordinator designation for an active Member, synchronized with the linked Account's `COORD` Role.
 
 ## Functional requirements
 
@@ -120,7 +121,10 @@ Invalid examples:
 
 ---
 
-### REQ-MEMBER-005: Lifecycle-owned Account roles
+### REQ-MEMBER-005: Lifecycle-owned Account roles (superseded)
+
+This requirement is superseded by `REQ-MEMBER-016`. The replacement adds `COORD` to Member lifecycle ownership and removes the earlier rule that COORD remains unchanged during Member transitions.
+
 Member lifecycle workflows shall exclusively manage the `MEMBER` and `VISITOR` system Roles for a Member's linked Account.
 
 The required projection shall be:
@@ -171,7 +175,10 @@ Invalid examples:
 
 ---
 
-### REQ-MEMBER-007: Reactivation and deactivation API
+### REQ-MEMBER-007: Reactivation and deactivation API (role effects superseded)
+
+This requirement's routes, permission, required reason, and success status remain accepted. Its lifecycle Role effects are superseded by `REQ-MEMBER-020`, which removes Coordinator designation during deactivation and does not restore it during reactivation.
+
 The system shall expose:
 
 | Method | Route | Required permission | Valid transition |
@@ -274,7 +281,7 @@ Invalid examples:
 ---
 
 ### REQ-MEMBER-011: Member API error semantics
-Member registration, lookup, search, and lifecycle routes shall use these outcomes:
+Member registration, lookup, search, Member status, and Coordinator lifecycle routes shall use these outcomes:
 
 | Condition | Response |
 | --- | --- |
@@ -282,7 +289,8 @@ Member registration, lookup, search, and lifecycle routes shall use these outcom
 | Unauthenticated protected request | `401 Unauthorized` |
 | Authenticated caller lacks the required permission | `403 Forbidden` |
 | Required Account or Member is missing or soft-deleted, or Member is status-hidden | `404 Not Found` |
-| Account already has a Member, pending solicitation blocks direct registration, same-status transition, or concurrent uniqueness loss | `409 Conflict` |
+| Account already has a Member, pending solicitation blocks direct registration, same-status or same-designation transition, invalid lifecycle Role projection, or concurrent lifecycle loss | `409 Conflict` |
+| Non-SUDO operation would remove the final current Coordinator | `403 Forbidden` |
 
 Failed requests shall not create or change Members, lifecycle roles, solicitations, or activity logs.
 
@@ -400,6 +408,125 @@ Invalid examples:
 - A caller with `PRESENCES_SEARCH` but without `MEMBER_GET_NON_ACTIVE` reads an inactive Member's presence history.
 - Linked-Account access exposes the presence history of a soft-deleted Member.
 
+---
+
+### REQ-MEMBER-016: Member lifecycle owns MEMBER, VISITOR, and COORD
+
+This requirement supersedes `REQ-MEMBER-005`.
+
+Member lifecycle workflows shall exclusively manage the `MEMBER`, `VISITOR`, and `COORD` system Roles for a Member's linked Account. The valid current projections shall be:
+
+| Member lifecycle state | Required active Roles | Roles that shall not remain active |
+| --- | --- | --- |
+| Active Member without Coordinator designation | `MEMBER` | `VISITOR`, `COORD` |
+| Active Coordinator | `MEMBER`, `COORD` | `VISITOR` |
+| Inactive Member | `VISITOR` | `MEMBER`, `COORD` |
+
+Direct registration and membership-solicitation approval shall create an active Member without Coordinator designation. Reactivation shall restore `MEMBER` and remove `VISITOR`, but shall not restore a previously revoked or deactivation-removed `COORD` assignment. Deactivation shall remove both `MEMBER` and `COORD` and assign `VISITOR`.
+
+Before direct registration or membership-solicitation approval, an Account without a Member shall have no active `MEMBER`, `VISITOR`, or `COORD` assignment. Any such assignment shall be treated as an inconsistent pre-existing projection and shall return `409 Conflict` without repair, Member creation, Role mutation, or activity logging.
+
+Each lifecycle workflow shall synchronize Member state and all affected lifecycle-owned Role assignments in one transaction while preserving every active custom Role. Generic Account-role administration shall reject direct addition or removal of every system-managed Role under `REQ-ACCOUNT-ROLE-016` through `REQ-ACCOUNT-ROLE-018`.
+
+Rationale:
+A Coordinator is an active Member with current coordination responsibility. Authorization-facing system Roles must not drift from Member state or bypass that responsibility through generic Account administration.
+
+Valid examples:
+- Deactivating a Coordinator removes MEMBER and COORD, assigns VISITOR, and preserves custom Roles.
+- Reactivating a former Coordinator assigns MEMBER but leaves COORD absent.
+
+Invalid examples:
+- An inactive Member retains COORD.
+- Direct Member registration automatically grants COORD.
+- Generic Account-role administration grants COORD to an Account without an active Member.
+
+---
+
+### REQ-MEMBER-017: Coordinator identity, authorization, and routes
+
+A current Coordinator shall be an active Member whose linked active Account has active assignments to the current `MEMBER` and `COORD` system Roles and no active assignment to `VISITOR`. Coordinator designation shall not create a separate Coordinator entity or a third Member status.
+
+The system shall expose:
+
+| Method | Route | Required permission | Purpose |
+| --- | --- | --- | --- |
+| `PATCH` | `/members/{memberId}/coordinator/grant` | `COORDINATOR_MANAGE` | Grant Coordinator designation to an active Member. |
+| `PATCH` | `/members/{memberId}/coordinator/revoke` | `COORDINATOR_MANAGE` | Revoke Coordinator designation while preserving active membership. |
+
+`COORDINATOR_MANAGE` shall be sufficient on its own. The routes shall not additionally require `MEMBER_MANAGE`, `MEMBER_ACTIVATION`, `MEMBER_GET`, or `ACCOUNT_ROLE_MANAGE`. The baseline `COORD` bundle shall include `COORDINATOR_MANAGE`; SUDO shall receive it as part of the complete system permission registry. Baseline `MEMBER` and `VISITOR` shall not receive it.
+
+Both routes shall accept `{ "reason": "..." }` under `REQ-MEMBER-018`. A successful transition shall return `204 No Content` after the Role projection and activity event commit together.
+
+An unauthenticated request shall return `401 Unauthorized`. An authenticated caller without `COORDINATOR_MANAGE` shall return `403 Forbidden`. A missing or soft-deleted Member or linked Account shall return `404 Not Found` under ordinary lifecycle visibility.
+
+Rationale:
+Coordinator designation is a Member-domain responsibility and needs dedicated authority distinct from general Member editing, Member activation, and custom Role administration.
+
+---
+
+### REQ-MEMBER-018: Coordinator transition, reason, and audit contract
+
+Coordinator grant shall require an active Member whose linked active Account has active `MEMBER`, no active `VISITOR`, and no active `COORD`. On success, the system shall create one active COORD assignment while preserving Member status and all custom Roles.
+
+Coordinator revoke shall require an active Coordinator with active `MEMBER`, active `COORD`, and no active `VISITOR`. On success, the system shall soft-delete the active COORD assignment while preserving active Member status, `MEMBER`, and all custom Roles.
+
+Granting Coordinator designation when COORD is already active, revoking when COORD is absent, or granting to an inactive Member shall return `409 Conflict`. Any other inconsistent `MEMBER`/`VISITOR`/`COORD` projection shall also return `409 Conflict`; the Coordinator routes shall not repair inconsistent data.
+
+The `reason` field shall be required. The system shall trim leading and trailing whitespace and require between 1 and 2,000 characters after trimming. A missing, null, empty, whitespace-only, or over-2,000-character reason shall return `400 Bad Request` before Member, Account, Role, assignment, or activity-log loading for mutation.
+
+Each successful transition shall emit exactly one high-level activity event:
+
+| Transition | Activity action |
+| --- | --- |
+| Coordinator grant | `COORDINATOR_GRANTED` |
+| Coordinator revoke | `COORDINATOR_REVOKED` |
+
+The event target type and identifier shall be the affected `MEMBER` and Member UUID. The event shall capture the actor Account, linked Account identifier, COORD Role identifier, Role change, normalized reason, and request metadata according to the activity-audit policy. The business mutation and activity-log row shall commit together. The workflow shall not emit `ACCOUNT_ROLE_ADDED` or `ACCOUNT_ROLE_REMOVED`. Failed transitions shall emit no activity event.
+
+Rationale:
+Coordinator changes are security-sensitive Member lifecycle decisions whose human intent and atomic authorization effect must be explicit.
+
+Valid examples:
+- A grant reason of `" New event responsibility "` is audited as `"New event responsibility"`.
+- Revoking Coordinator designation preserves MEMBER and an unrelated custom Role.
+
+Invalid examples:
+- Repeating a grant silently succeeds.
+- Grant repairs an active Member that is missing MEMBER.
+- One revoke emits both COORDINATOR_REVOKED and ACCOUNT_ROLE_REMOVED.
+
+---
+
+### REQ-MEMBER-019: Coordinator lockout and concurrent lifecycle consistency
+
+A Coordinator revoke or Member deactivation shall not remove the final active Coordinator unless the authenticated actor's active Account has an active current `SUDO` assignment. A violation shall return `403 Forbidden`, preserve Member state and all Role assignments, and emit no activity event.
+
+The final-Coordinator decision shall count only current Coordinators under `REQ-MEMBER-017`. Soft-deleted Accounts, Members, Roles, or assignments and stale system Roles shall not satisfy the invariant.
+
+Coordinator grant, Coordinator revoke, Member activation, and Member deactivation affecting the same Member and linked Account shall serialize their lifecycle decision. The committed result shall satisfy one projection from `REQ-MEMBER-016`.
+
+Concurrent grants for the same Member shall produce exactly one successful transition and one `409 Conflict`. Concurrent revokes shall produce exactly one successful transition and one `409 Conflict`. Concurrent removals that could each observe another Coordinator shall serialize the final-Coordinator decision so that a non-SUDO outcome leaves at least one current Coordinator.
+
+Each committed transition shall emit exactly one corresponding high-level activity event. A losing or forbidden request shall emit none.
+
+Rationale:
+Coordinator authority needs the same fail-safe recovery protection as the prior COORD rule while lifecycle concurrency must not create impossible role projections or duplicate audit history.
+
+---
+
+### REQ-MEMBER-020: Member activation and deactivation Role effects
+
+This requirement supersedes the lifecycle Role effects in `REQ-MEMBER-007`; its routes, `MEMBER_ACTIVATION` permission, required reason, and `204 No Content` success response remain unchanged.
+
+Reactivation shall require the valid inactive projection: active `VISITOR`, no active `MEMBER`, and no active `COORD`. It shall change the Member to `ACTIVE`, assign `MEMBER`, remove `VISITOR`, leave `COORD` absent, preserve custom Roles, and emit exactly one `MEMBER_ACTIVATED` event.
+
+Deactivation shall require either valid active projection from `REQ-MEMBER-016`. It shall change the Member to `INACTIVE`, remove `MEMBER`, remove `COORD` when present, assign `VISITOR`, preserve custom Roles, and emit exactly one `MEMBER_DEACTIVATED` event. Removing COORD shall not emit a separate `COORDINATOR_REVOKED` or `ACCOUNT_ROLE_REMOVED` event.
+
+Deactivation of the final current Coordinator shall enforce `REQ-MEMBER-019`. Activation or deactivation against an inconsistent lifecycle Role projection shall return `409 Conflict` without repair, mutation, or activity logging.
+
+Rationale:
+Member status transitions must keep Coordinator authority consistent without treating deactivation as a separate Coordinator revocation decision.
+
 ## Acceptance scenarios
 
 ```gherkin
@@ -420,14 +547,23 @@ Scenario: Pending solicitation blocks direct registration
   Then the system returns 409 Conflict
   And no Member, role change, or activity event is created
 
+Scenario: Direct registration rejects an inconsistent lifecycle Role projection
+  Given an Account has no Member but has MEMBER, VISITOR, or COORD
+  And the caller has MEMBER_MANAGE
+  When the caller submits valid Member data and an activation reason
+  Then the system returns 409 Conflict
+  And no Role is repaired or mutated
+  And no Member or activity event is created
+
 Scenario: Deactivate an active Member
   Given an ACTIVE Member is linked to an Account with MEMBER and COORD
   And the caller has MEMBER_ACTIVATION
   When the caller deactivates the Member with a valid reason
   Then the Member becomes INACTIVE
   And MEMBER is removed and VISITOR is assigned
-  And COORD remains assigned
+  And COORD is removed
   And exactly one MEMBER_DEACTIVATED activity event is recorded
+  And no COORDINATOR_REVOKED or ACCOUNT_ROLE_REMOVED event is recorded
 
 Scenario: Reject repeated deactivation
   Given a Member is already INACTIVE
@@ -477,6 +613,64 @@ Scenario: Deny another visible Member's presence history without permission
   And the caller does not have PRESENCES_SEARCH
   When the caller requests GET /members/{memberId}/presences
   Then the system returns 403 Forbidden
+
+Scenario: Grant Coordinator designation to an active Member
+  Given an ACTIVE Member's linked active Account has MEMBER and no VISITOR or COORD
+  And the caller has COORDINATOR_MANAGE
+  When the caller grants Coordinator designation with a valid reason
+  Then the system returns 204 No Content
+  And COORD is assigned while MEMBER and custom Roles are preserved
+  And exactly one COORDINATOR_GRANTED activity event is recorded
+
+Scenario: Revoke Coordinator designation while preserving membership
+  Given a current Coordinator has MEMBER and COORD and no VISITOR
+  And another current Coordinator exists
+  And the caller has COORDINATOR_MANAGE
+  When the caller revokes Coordinator designation with a valid reason
+  Then the system returns 204 No Content
+  And COORD is removed while MEMBER and custom Roles are preserved
+  And exactly one COORDINATOR_REVOKED activity event is recorded
+
+Scenario: Reactivation does not restore Coordinator designation
+  Given an INACTIVE Member previously held COORD
+  And the linked Account has VISITOR and no MEMBER or COORD
+  And the caller has MEMBER_ACTIVATION
+  When the caller reactivates the Member with a valid reason
+  Then the Member becomes ACTIVE
+  And MEMBER is assigned and VISITOR is removed
+  And COORD remains absent
+
+Scenario: Non-SUDO caller cannot remove the final Coordinator
+  Given exactly one current Coordinator exists
+  And the caller has COORDINATOR_MANAGE but no active SUDO assignment
+  When the caller revokes that Coordinator or deactivates that Member
+  Then the system returns 403 Forbidden
+  And Member state and all Role assignments remain unchanged
+  And no activity event is recorded
+
+Scenario: SUDO caller may remove the final Coordinator
+  Given exactly one current Coordinator exists
+  And the caller's active Account has active SUDO
+  When the caller revokes that Coordinator with a valid reason
+  Then the system returns 204 No Content
+  And the COORD assignment is soft-deleted
+  And exactly one COORDINATOR_REVOKED activity event is recorded
+
+Scenario: Concurrent Coordinator grants have one winner
+  Given an active Member has a valid non-Coordinator Role projection
+  And two authorized callers concurrently grant Coordinator designation
+  When both transitions attempt to commit
+  Then exactly one request succeeds
+  And the other returns 409 Conflict
+  And one active COORD assignment and one COORDINATOR_GRANTED event exist
+
+Scenario: Coordinator management fails closed on inconsistent projection
+  Given an ACTIVE Member's linked Account is missing MEMBER or has VISITOR
+  And the caller has COORDINATOR_MANAGE
+  When the caller grants or revokes Coordinator designation
+  Then the system returns 409 Conflict
+  And no Role is repaired or mutated
+  And no activity event is recorded
 ```
 
 ## Diagrams
@@ -530,7 +724,9 @@ flowchart TD
 * Deleting, soft-deleting, restoring, or merging Members.
 * Creating an Account through Member registration.
 * Account deactivation, deletion, or restoration workflows.
-* Manually adding or dropping lifecycle-owned `MEMBER` and `VISITOR` roles.
+* Manually adding or dropping lifecycle-owned `MEMBER`, `VISITOR`, and `COORD` Roles outside their Member lifecycle workflows.
+* A separate Coordinator entity, Coordinator Member status, or automatic restoration of a former Coordinator designation.
+* Repair or reconciliation of inconsistent historical lifecycle Role projections.
 * Reading activity-log history through Member endpoints.
 * Event-centric presence visibility, including `GET /events/{eventId}/presences`.
 * Presence registration, editing, removal, response-field definition, or other presence lifecycle behavior.
@@ -538,7 +734,7 @@ flowchart TD
 
 ## Related ADRs
 
-* [ADR-0004: Make Member lifecycle own MEMBER and VISITOR roles](../../decisions/0004-member-lifecycle-owns-member-and-visitor-roles.md)
+* [ADR-0013: Make Member lifecycle own Coordinator designation](../../decisions/0013-make-member-lifecycle-own-coordinator-designation.md)
 
 ## Related requirements
 

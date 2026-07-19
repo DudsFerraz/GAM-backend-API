@@ -23,6 +23,7 @@ This Requirement Specification is the accepted contract for the current permissi
 - `stale registry record`: A persisted system-managed Role or Permission whose stable role name or permission code is absent from the current accepted registry.
 - `stale registry link`: A persisted role-permission link that involves a stale registry record or is absent from the current accepted bundle for a system role.
 - `registry collision`: More than one persisted record with the same registry key, or a system registry key already used by a custom record.
+- `role collection blacklist`: The code-defined set of otherwise current active Roles omitted from `GET /roles`; the accepted blacklist currently contains only `SUDO`.
 
 ## Functional requirements
 
@@ -58,7 +59,7 @@ The RBAC catalog shall maintain a code-defined registry of system permissions. T
 
 | Area | Permission codes |
 | --- | --- |
-| Members | `MEMBER_GET`, `MEMBER_SEARCH`, `MEMBER_ACTIVATION`, `MEMBER_GET_NON_ACTIVE`, `MEMBER_MANAGE` |
+| Members | `MEMBER_GET`, `MEMBER_SEARCH`, `MEMBER_ACTIVATION`, `MEMBER_GET_NON_ACTIVE`, `MEMBER_MANAGE`, `COORDINATOR_MANAGE` |
 | Accounts | `ACCOUNT_GET`, `ACCOUNT_SEARCH`, `ACCOUNT_ROLE_MANAGE` |
 | Events | `EVENT_CREATE`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `EVENT_GET_COORD`, `EVENT_MANAGE` |
 | GamLocations | `GAM_LOCATION_GET`, `GAM_LOCATION_CREATE`, `GAM_LOCATION_MANAGE` |
@@ -78,6 +79,7 @@ The accepted display metadata for every system permission is:
 | `MEMBER_ACTIVATION` | `Activate members` | `Allows activating and deactivating members` |
 | `MEMBER_GET_NON_ACTIVE` | `View inactive members` | `Allows viewing non-active members` |
 | `MEMBER_MANAGE` | `Manage members` | `Allows managing members` |
+| `COORDINATOR_MANAGE` | `Manage coordinators` | `Allows granting and revoking Coordinator designation` |
 | `ACCOUNT_GET` | `View accounts` | `Allows viewing accounts` |
 | `ACCOUNT_SEARCH` | `Search accounts` | `Allows searching accounts` |
 | `ACCOUNT_ROLE_MANAGE` | `Manage account roles` | `Allows adding and removing account roles` |
@@ -119,7 +121,7 @@ The current baseline shall seed these active permission bundles:
 | Role | Permissions |
 | --- | --- |
 | `SUDO` | Every permission in the accepted system permission registry. |
-| `COORD` | `MEMBER_GET`, `MEMBER_SEARCH`, `MEMBER_ACTIVATION`, `MEMBER_GET_NON_ACTIVE`, `MEMBER_MANAGE`, `ACCOUNT_GET`, `ACCOUNT_SEARCH`, `ACCOUNT_ROLE_MANAGE`, `EVENT_CREATE`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `EVENT_GET_COORD`, `EVENT_MANAGE`, `GAM_LOCATION_GET`, `GAM_LOCATION_CREATE`, `GAM_LOCATION_MANAGE`, `PRESENCES_SEARCH`, `PRESENCE_REGISTER`, `PRESENCE_EDIT`, `PRESENCE_REMOVE`, `ROLE_GET`, and `PERMISSION_GET`. |
+| `COORD` | `MEMBER_GET`, `MEMBER_SEARCH`, `MEMBER_ACTIVATION`, `MEMBER_GET_NON_ACTIVE`, `MEMBER_MANAGE`, `COORDINATOR_MANAGE`, `ACCOUNT_GET`, `ACCOUNT_SEARCH`, `ACCOUNT_ROLE_MANAGE`, `EVENT_CREATE`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `EVENT_GET_COORD`, `EVENT_MANAGE`, `GAM_LOCATION_GET`, `GAM_LOCATION_CREATE`, `GAM_LOCATION_MANAGE`, `PRESENCES_SEARCH`, `PRESENCE_REGISTER`, `PRESENCE_EDIT`, `PRESENCE_REMOVE`, `ROLE_GET`, and `PERMISSION_GET`. |
 | `MEMBER` | `MEMBER_GET`, `ACCOUNT_GET`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, and `GAM_LOCATION_GET`. |
 | `VISITOR` | No permissions. |
 
@@ -371,6 +373,79 @@ Invalid examples:
 - An Event references `ACCOUNT_ROLE_MANAGE` or another non-audience permission.
 - A caller with `EVENT_GET_MEMBER` views an Event requiring `EVENT_GET_COORD`.
 
+---
+
+### REQ-RBAC-012: Role collection visibility and response
+
+The system shall expose `GET /roles` for an authenticated caller with the `ROLE_GET` permission.
+
+The collection shall start from Roles visible through ordinary current active catalog reads and then exclude every Role in the `role collection blacklist`. It shall therefore:
+
+- include active custom Roles;
+- include the current active `COORD`, `MEMBER`, and `VISITOR` system Roles;
+- exclude `SUDO`;
+- exclude soft-deleted Roles; and
+- exclude stale system Roles absent from the accepted registry.
+
+The current blacklist shall contain only `SUDO`. Changing the blacklist shall require an explicit update to this requirement and the code-defined blacklist in the same change. The blacklist applies only to `GET /roles`; it shall not change `GET /roles/{roleId}` or `GET /roles/{roleId}/permissions`.
+
+The endpoint shall return `200 OK` with a top-level `roles` list. Every entry shall use the Role response fields from `REQ-RBAC-010`:
+
+```json
+{
+  "roles": [
+    {
+      "id": "<role UUID>",
+      "name": "COORD",
+      "description": "Coordinator access to GAM operational administration",
+      "systemManaged": true
+    }
+  ]
+}
+```
+
+The endpoint shall not be paginated. It shall return the complete matched collection. Normal list and search reads shall not emit activity events.
+
+An unauthenticated request shall return `401 Unauthorized`. An authenticated caller without `ROLE_GET` shall return `403 Forbidden`; `ACCOUNT_ROLE_MANAGE` shall not substitute for `ROLE_GET`.
+
+Rationale:
+Clients need one protected source of Role identifiers and display names. Omitting SUDO keeps developer-controlled authority out of ordinary collection-driven workflows, while `systemManaged` lets an Account-role client distinguish custom assignment targets without inferring eligibility from Role names.
+
+Valid examples:
+- A caller with `ROLE_GET` receives current `COORD`, `MEMBER`, `VISITOR`, and active custom Roles.
+- An authorized caller that knows the SUDO UUID reads it through `GET /roles/{roleId}`.
+
+Invalid examples:
+- `GET /roles` returns SUDO because its persisted Role is active.
+- A soft-deleted or stale system Role appears in the collection.
+- A caller with only `ACCOUNT_ROLE_MANAGE` reads the Role collection.
+
+---
+
+### REQ-RBAC-013: Role-name search and deterministic ordering
+
+`GET /roles` shall accept an optional `name` query parameter.
+
+An omitted `name` shall apply no name filter and return every Role visible under `REQ-RBAC-012`. A supplied value shall be trimmed and then matched as a case-insensitive, accent-sensitive substring of the Role name. A blank or whitespace-only supplied value shall return `400 Bad Request`.
+
+A well-formed value that matches no visible non-blacklisted Role shall return `200 OK` with `{ "roles": [] }`. Search shall never make a blacklisted, soft-deleted, or stale Role visible.
+
+Results shall be ordered by Role name ascending using case-insensitive comparison. UUID ascending shall be the deterministic tie-breaker. This contract defines no `page`, `size`, or `sort` query parameters.
+
+Rationale:
+The frontend needs both complete selection data and lightweight type-ahead matching without a structured search body or pagination for the bounded Role catalog.
+
+Valid examples:
+- Omitting `name` returns the complete visible non-blacklisted collection.
+- `name=coord` matches `COORD`.
+- `name=manage` matches an active custom Role named `EVENT_MANAGER`.
+- `name=unknown-role` returns an empty `roles` list.
+
+Invalid examples:
+- `name=%20%20` is treated as an unfiltered request.
+- Search returns SUDO when `name=SUDO`.
+- Results depend on database iteration order.
+
 ## Acceptance scenarios
 
 ```gherkin
@@ -398,6 +473,12 @@ Scenario: Baseline Coordinator receives Presence mutation permissions
   When the repeatable RBAC seed synchronizes the baseline COORD bundle
   Then COORD receives all three Presence mutation permissions
   And MEMBER and VISITOR receive none of them through their baseline bundles
+
+Scenario: Baseline Coordinator receives Coordinator-management permission
+  Given COORDINATOR_MANAGE is in the accepted permission registry
+  When the repeatable RBAC seed synchronizes the baseline bundles
+  Then SUDO and COORD receive COORDINATOR_MANAGE
+  And MEMBER and VISITOR do not receive it
 
 Scenario: Stale registry data is fail-closed
   Given a persisted system Permission or system-role bundle link is absent from the accepted registry
@@ -474,6 +555,40 @@ Scenario: Missing, soft-deleted, or stale catalog data is not visible
   Given the requested Role, Permission, or parent Role is missing, soft-deleted, or stale
   When an authorized caller requests the corresponding catalog endpoint
   Then the system returns 404 Not Found
+
+Scenario: Authorized caller lists the visible Role catalog
+  Given current active COORD, MEMBER, VISITOR, SUDO, and custom Roles exist
+  And the caller has ROLE_GET
+  When the caller requests GET /roles without a name parameter
+  Then the system returns 200 OK with a top-level roles list
+  And COORD, MEMBER, VISITOR, and the custom Roles are present
+  And SUDO is absent
+  And the result is not paginated
+
+Scenario: Role collection preserves ordinary catalog visibility
+  Given a soft-deleted custom Role and a stale system Role exist
+  And the caller has ROLE_GET
+  When the caller requests GET /roles
+  Then neither Role appears in the response
+
+Scenario: Role-name search trims and matches case-insensitively
+  Given an active visible Role named EVENT_MANAGER exists
+  And the caller has ROLE_GET
+  When the caller requests GET /roles with name " manager "
+  Then the response contains EVENT_MANAGER
+  And results are ordered case-insensitively by name and then UUID
+
+Scenario: Blank and unknown Role searches have distinct outcomes
+  Given the caller has ROLE_GET
+  When the caller supplies a blank name
+  Then the system returns 400 Bad Request
+  When the caller supplies a well-formed name that matches no visible Role
+  Then the system returns 200 OK with an empty roles list
+
+Scenario: Role collection requires ROLE_GET
+  Given the caller is authenticated with ACCOUNT_ROLE_MANAGE but without ROLE_GET
+  When the caller requests GET /roles
+  Then the system returns 403 Forbidden
 ```
 
 ## Diagrams
@@ -514,7 +629,8 @@ flowchart LR
 
 * Role creation, editing, disabling, deletion, or restoration.
 * Permission creation, editing, disabling, deletion, or restoration.
-* Collection, search, or pagination endpoints for roles or permissions.
+* Collection, search, or pagination endpoints for permissions.
+* Pagination for the Role collection.
 * Event creation, editing, cancellation, and request validation beyond the permission-reference contract in `REQ-RBAC-011`.
 * Tier-ordering rules for future custom-role administration workflows.
 * Reading soft-deleted records through HTTP.
@@ -524,6 +640,7 @@ flowchart LR
 ## Related ADRs
 
 * [ADR-0003: Keep stale RBAC registry data fail-closed](../../decisions/0003-keep-stale-rbac-registry-data-fail-closed.md)
+* [ADR-0013: Make Member lifecycle own Coordinator designation](../../decisions/0013-make-member-lifecycle-own-coordinator-designation.md)
 
 ## Related requirements
 

@@ -82,7 +82,9 @@ A permission definition consists of:
 
 ### 4.1. Account-Role Assignment
 
-* Accounts with `ACCOUNT_ROLE_MANAGE` can assign and remove ordinary roles (system or custom) to Accounts, subject to the Account-role requirements.
+* Accounts with `ACCOUNT_ROLE_MANAGE` can assign and remove only active custom Roles with `systemManaged = false`, subject to the Account-role requirements.
+* The Member lifecycle exclusively owns `MEMBER`, `VISITOR`, and `COORD`. Coordinator grant and revoke use the dedicated `COORDINATOR_MANAGE` permission and Member-targeted lifecycle endpoints.
+* Generic Account-role administration rejects every system-managed Role, including future system Roles.
 * **`SUDO` Exception:** Ordinary HTTP callers cannot assign or remove the `SUDO` role. `SUDO` management is strictly developer-controlled and must be executed via the command-line `maintenance` Spring profile.
 
 ```bash
@@ -101,8 +103,8 @@ The application enforces strict invariants to prevent accidental or malicious sy
 The system will block and throw a `ForbiddenOperationException` for the following actions:
 
 1. Removing the last active `SUDO` account role.
-2. An Account with an active `COORD` assignment attempting to remove that assignment from its own Account when no other active Account has an active `COORD` assignment.
+2. A Coordinator revoke or Member deactivation removing the final current Coordinator when the actor does not have an active `SUDO` assignment.
 
-An Account with an active `SUDO` assignment is exempt from the self-`COORD` protection and may remove the final active `COORD` assignment.
+An Account with an active `SUDO` assignment may remove the final current Coordinator through the owning Member lifecycle workflow.
 
 Account deactivation, disabling, deletion, and restoration while an Account has SUDO are outside the current Account-role requirements. They require a separate accepted Requirement Specification before any protection rule is inferred or implemented.

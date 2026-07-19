@@ -13,7 +13,7 @@ Roles remain permission bundles; authorization decisions must use permissions ra
 
 `SUDO` is a developer-controlled unrestricted-access role. Its assignment and removal require a separate maintenance workflow because ordinary Account-role administration must not be able to remove the application's developer recovery path.
 
-`MEMBER` and `VISITOR` are lifecycle-owned roles. Member registration, membership-solicitation approval, reactivation, and deactivation synchronize them from Member state. Generic Account-role administration must not assign or remove them independently.
+`COORD`, `MEMBER`, and `VISITOR` are lifecycle-owned roles. Member registration, membership-solicitation approval, reactivation, deactivation, and Coordinator designation workflows synchronize them from Member state and Coordinator responsibility. Generic Account-role administration must not assign or remove them independently.
 
 ## Ubiquitous Language
 
@@ -37,8 +37,8 @@ The system shall expose these routes:
 | --- | --- | --- | --- |
 | `GET` | `/accounts/{accountId}/roles` | `ACCOUNT_GET` | List the Account's active roles. |
 | `GET` | `/accounts/{accountId}/role-assignments/{assignmentId}` | `ACCOUNT_GET` | Read one active Account-role assignment. |
-| `POST` | `/accounts/{accountId}/roles` | `ACCOUNT_ROLE_MANAGE` | Add one administratively managed role to the Account. |
-| `PATCH` | `/accounts/{accountId}/roles/{roleId}/drop` | `ACCOUNT_ROLE_MANAGE` | Drop one administratively managed role from the Account. |
+| `POST` | `/accounts/{accountId}/roles` | `ACCOUNT_ROLE_MANAGE` | Add one active custom Role to the Account. |
+| `PATCH` | `/accounts/{accountId}/roles/{roleId}/drop` | `ACCOUNT_ROLE_MANAGE` | Drop one active custom Role from the Account. |
 
 All four routes shall require authentication. An unauthenticated request shall return `401 Unauthorized`. An authenticated caller without the required permission shall return `403 Forbidden`.
 
@@ -49,7 +49,7 @@ Account-role changes are security-sensitive mutations and must be separated from
 
 Valid examples:
 - A caller with `ACCOUNT_GET` lists an Account's active roles.
-- A caller with `ACCOUNT_ROLE_MANAGE` adds or drops a custom Role or the `COORD` Role when other rules permit it.
+- A caller with `ACCOUNT_ROLE_MANAGE` adds or drops an active custom Role.
 
 Invalid examples:
 - A caller with only self-view access lists another Account's roles.
@@ -91,7 +91,9 @@ Invalid examples:
 
 ---
 
-### REQ-ACCOUNT-ROLE-003: Add an Account role
+### REQ-ACCOUNT-ROLE-003: Add an Account role (role eligibility superseded)
+
+The Role-eligibility portions of this requirement are superseded by `REQ-ACCOUNT-ROLE-016`. Its request, response, duplicate-assignment, concurrency, history, and audit-facing contract remains accepted for eligible custom Roles.
 
 `POST /accounts/{accountId}/roles` shall accept:
 
@@ -162,7 +164,9 @@ Invalid examples:
 
 ---
 
-### REQ-ACCOUNT-ROLE-004: Drop an Account role
+### REQ-ACCOUNT-ROLE-004: Drop an Account role (role eligibility superseded)
+
+The Role-eligibility portions of this requirement are superseded by `REQ-ACCOUNT-ROLE-017`. Its request, response, missing-assignment, history, and audit-facing contract remains accepted for eligible custom Roles.
 
 `PATCH /accounts/{accountId}/roles/{roleId}/drop` shall accept:
 
@@ -252,7 +256,9 @@ The audit log records security intent rather than every repository write. One hi
 
 ---
 
-### REQ-ACCOUNT-ROLE-008: Lockout prevention
+### REQ-ACCOUNT-ROLE-008: Lockout prevention (COORD ownership superseded)
+
+The SUDO rules in this requirement remain accepted. Its COORD-specific generic-drop rules are superseded by `REQ-ACCOUNT-ROLE-018` and the Member lifecycle requirements because generic Account-role management no longer manages COORD.
 
 All Account-role mutation workflows shall enforce these protections transactionally:
 
@@ -467,6 +473,65 @@ Invalid examples:
 - An expected conflict prints a Java stack trace and exits with an unspecified nonzero value.
 - Supplying the same selector option twice silently uses the first value.
 
+---
+
+### REQ-ACCOUNT-ROLE-016: Add only active custom Roles
+
+`POST /accounts/{accountId}/roles` shall accept only an active Role whose `systemManaged` value is `false`. This requirement supersedes the Role-eligibility rules in `REQ-ACCOUNT-ROLE-003`; all unchanged request, response, duplicate-assignment, concurrency, history, and audit behavior from that requirement remains accepted.
+
+An active system-managed Role shall return `403 Forbidden` without assignment mutation or activity logging. The rejection shall apply to `COORD`, `MEMBER`, `VISITOR`, `SUDO`, and every future system-managed Role without requiring a name-specific denylist. Missing, soft-deleted, or stale Role identifiers shall remain `404 Not Found` under ordinary active/current visibility.
+
+The request shall continue to receive `roleId` and a reason satisfying `REQ-ACCOUNT-ROLE-005`. A successful eligible custom-Role assignment shall return `201 Created`, create a new assignment UUID when no active duplicate exists, set `Location` to `/api/accounts/{accountId}/role-assignments/{assignmentId}`, return the assignment response established by `REQ-ACCOUNT-ROLE-003`, and emit exactly one `ACCOUNT_ROLE_ADDED` event.
+
+Rationale:
+Member lifecycle owns every ordinary system Role, SUDO remains maintenance-only, and `systemManaged: false` gives generic Account-role administration one future-proof eligibility rule.
+
+Valid examples:
+- An authorized caller assigns an active custom Role and receives the assignment UUID and Location.
+- A previously dropped custom Role receives a new assignment identity when assigned again.
+
+Invalid examples:
+- Generic Account-role administration assigns COORD because the caller has `ACCOUNT_ROLE_MANAGE`.
+- A future system-managed Role is assignable until its name is added to a denylist.
+
+---
+
+### REQ-ACCOUNT-ROLE-017: Drop only active custom Roles
+
+`PATCH /accounts/{accountId}/roles/{roleId}/drop` shall drop only an active assignment to an active Role whose `systemManaged` value is `false`. This requirement supersedes the Role-eligibility rules in `REQ-ACCOUNT-ROLE-004`; all unchanged request, response, missing-assignment, history, and audit behavior from that requirement remains accepted.
+
+An active assignment to any system-managed Role shall return `403 Forbidden` without mutation or activity logging. Missing, soft-deleted, or stale Account, Role, or active assignment targets shall remain `404 Not Found`.
+
+The request shall continue to require a reason satisfying `REQ-ACCOUNT-ROLE-005`. A successful eligible custom-Role drop shall return `204 No Content`, soft-delete the active assignment, preserve its history, and emit exactly one `ACCOUNT_ROLE_REMOVED` event.
+
+Rationale:
+System Role removal must pass through its owning lifecycle or maintenance workflow, while custom Role administration preserves the established Account-role contract.
+
+Valid examples:
+- An authorized caller drops an active custom Role with a valid reason.
+
+Invalid examples:
+- Generic Account-role administration drops MEMBER, VISITOR, or COORD.
+- Generic Account-role administration drops SUDO.
+
+---
+
+### REQ-ACCOUNT-ROLE-018: System Role workflow ownership and lockout routing
+
+System Role assignment and removal shall be routed by ownership:
+
+| System Role | Owning workflow |
+| --- | --- |
+| `SUDO` | Developer-controlled SUDO maintenance under `REQ-ACCOUNT-ROLE-009` through `REQ-ACCOUNT-ROLE-015`. |
+| `MEMBER`, `VISITOR`, `COORD` | Member lifecycle under `REQ-MEMBER-016` through `REQ-MEMBER-020`. |
+
+The last-SUDO protection in `REQ-ACCOUNT-ROLE-008` and `REQ-ACCOUNT-ROLE-013` remains unchanged. The COORD-specific generic-drop rules in `REQ-ACCOUNT-ROLE-008` are superseded by the Member lifecycle's final-Coordinator rule because only Member lifecycle operations may now remove COORD.
+
+Generic Account-role requests that target a system-managed Role shall fail before duplicate, missing-assignment, or lockout evaluation and shall not create low-level activity events. The owning workflow shall enforce its own state, concurrency, audit, and lockout rules transactionally.
+
+Rationale:
+One explicit owner per system Role prevents generic security administration from bypassing domain lifecycle invariants while retaining the developer recovery path.
+
 ## Acceptance scenarios
 
 ```gherkin
@@ -483,8 +548,8 @@ Scenario: Listing an unknown Account returns not found
   When the caller requests GET /accounts/{accountId}/roles
   Then the system returns 404 Not Found
 
-Scenario: Authorized caller adds an ordinary role
-  Given an active Account and active Role exist
+Scenario: Authorized caller adds a custom role
+  Given an active Account and active custom Role exist
   And the Account does not have an active assignment for the Role
   And the caller has the ACCOUNT_ROLE_MANAGE permission
   When the caller posts the Role identifier and a valid reason
@@ -495,9 +560,9 @@ Scenario: Authorized caller adds an ordinary role
   And the response contains the created Account-role assignment
   And one ACCOUNT_ROLE_ADDED activity event is recorded
 
-Scenario: Account-role API cannot manage lifecycle-owned roles
+Scenario: Account-role API cannot manage system roles
   Given the caller has ACCOUNT_ROLE_MANAGE
-  When the caller tries to add or drop MEMBER or VISITOR through the Account-role API
+  When the caller tries to add or drop COORD, MEMBER, VISITOR, or SUDO through the Account-role API
   Then the system returns 403 Forbidden
   And no assignment is mutated
   And no Account-role activity event is recorded
@@ -539,8 +604,8 @@ Scenario: Missing reason is rejected before mutation
   And no Account, Role, or assignment is loaded for mutation
   And no activity event is recorded
 
-Scenario: Authorized caller drops an active role
-  Given an active Account-role assignment exists
+Scenario: Authorized caller drops an active custom role
+  Given an active custom Account-role assignment exists
   And the caller has the ACCOUNT_ROLE_MANAGE permission
   When the caller drops the assignment with a valid reason
   Then the system returns 204 No Content
@@ -552,12 +617,6 @@ Scenario: Missing active assignment returns not found during drop
   And the caller has the ACCOUNT_ROLE_MANAGE permission
   When the caller drops the Role with a valid reason
   Then the system returns 404 Not Found
-  And no assignment is mutated
-
-Scenario: HTTP cannot manage SUDO
-  Given the caller has the ACCOUNT_ROLE_MANAGE permission
-  When the caller tries to add or drop SUDO through the HTTP API
-  Then the system returns 403 Forbidden
   And no assignment is mutated
 
 Scenario: SUDO management requires the maintenance workflow
@@ -619,20 +678,6 @@ Scenario: Concurrent SUDO removals preserve one active SUDO assignment
   Then at most one removal succeeds
   And at least one SUDO assignment remains active
 
-Scenario: Account cannot remove the only active COORD assignment from self
-  Given the caller's Account has an active COORD assignment
-  And no other active Account has an active COORD assignment
-  When the caller drops COORD from the caller's own Account
-  Then the system rejects the operation with a forbidden-operation outcome
-  And the COORD assignment remains active
-
-Scenario: SUDO can remove the final COORD capability
-  Given the caller has an active SUDO assignment
-  And the caller Account also has the COORD role
-  And no other active Account has the COORD role
-  When the caller drops COORD from their own Account
-  Then the system returns a successful drop outcome
-  And the COORD assignment is soft-deleted
 ```
 
 ## Diagrams
@@ -658,11 +703,9 @@ flowchart TD
     ReasonDrop -- No --> BadRequest
     ReasonAdd -- Yes --> AddTargets{Active Account and Role exist?}
     AddTargets -- No --> NotFound
-    AddTargets -- Yes --> HttpSudoAdd{SUDO role?}
-    HttpSudoAdd -- Yes --> Forbidden
-    HttpSudoAdd -- No --> LifecycleAdd{MEMBER or VISITOR?}
-    LifecycleAdd -- Yes --> Forbidden
-    LifecycleAdd -- No --> Duplicate{Active assignment exists?}
+    AddTargets -- Yes --> CustomAdd{systemManaged false?}
+    CustomAdd -- No --> Forbidden
+    CustomAdd -- Yes --> Duplicate{Active assignment exists?}
     Duplicate -- Yes --> Conflict[409 Conflict]
     Duplicate -- No --> AddSafety{Lockout violation?}
     AddSafety -- Yes --> Forbidden
@@ -672,13 +715,9 @@ flowchart TD
 
     ReasonDrop -- Yes --> Assignment{Active assignment exists?}
     Assignment -- No --> NotFound
-    Assignment -- Yes --> HttpSudoDrop{SUDO role?}
-    HttpSudoDrop -- Yes --> Forbidden
-    HttpSudoDrop -- No --> LifecycleDrop{MEMBER or VISITOR?}
-    LifecycleDrop -- Yes --> Forbidden
-    LifecycleDrop -- No --> DropSafety{Lockout violation?}
-    DropSafety -- Yes --> Forbidden
-    DropSafety -- No --> Drop[Soft-delete assignment and audit]
+    Assignment -- Yes --> CustomDrop{systemManaged false?}
+    CustomDrop -- No --> Forbidden
+    CustomDrop -- Yes --> Drop[Soft-delete assignment and audit]
 
     Maintenance[Maintenance command] --> Profile{maintenance profile?}
     Profile -- No --> MaintenanceRejected[Reject SUDO mutation]
@@ -714,15 +753,16 @@ flowchart TD
 * Role-permission assignment and removal.
 * Reading activity logs or developer-only soft-deleted assignments through HTTP.
 * Account registration, authentication, deactivation, restoration, or deletion.
-* Member registration, membership-solicitation decisions, reactivation, and deactivation beyond the prohibition on manually mutating their lifecycle-owned roles.
-* Account search, role search, pagination, and filtering.
+* Member registration, membership-solicitation decisions, reactivation, deactivation, and Coordinator designation beyond the prohibition on manually mutating their lifecycle-owned Roles.
+* Account search and pagination or filtering of Account-role assignments.
+* Role collection and name search, which are owned by the RBAC Catalog Requirement Specification.
 * Reading dropped or otherwise historical Account-role assignments through HTTP.
 * Backward-compatibility aliases or migration paths for unreleased permission names.
 
 ## Related ADRs
 
 * [ADR-0002: Serialize last-SUDO removal decisions](../../decisions/0002-serialize-last-sudo-removal.md)
-* [ADR-0004: Make Member lifecycle own MEMBER and VISITOR roles](../../decisions/0004-member-lifecycle-owns-member-and-visitor-roles.md)
+* [ADR-0013: Make Member lifecycle own Coordinator designation](../../decisions/0013-make-member-lifecycle-own-coordinator-designation.md)
 
 ## Related requirements
 

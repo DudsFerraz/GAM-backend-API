@@ -231,7 +231,10 @@ Approval establishes lifetime membership and rejection denies the current reques
 
 ---
 
-### REQ-MEMBER-SOL-009: Atomic approval
+### REQ-MEMBER-SOL-009: Atomic approval (lifecycle Role precondition superseded)
+
+The lifecycle Role precondition and projection portions of this requirement are superseded by `REQ-MEMBER-SOL-014`. Its remaining approval, response, atomicity, and audit contract remains accepted.
+
 Approval shall revalidate that:
 
 - the solicitation is `PENDING`;
@@ -255,7 +258,7 @@ Approval is one business decision and must not leave partial membership, decisio
 
 Valid examples:
 - Approval creates one active Member and returns its identifier in the solicitation.
-- Existing `COORD` or custom roles remain assigned after approval.
+- Existing custom Roles remain assigned after approval.
 
 Invalid examples:
 - The solicitation becomes approved but Member creation fails.
@@ -310,7 +313,7 @@ Membership-solicitation routes shall use these outcomes:
 | Unauthenticated protected request | `401 Unauthorized` |
 | Authenticated caller lacks `MEMBER_MANAGE` for a review operation | `403 Forbidden` |
 | Solicitation is missing, soft-deleted, or hidden by ownership; required Account is missing or soft-deleted | `404 Not Found` |
-| Account already has a Member, another solicitation is pending, solicitation is already decided, or concurrent operation loses | `409 Conflict` |
+| Account already has a Member, another solicitation is pending, solicitation is already decided, approval finds an inconsistent lifecycle Role projection, or concurrent operation loses | `409 Conflict` |
 
 Failed requests shall not create or change solicitations, Members, lifecycle roles, or activity logs.
 
@@ -334,6 +337,26 @@ The workflow mutation and activity-log row shall commit together. Activity metad
 
 Rationale:
 The audit history should capture submission and Coordinator decisions without turning the activity log into a second store of application-form data.
+
+---
+
+### REQ-MEMBER-SOL-014: Approval requires a consistent pre-Member Role projection
+
+This requirement supersedes the lifecycle Role precondition and projection portions of `REQ-MEMBER-SOL-009`.
+
+Approval shall require the soliciting Account to have no linked Member and no active `MEMBER`, `VISITOR`, or `COORD` assignment. An Account without a Member that has any of those lifecycle-owned Roles is inconsistent and approval shall return `409 Conflict` without repairing Roles, creating a Member, deciding the solicitation, or emitting an activity event.
+
+Successful approval shall create one active Member without Coordinator designation, assign `MEMBER`, keep `VISITOR` and `COORD` absent, and preserve every active custom Role. The Member, Role projection, solicitation decision, and one `MEMBERSHIP_SOLICITATION_APPROVED` activity event shall commit atomically under `REQ-MEMBER-016`.
+
+Rationale:
+Approval must not legitimize or silently repair a lifecycle-owned Role assignment that could not validly exist before membership.
+
+Valid examples:
+- Approval preserves an existing custom Role while creating an active non-Coordinator Member.
+
+Invalid examples:
+- Approval preserves a pre-existing COORD assignment on an Account with no Member.
+- Approval silently removes an inconsistent VISITOR assignment and succeeds.
 
 ## Acceptance scenarios
 
@@ -389,6 +412,15 @@ Scenario: Concurrent decisions preserve one outcome
   Then exactly one decision commits
   And the other request returns 409 Conflict
   And exactly one decision activity event is recorded
+
+Scenario: Approval rejects an inconsistent lifecycle Role projection
+  Given a pending solicitation belongs to an Account with no Member
+  And the Account has MEMBER, VISITOR, or COORD
+  And the caller has MEMBER_MANAGE
+  When the caller approves with a valid review reason
+  Then the system returns 409 Conflict
+  And no Role is repaired or mutated
+  And no Member, decision, or activity event is created
 ```
 
 ## Diagrams
@@ -412,7 +444,7 @@ Scenario: Concurrent decisions preserve one outcome
 
 ## Related ADRs
 
-* [ADR-0004: Make Member lifecycle own MEMBER and VISITOR roles](../../decisions/0004-member-lifecycle-owns-member-and-visitor-roles.md)
+* [ADR-0013: Make Member lifecycle own Coordinator designation](../../decisions/0013-make-member-lifecycle-own-coordinator-designation.md)
 
 ## Related requirements
 

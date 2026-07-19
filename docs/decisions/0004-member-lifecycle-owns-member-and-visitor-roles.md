@@ -1,7 +1,9 @@
 # ADR-0004: Make Member lifecycle own MEMBER and VISITOR roles
 
 ## Status
-Accepted
+Superseded
+
+Superseded by [ADR-0013](0013-make-member-lifecycle-own-coordinator-designation.md).
 
 ## Context
 The `MEMBER` and `VISITOR` system Roles affect Account authorization, while `ACTIVE` and `INACTIVE` describe a Member's domain lifecycle. If generic Account-role administration and Member lifecycle workflows may change these values independently, an Account can gain Member capabilities without a Member or retain them after deactivation.

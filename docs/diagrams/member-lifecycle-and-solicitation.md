@@ -11,9 +11,12 @@ flowchart TD
     Rejected["REJECTED solicitation; no Member"]
     Approve["Coordinator approves with reason"]
     Direct["Coordinator directly registers with reason"]
-    Active["ACTIVE Member; MEMBER assigned; VISITOR absent"]
+    Active["ACTIVE Member; MEMBER assigned; VISITOR and COORD absent"]
+    GrantCoord["Grant Coordinator with reason"]
+    Coordinator["ACTIVE Coordinator; MEMBER and COORD assigned; VISITOR absent"]
+    RevokeCoord["Revoke Coordinator with reason"]
     Deactivate["Deactivate with reason"]
-    Inactive["INACTIVE Member; VISITOR assigned; MEMBER absent"]
+    Inactive["INACTIVE Member; VISITOR assigned; MEMBER and COORD absent"]
     Reactivate["Reactivate with reason"]
     Blocked["409 Conflict"]
 
@@ -24,6 +27,9 @@ flowchart TD
     Eligible --> Direct --> Active
     Pending -->|"Direct registration attempted"| Blocked
     Active --> Deactivate --> Inactive
+    Active --> GrantCoord --> Coordinator
+    Coordinator --> RevokeCoord --> Active
+    Coordinator --> Deactivate
     Inactive --> Reactivate --> Active
     Active -->|"Activate again"| Blocked
     Inactive -->|"Deactivate again"| Blocked
@@ -36,4 +42,4 @@ flowchart TD
 
 ## Related ADRs
 
-* [ADR-0004: Make Member lifecycle own MEMBER and VISITOR roles](../decisions/0004-member-lifecycle-owns-member-and-visitor-roles.md)
+* [ADR-0013: Make Member lifecycle own Coordinator designation](../decisions/0013-make-member-lifecycle-own-coordinator-designation.md)
