@@ -45,6 +45,7 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
             "MEMBER_ACTIVATION",
             "MEMBER_GET_NON_ACTIVE",
             "MEMBER_MANAGE",
+            "COORDINATOR_MANAGE",
             "ACCOUNT_GET",
             "ACCOUNT_SEARCH",
             "ACCOUNT_ROLE_MANAGE",
@@ -58,6 +59,9 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
             "GAM_LOCATION_CREATE",
             "GAM_LOCATION_MANAGE",
             "PRESENCES_SEARCH",
+            "PRESENCE_REGISTER",
+            "PRESENCE_EDIT",
+            "PRESENCE_REMOVE",
             "ROLE_GET",
             "PERMISSION_GET"
     );
@@ -101,6 +105,8 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
         assertThat(activePermissionCodesForRole("VISITOR")).isEmpty();
         assertThat(activePermissionCodesForRole("MEMBER")).doesNotContain("ACCOUNT_ROLE_MANAGE");
         assertThat(activePermissionCodesForRole("VISITOR")).doesNotContain("ACCOUNT_ROLE_MANAGE");
+        assertThat(activePermissionCodesForRole("MEMBER")).doesNotContain("COORDINATOR_MANAGE");
+        assertThat(activePermissionCodesForRole("VISITOR")).doesNotContain("COORDINATOR_MANAGE");
     }
 
     @Test

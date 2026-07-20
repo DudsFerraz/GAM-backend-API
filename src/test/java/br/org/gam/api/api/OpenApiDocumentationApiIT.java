@@ -196,6 +196,74 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
     }
 
     @Test
+    @DisplayName("REQ-RBAC-012/013 - Role collection OpenAPI contract documents complete name-filter semantics")
+    void roleCollectionShouldBeDocumented() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> paths = object(contract, "paths");
+
+        assertThat(paths).containsKey("/roles");
+
+        Map<String, Object> listRoles = object(object(paths, "/roles"), "get");
+        assertThat(listRoles.get("operationId")).asString().isNotBlank();
+        assertThat(objects(listRoles, "parameters"))
+                .singleElement()
+                .satisfies(parameter -> {
+                    assertThat(parameter)
+                            .containsEntry("name", "name")
+                            .containsEntry("in", "query")
+                            .containsEntry("required", false);
+                    assertThat(object(parameter, "schema")).containsEntry("type", "string");
+                    assertThat(parameter.get("description").toString())
+                            .containsIgnoringCase("trim")
+                            .containsIgnoringCase("case-insensitive")
+                            .containsIgnoringCase("accent-sensitive")
+                            .containsIgnoringCase("blank")
+                            .contains("400");
+                });
+        assertThat(objects(listRoles, "parameters"))
+                .extracting(parameter -> parameter.get("name"))
+                .doesNotContain("page", "size", "sort");
+        assertThat(object(listRoles, "responses")).containsOnlyKeys("200", "400", "401", "403");
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-017/018 - Coordinator lifecycle OpenAPI contract describes normalized reason validation")
+    void coordinatorLifecycleShouldBeDocumented() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> paths = object(contract, "paths");
+
+        assertThat(paths).containsKeys(
+                "/members/{memberId}/coordinator/grant",
+                "/members/{memberId}/coordinator/revoke"
+        );
+
+        for (String transition : List.of("grant", "revoke")) {
+            Map<String, Object> operation = object(
+                    object(paths, "/members/{memberId}/coordinator/" + transition),
+                    "patch"
+            );
+            assertThat(operation.get("operationId").toString()).containsIgnoringCase(transition).contains("Coordinator");
+            assertThat(object(operation, "responses"))
+                    .containsOnlyKeys("204", "400", "401", "403", "404", "409");
+
+            Map<String, Object> requestBody = object(operation, "requestBody");
+            assertThat(requestBody).containsEntry("required", true);
+            Map<String, Object> json = object(object(requestBody, "content"), "application/json");
+            Map<String, Object> reasonSchema = resolveSchema(contract, object(json, "schema"));
+            assertThat(strings(reasonSchema, "required")).contains("reason");
+            Map<String, Object> reasonProperty = object(object(reasonSchema, "properties"), "reason");
+            assertThat(reasonProperty)
+                    .containsEntry("type", "string")
+                    .containsEntry("minLength", 1)
+                    .doesNotContainKey("maxLength");
+            assertThat(reasonProperty.get("description")).asString()
+                    .containsIgnoringCase("trim")
+                    .containsIgnoringCase("2,000")
+                    .containsIgnoringCase("code point");
+        }
+    }
+
+    @Test
     @DisplayName("REQ-OPENAPI-002 - non-development Swagger UI configuration -> every request method is read-only")
     void nonDevelopmentSwaggerUiShouldDisableInteractiveRequestExecution() {
         Map<String, Object> configuration = swaggerUiConfiguration();

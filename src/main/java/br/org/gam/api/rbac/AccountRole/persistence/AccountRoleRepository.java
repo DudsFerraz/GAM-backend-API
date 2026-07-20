@@ -65,4 +65,30 @@ public interface AccountRoleRepository extends BaseRepository<AccountRoleEntity,
               and role.deletedAt is null
             """)
     List<AccountRoleEntity> lockActiveAccountRolesByRoleName(@Param("roleName") String roleName);
+
+    @Query("""
+            select accountRole
+            from AccountRoleEntity accountRole
+            join accountRole.account account
+            join accountRole.role role
+            where role.name = :roleName
+              and accountRole.deletedAt is null
+              and account.deletedAt is null
+              and role.deletedAt is null
+            """)
+    List<AccountRoleEntity> findActiveAccountRolesByRoleName(@Param("roleName") String roleName);
+
+    @Query("""
+            select count(accountRole) > 0
+            from AccountRoleEntity accountRole
+            join accountRole.account account
+            join accountRole.role role
+            where account.id = :accountId
+              and role.name = :roleName
+              and accountRole.deletedAt is null
+              and account.deletedAt is null
+              and role.deletedAt is null
+            """)
+    boolean existsActiveByAccountIdAndRoleName(@Param("accountId") UUID accountId,
+                                                @Param("roleName") String roleName);
 }

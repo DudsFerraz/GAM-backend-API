@@ -33,8 +33,8 @@ public class DropAccountRole {
     @Transactional
     public void byDTO(AccountRoleDTO dto) {
         String reason = requiredAuditReason(dto.reason());
+        rbacSafetyPolicy.assertCanRemoveRoleThroughAdmin(getRoleInstance.requiredById(dto.roleId()));
         AccountRoleEntity accountRoleEntity = getAccountRoleInstance.requiredByDTO(dto);
-        rbacSafetyPolicy.assertCanRemoveRoleThroughAdmin(accountRoleEntity);
 
         accountRoleRepo.delete(accountRoleEntity);
 

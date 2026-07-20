@@ -1,9 +1,12 @@
 package br.org.gam.api.member.application.useCases;
 
 import br.org.gam.api.account.domain.Account;
+import br.org.gam.api.account.application.AccountEntityLoader;
+import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.shared.domain.GamEmail;
+import br.org.gam.api.member.application.CoordinatorSafetyPolicy;
+import br.org.gam.api.member.application.MemberEntityLoader;
 import br.org.gam.api.member.application.MemberMapper;
-import br.org.gam.api.member.application.MemberDomainLoader;
 import br.org.gam.api.member.application.MemberRoleProjection;
 import br.org.gam.api.member.domain.Member;
 import br.org.gam.api.member.domain.MemberStatus;
@@ -46,7 +49,13 @@ class ActivationTest {
     private MemberRepository memberRepo;
 
     @Mock
-    private MemberDomainLoader getMemberInstance;
+    private MemberEntityLoader memberEntityLoader;
+
+    @Mock
+    private AccountEntityLoader accountEntityLoader;
+
+    @Mock
+    private CoordinatorSafetyPolicy coordinatorSafetyPolicy;
 
     @Mock
     private MemberMapper memberMapper;
@@ -72,9 +81,11 @@ class ActivationTest {
             Account account = account();
             Member member = member(account);
             member.activate();
+            MemberEntity lockedEntity = memberEntity(account.getId());
             MemberEntity mappedEntity = new MemberEntity();
 
-            when(getMemberInstance.requiredById(memberId)).thenReturn(member);
+            when(memberEntityLoader.requiredByIdForUpdate(memberId)).thenReturn(lockedEntity);
+            when(memberMapper.entityToDomain(lockedEntity)).thenReturn(member);
             when(memberMapper.domainToEntity(any(Member.class))).thenReturn(mappedEntity);
             when(memberRoleProjection.synchronizeInactive(account.getId()))
                     .thenReturn(new MemberRoleProjection.RoleChange(UUID.randomUUID(), UUID.randomUUID()));
@@ -87,7 +98,7 @@ class ActivationTest {
             verify(memberRoleProjection).synchronizeInactive(account.getId());
             verify(memberRepo).save(mappedEntity);
             verify(activityEvents).memberDeactivated(
-                    member.getId(),
+                    memberId,
                     account.getId(),
                     MemberStatus.ACTIVE.name(),
                     MemberStatus.INACTIVE.name(),
@@ -105,9 +116,11 @@ class ActivationTest {
             Account account = account();
             Member member = member(account);
             member.deactivate();
+            MemberEntity lockedEntity = memberEntity(account.getId());
             MemberEntity mappedEntity = new MemberEntity();
 
-            when(getMemberInstance.requiredById(memberId)).thenReturn(member);
+            when(memberEntityLoader.requiredByIdForUpdate(memberId)).thenReturn(lockedEntity);
+            when(memberMapper.entityToDomain(lockedEntity)).thenReturn(member);
             when(memberMapper.domainToEntity(any(Member.class))).thenReturn(mappedEntity);
             when(memberRoleProjection.synchronizeActive(account.getId()))
                     .thenReturn(new MemberRoleProjection.RoleChange(UUID.randomUUID(), UUID.randomUUID()));
@@ -120,7 +133,7 @@ class ActivationTest {
             verify(memberRoleProjection).synchronizeActive(account.getId());
             verify(memberRepo).save(mappedEntity);
             verify(activityEvents).memberActivated(
-                    member.getId(),
+                    memberId,
                     account.getId(),
                     MemberStatus.INACTIVE.name(),
                     MemberStatus.ACTIVE.name(),
@@ -138,14 +151,15 @@ class ActivationTest {
             UUID memberId = UUID.randomUUID();
             if (reason != null && reason.length() > 2_000) {
                 Member member = member(account());
-                lenient().when(getMemberInstance.requiredById(memberId)).thenReturn(member);
+                lenient().when(memberEntityLoader.requiredByIdForUpdate(memberId))
+                        .thenReturn(memberEntity(member.getAccount().getId()));
                 lenient().when(memberMapper.domainToEntity(any(Member.class))).thenReturn(new MemberEntity());
             }
 
             assertThatThrownBy(() -> activation.deactivate(memberId, reason))
                     .isInstanceOf(InvalidCommandException.class);
 
-            verifyNoInteractions(getMemberInstance, memberRoleProjection, memberRepo, activityEvents);
+            verifyNoInteractions(memberEntityLoader, accountEntityLoader, memberRoleProjection, memberRepo, activityEvents);
         }
 
         private static Stream<String> invalidReasons() {
@@ -164,5 +178,13 @@ class ActivationTest {
 
     private static Account account() {
         return Account.register(GamEmail.of("member@example.com"), "encoded-password", "Member Account");
+    }
+
+    private static MemberEntity memberEntity(UUID accountId) {
+        AccountEntity account = new AccountEntity();
+        account.setId(accountId);
+        MemberEntity member = new MemberEntity();
+        member.setAccount(account);
+        return member;
     }
 }

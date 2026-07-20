@@ -41,45 +41,47 @@ class RbacSafetyPolicyTest {
     class Functional {
 
         @Test
-        @DisplayName("EP - admin assigns SUDO -> forbidden")
+        @DisplayName("REQ-ACCOUNT-ROLE-016 - admin assigns SUDO -> rejected as system-managed")
         void adminAssignsSudoShouldBeForbidden() {
             RbacSafetyPolicy policy = new RbacSafetyPolicy(accountRoleRepo);
 
             assertThatThrownBy(() -> policy.assertCanAssignRoleThroughAdmin(role(SystemRole.SUDO.getCode(), true)))
                     .isInstanceOf(ForbiddenOperationException.class)
-                    .hasMessage("SUDO role assignment is developer-controlled.");
+                    .hasMessage("System roles are managed by their owning lifecycle or maintenance workflow.");
         }
 
         @ParameterizedTest
-        @ValueSource(strings = {"MEMBER", "VISITOR"})
-        @DisplayName("REQ-ACCOUNT-ROLE-003 and REQ-ACCOUNT-ROLE-008 - admin assigns lifecycle-owned Role -> forbidden")
+        @ValueSource(strings = {"MEMBER", "VISITOR", "COORD"})
+        @DisplayName("REQ-ACCOUNT-ROLE-016 - admin assigns lifecycle-owned Role -> rejected as system-managed")
         void adminAssignsLifecycleOwnedRoleShouldBeForbidden(String roleName) {
             RbacSafetyPolicy policy = new RbacSafetyPolicy(accountRoleRepo);
 
             assertThatThrownBy(() -> policy.assertCanAssignRoleThroughAdmin(role(roleName, true)))
-                    .isInstanceOf(ForbiddenOperationException.class);
+                    .isInstanceOf(ForbiddenOperationException.class)
+                    .hasMessage("System roles are managed by their owning lifecycle or maintenance workflow.");
         }
 
         @Test
-        @DisplayName("EP - admin removes SUDO -> forbidden")
+        @DisplayName("REQ-ACCOUNT-ROLE-017 - admin removes SUDO -> rejected as system-managed")
         void adminRemovesSudoShouldBeForbidden() {
             RbacSafetyPolicy policy = new RbacSafetyPolicy(accountRoleRepo);
             AccountRoleEntity sudoAccountRole = accountRole(SystemRole.SUDO.getCode(), UUID.randomUUID());
 
             assertThatThrownBy(() -> policy.assertCanRemoveRoleThroughAdmin(sudoAccountRole))
                     .isInstanceOf(ForbiddenOperationException.class)
-                    .hasMessage("SUDO role removal is developer-controlled.");
+                    .hasMessage("System roles are managed by their owning lifecycle or maintenance workflow.");
         }
 
         @ParameterizedTest
-        @ValueSource(strings = {"MEMBER", "VISITOR"})
-        @DisplayName("REQ-ACCOUNT-ROLE-004 and REQ-ACCOUNT-ROLE-008 - admin removes lifecycle-owned Role -> forbidden")
+        @ValueSource(strings = {"MEMBER", "VISITOR", "COORD"})
+        @DisplayName("REQ-ACCOUNT-ROLE-017 - admin removes lifecycle-owned Role -> rejected as system-managed")
         void adminRemovesLifecycleOwnedRoleShouldBeForbidden(String roleName) {
             RbacSafetyPolicy policy = new RbacSafetyPolicy(accountRoleRepo);
             AccountRoleEntity lifecycleAccountRole = accountRole(roleName, UUID.randomUUID());
 
             assertThatThrownBy(() -> policy.assertCanRemoveRoleThroughAdmin(lifecycleAccountRole))
-                    .isInstanceOf(ForbiddenOperationException.class);
+                    .isInstanceOf(ForbiddenOperationException.class)
+                    .hasMessage("System roles are managed by their owning lifecycle or maintenance workflow.");
         }
 
         @Test

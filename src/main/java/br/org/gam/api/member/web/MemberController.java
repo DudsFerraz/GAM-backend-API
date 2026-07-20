@@ -9,6 +9,7 @@ import br.org.gam.api.member.application.useCases.registerMember.RegisterMemberD
 import br.org.gam.api.member.application.useCases.registerMember.RegisterMemberRDTO;
 import br.org.gam.api.member.application.useCases.registerMember.RegisterMemberWorkflow;
 import br.org.gam.api.member.application.useCases.SearchMembers;
+import br.org.gam.api.member.application.useCases.CoordinatorTransitionDTO;
 import br.org.gam.api.presence.application.PresenceRDTO;
 import br.org.gam.api.presence.application.useCases.GetPresence;
 import br.org.gam.api.rbac.permission.domain.PermissionEnum;
@@ -16,6 +17,7 @@ import br.org.gam.api.shared.specification.SearchDTO;
 import br.org.gam.api.shared.web.PagedResponse;
 import br.org.gam.api.shared.web.PublicApiUri;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
@@ -70,6 +72,26 @@ public class MemberController {
                                                                      Pageable pageable) {
 
         return ResponseEntity.ok(PagedResponse.from(searchMembers.search(searchDTO, pageable)));
+    }
+
+    @PreAuthorize("hasAuthority('" + PermissionEnum.Code.COORDINATOR_MANAGE + "')")
+    @Operation(operationId = "grantCoordinator", summary = "Grant Coordinator designation")
+    @ApiResponse(responseCode = "204", description = "Coordinator designation granted")
+    @PatchMapping("/{memberId}/coordinator/grant")
+    public ResponseEntity<Void> grantCoordinator(@PathVariable UUID memberId,
+                                                  @RequestBody @Valid CoordinatorTransitionDTO dto) {
+        activation.grantCoordinator(memberId, dto.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PreAuthorize("hasAuthority('" + PermissionEnum.Code.COORDINATOR_MANAGE + "')")
+    @Operation(operationId = "revokeCoordinator", summary = "Revoke Coordinator designation")
+    @ApiResponse(responseCode = "204", description = "Coordinator designation revoked")
+    @PatchMapping("/{memberId}/coordinator/revoke")
+    public ResponseEntity<Void> revokeCoordinator(@PathVariable UUID memberId,
+                                                   @RequestBody @Valid CoordinatorTransitionDTO dto) {
+        activation.revokeCoordinator(memberId, dto.reason());
+        return ResponseEntity.noContent().build();
     }
 
     @PreAuthorize("hasAuthority('" + PermissionEnum.Code.MEMBER_ACTIVATION + "')")

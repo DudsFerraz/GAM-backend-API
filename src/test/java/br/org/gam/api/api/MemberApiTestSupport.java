@@ -204,13 +204,48 @@ abstract class MemberApiTestSupport extends BaseApiIntegrationTest {
     }
 
     protected void forceMemberState(UUID memberId, UUID accountId, String status, String lifecycleRole) {
+        forceMemberProjection(memberId, accountId, status, lifecycleRole);
+    }
+
+    protected void forceMemberProjection(UUID memberId, UUID accountId, String status, String... lifecycleRoles) {
         jdbcTemplate.update("UPDATE members SET status = CAST(? AS member_status_enum) WHERE id = ?", status, memberId);
         jdbcTemplate.update(
                 "DELETE FROM account_roles WHERE account_id = ? "
-                        + "AND role_id IN (SELECT id FROM roles WHERE name IN ('MEMBER', 'VISITOR'))",
+                        + "AND role_id IN (SELECT id FROM roles WHERE name IN ('MEMBER', 'VISITOR', 'COORD'))",
                 accountId
         );
-        grantRole(accountId, lifecycleRole);
+        for (String lifecycleRole : lifecycleRoles) {
+            grantRole(accountId, lifecycleRole);
+        }
+    }
+
+    protected UUID newCustomRole(String prefix) {
+        UUID roleId = UUID.randomUUID();
+        String boundedPrefix = prefix.substring(0, Math.min(prefix.length(), 32));
+        String roleName = boundedPrefix + "_" + roleId.toString().substring(0, 8);
+        Timestamp now = Timestamp.from(Instant.now());
+        jdbcTemplate.update(
+                "INSERT INTO roles (id, name, description, system_managed, created_at, updated_at) "
+                        + "VALUES (?, ?, ?, FALSE, ?, ?)",
+                roleId,
+                roleName,
+                "Member lifecycle custom role fixture",
+                now,
+                now
+        );
+        customRoleIds.add(roleId);
+        return roleId;
+    }
+
+    protected long activeRoleAssignmentCount(UUID accountId, String roleName) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM account_roles ar JOIN roles r ON r.id = ar.role_id "
+                        + "WHERE ar.account_id = ? AND r.name = ? "
+                        + "AND ar.deleted_at IS NULL AND r.deleted_at IS NULL",
+                Long.class,
+                accountId,
+                roleName
+        );
     }
 
     protected void clearActivities() {
@@ -303,6 +338,7 @@ abstract class MemberApiTestSupport extends BaseApiIntegrationTest {
         return jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM activity_logs WHERE action IN ("
                         + "'MEMBER_REGISTERED', 'MEMBER_ACTIVATED', 'MEMBER_DEACTIVATED', "
+                        + "'COORDINATOR_GRANTED', 'COORDINATOR_REVOKED', "
                         + "'MEMBERSHIP_SOLICITATION_SUBMITTED', 'MEMBERSHIP_SOLICITATION_APPROVED', "
                         + "'MEMBERSHIP_SOLICITATION_REJECTED', 'ACCOUNT_ROLE_ADDED', 'ACCOUNT_ROLE_REMOVED')",
                 Long.class

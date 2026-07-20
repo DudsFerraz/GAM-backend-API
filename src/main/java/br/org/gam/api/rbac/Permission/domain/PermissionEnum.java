@@ -11,6 +11,7 @@ public enum PermissionEnum {
     MEMBER_ACTIVATION(Code.MEMBER_ACTIVATION, "Activate members", "Allows activating and deactivating members"),
     MEMBER_GET_NON_ACTIVE(Code.MEMBER_GET_NON_ACTIVE, "View inactive members", "Allows viewing non-active members"),
     MEMBER_MANAGE(Code.MEMBER_MANAGE, "Manage members", "Allows managing members"),
+    COORDINATOR_MANAGE(Code.COORDINATOR_MANAGE, "Manage coordinators", "Allows granting and revoking Coordinator designation"),
 
     ACCOUNT_GET(Code.ACCOUNT_GET, "View accounts", "Allows viewing accounts"),
     ACCOUNT_SEARCH(Code.ACCOUNT_SEARCH, "Search accounts", "Allows searching accounts"),
@@ -28,6 +29,9 @@ public enum PermissionEnum {
     GAM_LOCATION_MANAGE(Code.GAM_LOCATION_MANAGE, "Manage GAM locations", "Allows updating and removing GamLocation records"),
 
     PRESENCES_SEARCH(Code.PRESENCES_SEARCH, "Search presences", "Allows searching presences"),
+    PRESENCE_REGISTER(Code.PRESENCE_REGISTER, "Register presences", "Allows recording Member attendance at Events"),
+    PRESENCE_EDIT(Code.PRESENCE_EDIT, "Edit presences", "Allows editing observations on Member attendance records"),
+    PRESENCE_REMOVE(Code.PRESENCE_REMOVE, "Remove presences", "Allows removing mistaken Member attendance records"),
 
     ROLE_GET(Code.ROLE_GET, "View roles", "Allows reading role catalog entries"),
     PERMISSION_GET(Code.PERMISSION_GET, "View permissions", "Allows reading permission catalog entries");
@@ -54,6 +58,7 @@ public enum PermissionEnum {
         public static final String MEMBER_ACTIVATION = "MEMBER_ACTIVATION";
         public static final String MEMBER_GET_NON_ACTIVE = "MEMBER_GET_NON_ACTIVE";
         public static final String MEMBER_MANAGE = "MEMBER_MANAGE";
+        public static final String COORDINATOR_MANAGE = "COORDINATOR_MANAGE";
 
         public static final String ACCOUNT_GET = "ACCOUNT_GET";
         public static final String ACCOUNT_SEARCH = "ACCOUNT_SEARCH";
@@ -71,6 +76,9 @@ public enum PermissionEnum {
         public static final String GAM_LOCATION_MANAGE = "GAM_LOCATION_MANAGE";
 
         public static final String PRESENCES_SEARCH = "PRESENCES_SEARCH";
+        public static final String PRESENCE_REGISTER = "PRESENCE_REGISTER";
+        public static final String PRESENCE_EDIT = "PRESENCE_EDIT";
+        public static final String PRESENCE_REMOVE = "PRESENCE_REMOVE";
 
         public static final String ROLE_GET = "ROLE_GET";
         public static final String PERMISSION_GET = "PERMISSION_GET";

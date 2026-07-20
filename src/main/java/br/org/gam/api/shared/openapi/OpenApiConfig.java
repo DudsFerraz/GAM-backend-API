@@ -369,6 +369,10 @@ public class OpenApiConfig {
                         conflictDetails
                 )
         );
+        if ("listRoles".equals(operation.getOperationId())) {
+            operation.getResponses().remove("404");
+            operation.getResponses().remove("409");
+        }
     }
 
     private void documentCurrentAccountContext(io.swagger.v3.oas.models.Operation operation) {

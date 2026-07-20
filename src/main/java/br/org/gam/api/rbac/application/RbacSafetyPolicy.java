@@ -6,14 +6,11 @@ import br.org.gam.api.rbac.permission.persistence.PermissionEntity;
 import br.org.gam.api.rbac.role.domain.SystemRole;
 import br.org.gam.api.rbac.role.persistence.RoleEntity;
 import br.org.gam.api.rbac.rolePermission.persistence.RolePermissionEntity;
-import br.org.gam.api.security.application.AccountDetails;
 import br.org.gam.api.shared.exception.ForbiddenOperationException;
 import br.org.gam.api.shared.exception.NotFoundException;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -25,23 +22,19 @@ public class RbacSafetyPolicy {
     }
 
     public void assertCanAssignRoleThroughAdmin(RoleEntity role) {
-        if (isSudo(role)) {
-            throw ForbiddenOperationException.reason("SUDO role assignment is developer-controlled.");
-        }
-        if (isLifecycleOwned(role)) {
-            throw ForbiddenOperationException.reason("MEMBER and VISITOR roles are managed by the Member lifecycle.");
+        if (role != null && role.isSystemManaged()) {
+            throw ForbiddenOperationException.reason("System roles are managed by their owning lifecycle or maintenance workflow.");
         }
     }
 
     public void assertCanRemoveRoleThroughAdmin(AccountRoleEntity accountRole) {
-        if (isSudo(accountRole.getRole())) {
-            throw ForbiddenOperationException.reason("SUDO role removal is developer-controlled.");
-        }
-        if (isLifecycleOwned(accountRole.getRole())) {
-            throw ForbiddenOperationException.reason("MEMBER and VISITOR roles are managed by the Member lifecycle.");
-        }
+        assertCanRemoveRoleThroughAdmin(accountRole.getRole());
+    }
 
-        assertCanRemoveOnlyCoordCapabilityFromSelf(accountRole);
+    public void assertCanRemoveRoleThroughAdmin(RoleEntity role) {
+        if (role != null && role.isSystemManaged()) {
+            throw ForbiddenOperationException.reason("System roles are managed by their owning lifecycle or maintenance workflow.");
+        }
     }
 
     public void assertCanRemoveSudoThroughInternalService(AccountRoleEntity accountRole) {
@@ -96,48 +89,4 @@ public class RbacSafetyPolicy {
         return role != null && SystemRole.SUDO.getCode().equals(role.getName());
     }
 
-    private boolean isLifecycleOwned(RoleEntity role) {
-        return role != null && (SystemRole.MEMBER.getCode().equals(role.getName())
-                || SystemRole.VISITOR.getCode().equals(role.getName()));
-    }
-
-    private void assertCanRemoveOnlyCoordCapabilityFromSelf(AccountRoleEntity accountRole) {
-        if (!isCoord(accountRole.getRole())) {
-            return;
-        }
-
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !(authentication.getPrincipal() instanceof AccountDetails accountDetails)) {
-            return;
-        }
-
-        UUID targetAccountId = accountRole.getAccount() == null ? null : accountRole.getAccount().getId();
-        if (!Objects.equals(accountDetails.getId(), targetAccountId)) {
-            return;
-        }
-
-        if (isSudoAccount(accountDetails.getId())) {
-            return;
-        }
-
-        List<AccountRoleEntity> activeCoordRoles =
-                accountRoleRepo.lockActiveAccountRolesByRoleName(SystemRole.COORD.getCode());
-        if (activeCoordRoles == null || activeCoordRoles.size() <= 1) {
-            throw ForbiddenOperationException.reason("Cannot remove the last active COORD account.");
-        }
-    }
-
-    private boolean isSudoAccount(UUID accountId) {
-        List<AccountRoleEntity> activeSudoRoles =
-                accountRoleRepo.lockActiveAccountRolesByRoleName(SystemRole.SUDO.getCode());
-        return activeSudoRoles != null
-                && activeSudoRoles.stream()
-                .map(AccountRoleEntity::getAccount)
-                .filter(Objects::nonNull)
-                .anyMatch(account -> accountId.equals(account.getId()));
-    }
-
-    private boolean isCoord(RoleEntity role) {
-        return role != null && SystemRole.COORD.getCode().equals(role.getName());
-    }
 }

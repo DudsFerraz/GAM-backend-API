@@ -84,14 +84,14 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
     }
 
     @Test
-    @DisplayName("REQ-MEMBER-001, REQ-MEMBER-003, REQ-MEMBER-005, REQ-MEMBER-009, REQ-MEMBER-012 - valid direct registration -> active Member, role projection, record, and one audit event")
+    @DisplayName("REQ-MEMBER-016 - valid direct registration -> active non-Coordinator Member, preserved custom Role, and one audit event")
     void validDirectRegistrationShouldCommitTheCompleteMemberWorkflow() {
         AuthSession coordinator = newSession("COORD");
         String targetEmail = "direct-member-" + UUID.randomUUID() + "@example.com";
         String targetDisplayName = "Direct Member Target";
         UUID targetId = newAccount(targetEmail, targetDisplayName);
-        grantRole(targetId, "VISITOR");
-        grantRole(targetId, "COORD");
+        UUID customRoleId = newCustomRole("DIRECT_REGISTRATION");
+        grantRole(targetId, jdbcTemplate.queryForObject("SELECT name FROM roles WHERE id = ?", String.class, customRoleId));
         clearActivities();
 
         ExtractableResponse<Response> response = withUntrustedForwardingHeaders(authenticatedJsonRequest(coordinator))
@@ -120,8 +120,8 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
         assertThat(memberCount(targetId)).isEqualTo(1);
         assertThat(memberStatus(memberId)).isEqualTo("ACTIVE");
         assertThat(activeRoleNames(targetId))
-                .contains("MEMBER", "COORD")
-                .doesNotContain("VISITOR");
+                .contains("MEMBER", jdbcTemplate.queryForObject("SELECT name FROM roles WHERE id = ?", String.class, customRoleId))
+                .doesNotContain("VISITOR", "COORD");
         assertThat(activityCount("MEMBER_REGISTERED")).isEqualTo(1);
         assertThat(allLifecycleActivityCount()).isEqualTo(1);
 
@@ -131,7 +131,8 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
                 .containsEntry("target_id", memberId)
                 .containsEntry("reason", "Accepted as a GAM Member");
         assertThat(activity.get("metadata").toString())
-                .contains(targetId.toString(), memberId.toString(), roleId("MEMBER").toString());
+                .contains(targetId.toString(), memberId.toString(), roleId("MEMBER").toString())
+                .doesNotContain(roleId("VISITOR").toString(), roleId("COORD").toString());
         assertThat(activity.get("request_id")).isNotNull();
         assertThat(activity.get("ip_address")).isNotNull();
         assertThat(activity.get("user_agent")).isEqualTo("member-lifecycle-functional-test");
@@ -270,7 +271,7 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
     @DisplayName("REQ-MEMBER-003 and REQ-MEMBER-SOL-004 - pending solicitation blocks direct registration -> HTTP 409")
     void pendingSolicitationShouldBlockDirectRegistration() {
         AuthSession coordinator = newSession("COORD");
-        AuthSession applicant = newSession("VISITOR");
+        AuthSession applicant = newSession(null);
         submitSolicitation(applicant);
 
         authenticatedJsonRequest(coordinator)
@@ -289,7 +290,7 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
     @DisplayName("REQ-MEMBER-003 and REQ-MEMBER-SOL-004 - rejected solicitation history -> direct registration remains eligible")
     void rejectedSolicitationHistoryShouldNotBlockDirectRegistration() {
         AuthSession coordinator = newSession("COORD");
-        AuthSession applicant = newSession("VISITOR");
+        AuthSession applicant = newSession(null);
         UUID solicitationId = submitSolicitation(applicant);
         rejectSolicitation(coordinator, solicitationId, "Not ready yet");
 
@@ -330,14 +331,37 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
         assertThat(activityCount("MEMBER_REGISTERED")).isZero();
     }
 
-    @Test
-    @DisplayName("REQ-MEMBER-004 through REQ-MEMBER-007 and REQ-MEMBER-012 - deactivation -> INACTIVE, VISITOR, preserved roles, 204, and one event")
-    void deactivationShouldCommitStatusRolesAndAuditTogether() {
+    @ParameterizedTest
+    @MethodSource("preMemberLifecycleRoles")
+    @DisplayName("REQ-MEMBER-016 - direct registration with a pre-Member lifecycle Role -> HTTP 409 without repair")
+    void directRegistrationShouldRejectInconsistentPreMemberProjection(String roleName) {
         AuthSession coordinator = newSession("COORD");
+        UUID targetId = newAccount("Inconsistent registration target");
+        grantRole(targetId, roleName);
+        clearActivities();
+
+        authenticatedJsonRequest(coordinator)
+                .body(memberPayload(targetId, LocalDate.now().minusYears(20), VALID_REASON))
+                .post("/members")
+                .then()
+                .statusCode(409)
+                .body("status", equalTo(409));
+
+        assertThat(memberCount(targetId)).isZero();
+        assertThat(activeRoleNames(targetId)).containsExactly(roleName);
+        assertThat(allLifecycleActivityCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-016 and REQ-MEMBER-020 - Coordinator deactivation -> INACTIVE, VISITOR, no COORD, and one event")
+    void deactivationShouldCommitStatusRolesAndAuditTogether() {
+        AuthSession coordinator = newSession("SUDO");
         UUID targetId = newAccount("Deactivation target");
-        grantRole(targetId, "COORD");
         UUID memberId = registerMember(coordinator, targetId);
-        forceMemberState(memberId, targetId, "ACTIVE", "MEMBER");
+        UUID customRoleId = newCustomRole("DEACTIVATION");
+        String customRoleName = jdbcTemplate.queryForObject("SELECT name FROM roles WHERE id = ?", String.class, customRoleId);
+        grantRole(targetId, customRoleName);
+        forceMemberProjection(memberId, targetId, "ACTIVE", "MEMBER", "COORD");
         clearActivities();
 
         authenticatedJsonRequest(coordinator)
@@ -348,8 +372,8 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
 
         assertThat(memberStatus(memberId)).isEqualTo("INACTIVE");
         assertThat(activeRoleNames(targetId))
-                .contains("VISITOR", "COORD")
-                .doesNotContain("MEMBER");
+                .contains("VISITOR", customRoleName)
+                .doesNotContain("MEMBER", "COORD");
         assertThat(activityCount("MEMBER_DEACTIVATED")).isEqualTo(1);
         assertThat(allLifecycleActivityCount()).isEqualTo(1);
 
@@ -364,16 +388,16 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
                         "ACTIVE",
                         "INACTIVE",
                         roleId("MEMBER").toString(),
-                        roleId("VISITOR").toString()
+                        roleId("VISITOR").toString(),
+                        roleId("COORD").toString()
                 );
     }
 
     @Test
-    @DisplayName("REQ-MEMBER-004 through REQ-MEMBER-007 and REQ-MEMBER-012 - reactivation -> ACTIVE, MEMBER, preserved roles, 204, and one event")
+    @DisplayName("REQ-MEMBER-016 and REQ-MEMBER-020 - reactivation -> ACTIVE, MEMBER, preserved custom Role, and COORD remains absent")
     void reactivationShouldCommitStatusRolesAndAuditTogether() {
         AuthSession coordinator = newSession("COORD");
         UUID targetId = newAccount("Reactivation target");
-        grantRole(targetId, "COORD");
         UUID memberId = registerMember(coordinator, targetId);
         forceMemberState(memberId, targetId, "INACTIVE", "VISITOR");
         clearActivities();
@@ -386,8 +410,8 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
 
         assertThat(memberStatus(memberId)).isEqualTo("ACTIVE");
         assertThat(activeRoleNames(targetId))
-                .contains("MEMBER", "COORD")
-                .doesNotContain("VISITOR");
+                .contains("MEMBER")
+                .doesNotContain("VISITOR", "COORD");
         assertThat(activityCount("MEMBER_ACTIVATED")).isEqualTo(1);
         assertThat(allLifecycleActivityCount()).isEqualTo(1);
         assertThat(activity("MEMBER_ACTIVATED").get("reason")).isEqualTo("Returning to weekly activities");
@@ -704,6 +728,10 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
                 Arguments.of("BVA - one character", "  x  ", "x"),
                 Arguments.of("BVA - 2,000 characters", "  " + "r".repeat(2_000) + "  ", "r".repeat(2_000))
         );
+    }
+
+    private static Stream<String> preMemberLifecycleRoles() {
+        return Stream.of("MEMBER", "VISITOR", "COORD");
     }
 
     private static Stream<Arguments> invalidMemberData() {

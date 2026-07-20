@@ -49,6 +49,7 @@ public class RegisterMemberWorkflow {
                     "A pending membership solicitation already exists for this Account."
             );
         }
+        roleProjection.assertPreMember(dto.accountId());
 
         UUID memberId = registerMember.register(dto).id();
         MemberEntity member = memberEntityLoader.requiredById(memberId);

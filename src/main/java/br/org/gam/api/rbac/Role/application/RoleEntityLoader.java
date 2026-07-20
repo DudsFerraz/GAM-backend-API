@@ -24,4 +24,9 @@ public class RoleEntityLoader {
         return roleRepo.findByName(name)
                 .orElseThrow(() -> NotFoundException.resource("Role", name));
     }
+
+    public RoleEntity requiredByNameForUpdate(String name) {
+        return roleRepo.findByNameForUpdate(name)
+                .orElseThrow(() -> NotFoundException.resource("Role", name));
+    }
 }

@@ -202,7 +202,7 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
     @DisplayName("REQ-MEMBER-SOL-002 and REQ-MEMBER-SOL-012 - existing lifetime Member -> HTTP 409 without solicitation")
     void existingMemberShouldNotSubmitSolicitation() {
         AuthSession coordinator = newSession("COORD");
-        AuthSession applicant = newSession("VISITOR");
+        AuthSession applicant = newSession(null);
         registerMember(coordinator, applicant.accountId());
         clearActivities();
 
@@ -268,7 +268,7 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
     @DisplayName("REQ-MEMBER-003 and REQ-MEMBER-SOL-002/004/011 - direct registration racing submission -> one outcome and one event")
     void directRegistrationRacingSubmissionShouldCommitExactlyOneOutcome() throws Exception {
         AuthSession coordinator = newSession("COORD");
-        AuthSession applicant = newSession("VISITOR");
+        AuthSession applicant = newSession(null);
         clearActivities();
         CountDownLatch start = new CountDownLatch(1);
 
@@ -295,7 +295,7 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
             assertThat(activeRoleNames(applicant.accountId())).contains("MEMBER").doesNotContain("VISITOR");
         } else {
             assertThat(pendingSolicitations).isEqualTo(1);
-            assertThat(activeRoleNames(applicant.accountId())).contains("VISITOR").doesNotContain("MEMBER");
+            assertThat(activeRoleNames(applicant.accountId())).doesNotContain("MEMBER", "VISITOR", "COORD");
         }
     }
 
@@ -521,11 +521,13 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
     }
 
     @Test
-    @DisplayName("REQ-MEMBER-SOL-006, REQ-MEMBER-SOL-008, REQ-MEMBER-SOL-009, REQ-MEMBER-SOL-013 - approval -> one active Member, role projection, decided response, and one event")
+    @DisplayName("REQ-MEMBER-SOL-014 - approval -> active non-Coordinator Member, preserved custom Role, decided response, and one event")
     void approvalShouldCommitTheCompleteMembershipWorkflow() {
         AuthSession coordinator = newSession("COORD");
-        AuthSession applicant = newSession("VISITOR");
-        grantRole(applicant.accountId(), "COORD");
+        AuthSession applicant = newSession(null);
+        UUID customRoleId = newCustomRole("SOLICITATION_APPROVAL");
+        String customRoleName = jdbcTemplate.queryForObject("SELECT name FROM roles WHERE id = ?", String.class, customRoleId);
+        grantRole(applicant.accountId(), customRoleName);
         UUID solicitationId = submitSolicitation(applicant);
         clearActivities();
 
@@ -545,8 +547,8 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
         assertThat(memberCount(applicant.accountId())).isEqualTo(1);
         assertThat(memberStatus(memberId)).isEqualTo("ACTIVE");
         assertThat(activeRoleNames(applicant.accountId()))
-                .contains("MEMBER", "COORD")
-                .doesNotContain("VISITOR");
+                .contains("MEMBER", customRoleName)
+                .doesNotContain("VISITOR", "COORD");
         assertThat(activityCount("MEMBERSHIP_SOLICITATION_APPROVED")).isEqualTo(1);
         assertThat(activityCount("MEMBER_REGISTERED")).isZero();
         assertThat(allLifecycleActivityCount()).isEqualTo(1);
@@ -561,17 +563,21 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
                         solicitationId.toString(),
                         applicant.accountId().toString(),
                         memberId.toString(),
-                        roleId("MEMBER").toString(),
-                        roleId("VISITOR").toString()
+                        roleId("MEMBER").toString()
                 )
-                .doesNotContain(VALID_JUSTIFICATION, CANONICAL_PHONE);
+                .doesNotContain(
+                        roleId("VISITOR").toString(),
+                        roleId("COORD").toString(),
+                        VALID_JUSTIFICATION,
+                        CANONICAL_PHONE
+                );
     }
 
     @Test
     @DisplayName("REQ-MEMBER-SOL-009 and REQ-MEMBER-SOL-013 - approval audit failure -> decision, Member, and role projection roll back")
     void failedApprovalAuditShouldRollBackTheCompleteMembershipWorkflow() {
         AuthSession coordinator = newSession("COORD");
-        AuthSession applicant = newSession("VISITOR");
+        AuthSession applicant = newSession(null);
         UUID solicitationId = submitSolicitation(applicant);
         clearActivities();
         failActivityWritesFor("MEMBERSHIP_SOLICITATION_APPROVED");
@@ -589,7 +595,30 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
 
         assertThat(solicitationStatus(solicitationId)).isEqualTo("PENDING");
         assertThat(memberCount(applicant.accountId())).isZero();
-        assertThat(activeRoleNames(applicant.accountId())).contains("VISITOR").doesNotContain("MEMBER");
+        assertThat(activeRoleNames(applicant.accountId())).doesNotContain("MEMBER", "VISITOR", "COORD");
+        assertThat(allLifecycleActivityCount()).isZero();
+    }
+
+    @ParameterizedTest
+    @MethodSource("preMemberLifecycleRoles")
+    @DisplayName("REQ-MEMBER-SOL-014 - approval with an inconsistent pre-Member Role projection -> HTTP 409 without repair")
+    void approvalShouldRejectInconsistentPreMemberProjection(String roleName) {
+        AuthSession coordinator = newSession("COORD");
+        AuthSession applicant = newSession(null);
+        UUID solicitationId = submitSolicitation(applicant);
+        grantRole(applicant.accountId(), roleName);
+        clearActivities();
+
+        authenticatedJsonRequest(coordinator)
+                .body(reasonPayload(VALID_REASON))
+                .patch("/membership-solicitations/{id}/approve", solicitationId)
+                .then()
+                .statusCode(409)
+                .body("status", equalTo(409));
+
+        assertThat(solicitationStatus(solicitationId)).isEqualTo("PENDING");
+        assertThat(memberCount(applicant.accountId())).isZero();
+        assertThat(activeRoleNames(applicant.accountId())).containsExactly(roleName);
         assertThat(allLifecycleActivityCount()).isZero();
     }
 
@@ -651,7 +680,7 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
     @DisplayName("REQ-MEMBER-SOL-009 and REQ-MEMBER-SOL-012 - soft-deleted applicant Account at approval -> HTTP 404 without partial decision")
     void approvalShouldRevalidateApplicantAccountAvailability() {
         AuthSession coordinator = newSession("COORD");
-        AuthSession applicant = newSession("VISITOR");
+        AuthSession applicant = newSession(null);
         UUID solicitationId = submitSolicitation(applicant);
         clearActivities();
         softDeleteAccount(applicant.accountId());
@@ -672,7 +701,7 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
     @DisplayName("REQ-MEMBER-SOL-011 - concurrent approval and rejection -> one immutable outcome, one winner, and one event")
     void concurrentDecisionsShouldCommitExactlyOneOutcome() throws Exception {
         AuthSession coordinator = newSession("COORD");
-        AuthSession applicant = newSession("VISITOR");
+        AuthSession applicant = newSession(null);
         UUID solicitationId = submitSolicitation(applicant);
         clearActivities();
         CountDownLatch start = new CountDownLatch(1);
@@ -705,7 +734,7 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
             assertThat(activeRoleNames(applicant.accountId())).contains("MEMBER").doesNotContain("VISITOR");
         } else {
             assertThat(memberCount(applicant.accountId())).isZero();
-            assertThat(activeRoleNames(applicant.accountId())).contains("VISITOR").doesNotContain("MEMBER");
+            assertThat(activeRoleNames(applicant.accountId())).doesNotContain("MEMBER", "VISITOR", "COORD");
         }
     }
 
@@ -713,7 +742,7 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
     @DisplayName("REQ-MEMBER-SOL-004 and REQ-MEMBER-SOL-011 - approval racing direct registration -> approval is the sole Member-creation outcome")
     void approvalRacingDirectRegistrationShouldCommitOnlyApproval() throws Exception {
         AuthSession coordinator = newSession("COORD");
-        AuthSession applicant = newSession("VISITOR");
+        AuthSession applicant = newSession(null);
         UUID solicitationId = submitSolicitation(applicant);
         clearActivities();
         CountDownLatch start = new CountDownLatch(1);
@@ -744,7 +773,7 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
     @DisplayName("REQ-MEMBER-SOL-011 - rejection winning the Account lock blocks a concurrent direct registration outcome")
     void rejectionWinningAccountLockShouldBlockConcurrentDirectRegistration() throws Exception {
         AuthSession coordinator = newSession("COORD");
-        AuthSession applicant = newSession("VISITOR");
+        AuthSession applicant = newSession(null);
         UUID solicitationId = submitSolicitation(applicant);
         clearActivities();
         installRejectionGate();
@@ -783,7 +812,7 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
 
         assertThat(solicitationStatus(solicitationId)).isEqualTo("REJECTED");
         assertThat(memberCount(applicant.accountId())).isZero();
-        assertThat(activeRoleNames(applicant.accountId())).contains("VISITOR").doesNotContain("MEMBER");
+        assertThat(activeRoleNames(applicant.accountId())).doesNotContain("MEMBER", "VISITOR", "COORD");
         assertThat(activityCount("MEMBERSHIP_SOLICITATION_REJECTED")).isEqualTo(1);
         assertThat(activityCount("MEMBER_REGISTERED")).isZero();
         assertThat(allLifecycleActivityCount()).isEqualTo(1);
@@ -1013,5 +1042,9 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
             ));
         }
         return decisions.stream();
+    }
+
+    private static Stream<String> preMemberLifecycleRoles() {
+        return Stream.of("MEMBER", "VISITOR", "COORD");
     }
 }

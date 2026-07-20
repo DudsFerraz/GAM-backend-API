@@ -68,14 +68,16 @@ class DropAccountRoleTest {
             entity.setId(UUID.randomUUID());
             RoleEntity role = new RoleEntity();
             role.setName("ADMIN");
+            role.setSystemManaged(false);
             entity.setRole(role);
 
+            when(getRoleInstance.requiredById(dto.roleId())).thenReturn(role);
             when(getAccountRoleInstance.requiredByDTO(dto)).thenReturn(entity);
 
             dropAccountRole.byDTO(dto);
 
             verify(accountRoleRepo).delete(entity);
-            verify(rbacSafetyPolicy).assertCanRemoveRoleThroughAdmin(entity);
+            verify(rbacSafetyPolicy).assertCanRemoveRoleThroughAdmin(role);
             verify(activityEvents).accountRoleRemoved(
                     entity.getId(), dto.accountId(), dto.roleId(), "ADMIN", "Remove admin access");
         }
@@ -123,8 +125,10 @@ class DropAccountRoleTest {
             RoleEntity role = new RoleEntity();
             role.setId(roleId);
             role.setName("ADMIN");
+            role.setSystemManaged(false);
             entity.setRole(role);
 
+            when(getRoleInstance.requiredById(roleId)).thenReturn(role);
             when(getAccountRoleInstance.requiredByDTO(dto)).thenReturn(entity);
 
             dropAccountRole.byDTO(dto);
@@ -148,6 +152,11 @@ class DropAccountRoleTest {
 
             when(getAccountRoleInstance.requiredByDTO(dto))
                     .thenThrow(NotFoundException.resource("AccountRole", dto.accountId() + ":" + dto.roleId()));
+            RoleEntity customRole = new RoleEntity();
+            customRole.setId(dto.roleId());
+            customRole.setName("CUSTOM");
+            customRole.setSystemManaged(false);
+            when(getRoleInstance.requiredById(dto.roleId())).thenReturn(customRole);
 
             assertThatThrownBy(() -> dropAccountRole.byDTO(dto))
                     .isInstanceOf(NotFoundException.class)
@@ -164,11 +173,13 @@ class DropAccountRoleTest {
             RoleEntity roleEntity = new RoleEntity();
             roleEntity.setId(roleId);
             roleEntity.setName("ADMIN");
+            roleEntity.setSystemManaged(false);
             AccountRoleEntity accountRoleEntity = new AccountRoleEntity();
             accountRoleEntity.setId(UUID.randomUUID());
             accountRoleEntity.setRole(roleEntity);
 
             when(getRoleInstance.requiredByName("ADMIN")).thenReturn(roleEntity);
+            when(getRoleInstance.requiredById(roleId)).thenReturn(roleEntity);
             AccountRoleDTO dto = new AccountRoleDTO(accountId, roleId, "Remove admin access");
             when(getAccountRoleInstance.requiredByDTO(dto)).thenReturn(accountRoleEntity);
 

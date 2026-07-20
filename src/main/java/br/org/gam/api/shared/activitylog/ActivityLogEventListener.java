@@ -5,6 +5,7 @@ import br.org.gam.api.shared.activitylog.events.AccountRoleRemovedActivity;
 import br.org.gam.api.shared.activitylog.events.DeveloperMaintenanceActivity;
 import br.org.gam.api.shared.activitylog.events.EventCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.MemberStatusChangedActivity;
+import br.org.gam.api.shared.activitylog.events.CoordinatorChangedActivity;
 import br.org.gam.api.shared.activitylog.events.MemberRegisteredActivity;
 import br.org.gam.api.shared.activitylog.events.MembershipSolicitationActivity;
 import java.util.HashMap;
@@ -39,6 +40,9 @@ public class ActivityLogEventListener {
         ));
         if (activity.roleAddedId() != null) metadata.put("roleAddedId", activity.roleAddedId());
         if (activity.roleRemovedId() != null) metadata.put("roleRemovedId", activity.roleRemovedId());
+        if (activity.additionallyRemovedRoleId() != null) {
+            metadata.put("additionallyRemovedRoleId", activity.additionallyRemovedRoleId());
+        }
         activityLogger.log(
                 activity.action(),
                 ActivityTargetType.MEMBER,
@@ -50,20 +54,38 @@ public class ActivityLogEventListener {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    public void handle(CoordinatorChangedActivity activity) {
+        String transition = activity.action() == ActivityAction.COORDINATOR_GRANTED ? "granted" : "revoked";
+        activityLogger.log(
+                activity.action(),
+                ActivityTargetType.MEMBER,
+                activity.memberId(),
+                activity.reason(),
+                "Coordinator designation " + transition,
+                Map.of(
+                        "memberId", activity.memberId(),
+                        "accountId", activity.accountId(),
+                        "coordRoleId", activity.coordRoleId(),
+                        "roleChange", transition
+                )
+        );
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void handle(MemberRegisteredActivity activity) {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("memberId", activity.memberId());
+        metadata.put("accountId", activity.accountId());
+        metadata.put("newStatus", "ACTIVE");
+        if (activity.roleAddedId() != null) metadata.put("roleAddedId", activity.roleAddedId());
+        if (activity.roleRemovedId() != null) metadata.put("roleRemovedId", activity.roleRemovedId());
         activityLogger.log(
                 ActivityAction.MEMBER_REGISTERED,
                 ActivityTargetType.MEMBER,
                 activity.memberId(),
                 activity.reason(),
                 "Member registered for account " + activity.accountId(),
-                Map.of(
-                        "memberId", activity.memberId(),
-                        "accountId", activity.accountId(),
-                        "newStatus", "ACTIVE",
-                        "roleAddedId", activity.roleAddedId(),
-                        "roleRemovedId", activity.roleRemovedId()
-                )
+                metadata
         );
     }
 

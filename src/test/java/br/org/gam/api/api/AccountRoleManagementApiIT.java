@@ -189,7 +189,7 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
     void callerWithoutRoleManagePermissionShouldNotAddRole() {
         AuthSession member = registerAndLogin("MEMBER");
         UUID targetId = registerAccount(uniqueEmail(), TEST_PASSWORD, "Forbidden Add Target");
-        UUID roleId = roleId("COORD");
+        UUID roleId = createCustomRole();
 
         authenticatedJsonRequest(member)
                 .body(addPayload(roleId, "Grant coordinator access"))
@@ -207,8 +207,8 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
     void callerWithoutRoleManagePermissionShouldNotDropRole() {
         AuthSession member = registerAndLogin("MEMBER");
         UUID targetId = registerAccount(uniqueEmail(), TEST_PASSWORD, "Forbidden Drop Target");
-        grantRole(targetId, "COORD");
-        UUID roleId = roleId("COORD");
+        UUID roleId = createCustomRole();
+        insertAccountRole(targetId, roleId);
 
         authenticatedJsonRequest(member)
                 .body(reasonPayload("Remove coordinator access"))
@@ -222,12 +222,13 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("REQ-ACCOUNT-ROLE-003 and REQ-ACCOUNT-ROLE-007 - authorized add -> HTTP 201, nested Location, and one audit row")
+    @DisplayName("REQ-ACCOUNT-ROLE-016 - authorized custom-Role add -> HTTP 201, nested Location, and one audit row")
     void authorizedCallerShouldAddRoleAndRecordOneAuditEvent() {
         AuthSession coordinator = registerAndLogin("COORD");
         UUID targetId = registerAccount(uniqueEmail(), TEST_PASSWORD, "Add Role Target");
-        UUID roleId = roleId("COORD");
-        String reason = "Grant coordinator access";
+        UUID roleId = createCustomRole();
+        String roleName = roleName(roleId);
+        String reason = "Grant custom operational access";
 
         ExtractableResponse<Response> httpResponse = withUntrustedForwardingHeaders(authenticatedJsonRequest(coordinator))
                 .header("X-Request-Id", "account-role-add-request")
@@ -244,7 +245,7 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
                 httpResponse,
                 "/accounts/" + targetId + "/role-assignments/" + assignmentId
         );
-        assertAccountRoleResponse(response, assignmentId, targetId, roleId, "COORD");
+        assertAccountRoleResponse(response, assignmentId, targetId, roleId, roleName);
         assertThat(httpResponse.header("Location"))
                 .endsWith("/api/accounts/" + targetId + "/role-assignments/" + assignmentId);
         assertThat(accountRoleActivityCount(assignmentId, "ACCOUNT_ROLE_ADDED")).isEqualTo(1);
@@ -256,7 +257,7 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
         assertThat(activity.get("user_agent")).isEqualTo("account-role-test");
         assertThat(activity.get("account_id").toString()).isEqualTo(targetId.toString());
         assertThat(activity.get("role_id").toString()).isEqualTo(roleId.toString());
-        assertThat(activity.get("role_name")).isEqualTo("COORD");
+        assertThat(activity.get("role_name")).isEqualTo(roleName);
     }
 
     @Test
@@ -264,7 +265,7 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
     void maximumLengthReasonShouldBeAcceptedAndTrimmed() {
         AuthSession coordinator = registerAndLogin("COORD");
         UUID targetId = registerAccount(uniqueEmail(), TEST_PASSWORD, "Maximum Reason Target");
-        UUID roleId = roleId("COORD");
+        UUID roleId = createCustomRole();
         String reason = "a".repeat(2_000);
 
         authenticatedJsonRequest(coordinator)
@@ -283,8 +284,8 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
     void duplicateActiveAssignmentShouldReturnConflictWithoutMutationOrAudit() {
         AuthSession coordinator = registerAndLogin("COORD");
         UUID targetId = registerAccount(uniqueEmail(), TEST_PASSWORD, "Duplicate Role Target");
-        grantRole(targetId, "COORD");
-        UUID roleId = roleId("COORD");
+        UUID roleId = createCustomRole();
+        insertAccountRole(targetId, roleId);
 
         authenticatedJsonRequest(coordinator)
                 .body(addPayload(roleId, "Grant duplicate access"))
@@ -302,7 +303,7 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
     void missingAccountOrRoleShouldReturnNotFoundDuringAdd() {
         AuthSession coordinator = registerAndLogin("COORD");
         UUID targetId = registerAccount(uniqueEmail(), TEST_PASSWORD, "Missing Role Target");
-        UUID roleId = roleId("COORD");
+        UUID roleId = createCustomRole();
 
         authenticatedJsonRequest(coordinator)
                 .body(addPayload(roleId, "Grant access"))
@@ -377,18 +378,18 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("REQ-ACCOUNT-ROLE-004 and REQ-ACCOUNT-ROLE-007 - authorized drop -> HTTP 204, soft-delete, and one audit row")
+    @DisplayName("REQ-ACCOUNT-ROLE-017 - authorized custom-Role drop -> HTTP 204, soft-delete, and one audit row")
     void authorizedCallerShouldDropRoleAndRecordOneAuditEvent() {
         AuthSession coordinator = registerAndLogin("COORD");
         UUID targetId = registerAccount(uniqueEmail(), TEST_PASSWORD, "Drop Role Target");
-        grantRole(targetId, "COORD");
-        UUID roleId = roleId("COORD");
+        UUID roleId = createCustomRole();
+        insertAccountRole(targetId, roleId);
         UUID assignmentId = activeAccountRoleId(targetId, roleId);
 
         authenticatedJsonRequest(coordinator)
                 .header("X-Request-Id", "account-role-drop-request")
                 .header("User-Agent", "account-role-test")
-                .body(reasonPayload(" Remove coordinator access "))
+                .body(reasonPayload(" Remove custom operational access "))
                 .patch("/accounts/{accountId}/roles/{roleId}/drop", targetId, roleId)
                 .then()
                 .statusCode(204)
@@ -402,7 +403,7 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
         )).isTrue();
         assertThat(accountRoleActivityCount(assignmentId, "ACCOUNT_ROLE_REMOVED")).isEqualTo(1);
         assertThat(accountRoleActivity(assignmentId, "ACCOUNT_ROLE_REMOVED").get("reason"))
-                .isEqualTo("Remove coordinator access");
+                .isEqualTo("Remove custom operational access");
 
         authenticatedJsonRequest(coordinator)
                 .get("/accounts/{accountId}/roles", targetId)
@@ -416,7 +417,7 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
     void missingActiveAssignmentShouldReturnNotFoundDuringDrop() {
         AuthSession coordinator = registerAndLogin("COORD");
         UUID targetId = registerAccount(uniqueEmail(), TEST_PASSWORD, "Missing Assignment Target");
-        UUID roleId = roleId("COORD");
+        UUID roleId = createCustomRole();
 
         authenticatedJsonRequest(coordinator)
                 .body(reasonPayload("Remove missing access"))
@@ -433,9 +434,9 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
     void softDeletedAssignmentShouldNotBeDroppable() {
         AuthSession coordinator = registerAndLogin("COORD");
         UUID targetId = registerAccount(uniqueEmail(), TEST_PASSWORD, "Deleted Assignment Target");
-        grantRole(targetId, "COORD");
-        UUID roleId = roleId("COORD");
-        softDeleteAccountRole(targetId, "COORD");
+        UUID roleId = createCustomRole();
+        insertAccountRole(targetId, roleId);
+        softDeleteAccountRole(targetId, roleName(roleId));
 
         authenticatedJsonRequest(coordinator)
                 .body(reasonPayload("Remove deleted access"))
@@ -452,7 +453,7 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
     @DisplayName("REQ-ACCOUNT-ROLE-004 - missing Account or soft-deleted Role during drop -> HTTP 404 without mutation")
     void missingAccountOrDeletedRoleShouldReturnNotFoundDuringDrop() {
         AuthSession coordinator = registerAndLogin("COORD");
-        UUID roleId = roleId("COORD");
+        UUID roleId = createCustomRole();
 
         authenticatedJsonRequest(coordinator)
                 .body(reasonPayload("Remove missing account access"))
@@ -504,7 +505,7 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
 
     @ParameterizedTest
     @MethodSource("lifecycleRoleNames")
-    @DisplayName("REQ-ACCOUNT-ROLE-003 and REQ-ACCOUNT-ROLE-008 - HTTP cannot add lifecycle-owned Roles")
+    @DisplayName("REQ-ACCOUNT-ROLE-016 and REQ-ACCOUNT-ROLE-018 - HTTP cannot add system-managed Roles")
     void httpCallerShouldNotAddLifecycleOwnedRole(String roleName) {
         AuthSession coordinator = registerAndLogin("COORD");
         UUID targetId = registerAccount(uniqueEmail(), TEST_PASSWORD, "Lifecycle Role Target");
@@ -523,7 +524,7 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
 
     @ParameterizedTest
     @MethodSource("lifecycleRoleNames")
-    @DisplayName("REQ-ACCOUNT-ROLE-004 and REQ-ACCOUNT-ROLE-008 - HTTP cannot drop lifecycle-owned Roles")
+    @DisplayName("REQ-ACCOUNT-ROLE-017 and REQ-ACCOUNT-ROLE-018 - HTTP cannot drop system-managed Roles")
     void httpCallerShouldNotDropLifecycleOwnedRole(String roleName) {
         AuthSession coordinator = registerAndLogin("COORD");
         UUID targetId = registerAccount(uniqueEmail(), TEST_PASSWORD, "Lifecycle Role Target");
@@ -539,6 +540,60 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
                 .body("status", equalTo(403));
 
         assertThat(activeAssignmentCount(targetId, roleId)).isEqualTo(1);
+        assertThat(accountRoleActivityCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("REQ-ACCOUNT-ROLE-016 through REQ-ACCOUNT-ROLE-018 - future system-managed Role is rejected without name-specific rules")
+    void futureSystemManagedRoleShouldBeRejectedForAddAndDrop() {
+        AuthSession coordinator = registerAndLogin("COORD");
+        UUID targetId = registerAccount(uniqueEmail(), TEST_PASSWORD, "Future System Role Target");
+        UUID roleId = createRole(true);
+
+        authenticatedJsonRequest(coordinator)
+                .body(addPayload(roleId, "Attempt future system assignment"))
+                .post("/accounts/{accountId}/roles", targetId)
+                .then()
+                .statusCode(403)
+                .body("status", equalTo(403));
+
+        insertAccountRole(targetId, roleId);
+        authenticatedJsonRequest(coordinator)
+                .body(reasonPayload("Attempt future system removal"))
+                .patch("/accounts/{accountId}/roles/{roleId}/drop", targetId, roleId)
+                .then()
+                .statusCode(403)
+                .body("status", equalTo(403));
+
+        assertThat(activeAssignmentCount(targetId, roleId)).isEqualTo(1);
+        assertThat(accountRoleActivityCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("REQ-ACCOUNT-ROLE-018 - system Role eligibility fails before duplicate or missing-assignment evaluation")
+    void systemRoleRejectionShouldPrecedeAssignmentStateChecks() {
+        AuthSession coordinator = registerAndLogin("COORD");
+        UUID duplicateTargetId = registerAccount(uniqueEmail(), TEST_PASSWORD, "System Duplicate Target");
+        UUID missingTargetId = registerAccount(uniqueEmail(), TEST_PASSWORD, "System Missing Target");
+        UUID coordRoleId = roleId("COORD");
+        grantRole(duplicateTargetId, "COORD");
+
+        authenticatedJsonRequest(coordinator)
+                .body(addPayload(coordRoleId, "Duplicate system assignment"))
+                .post("/accounts/{accountId}/roles", duplicateTargetId)
+                .then()
+                .statusCode(403)
+                .body("status", equalTo(403));
+
+        authenticatedJsonRequest(coordinator)
+                .body(reasonPayload("Missing system assignment"))
+                .patch("/accounts/{accountId}/roles/{roleId}/drop", missingTargetId, coordRoleId)
+                .then()
+                .statusCode(403)
+                .body("status", equalTo(403));
+
+        assertThat(activeAssignmentCount(duplicateTargetId, coordRoleId)).isEqualTo(1);
+        assertThat(activeAssignmentCount(missingTargetId, coordRoleId)).isZero();
         assertThat(accountRoleActivityCount()).isZero();
     }
 
@@ -571,57 +626,6 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
         assertThat(accountRoleActivityCount()).isZero();
     }
 
-    @Test
-    @DisplayName("REQ-ACCOUNT-ROLE-008 - Coordinator cannot drop their only active COORD capability")
-    void coordinatorCannotDropOnlyOwnCoordRole() {
-        AuthSession coordinator = registerAndLogin("COORD");
-        UUID coordRoleId = roleId("COORD");
-
-        authenticatedJsonRequest(coordinator)
-                .body(reasonPayload("Remove coordinator access"))
-                .patch("/accounts/{accountId}/roles/{roleId}/drop", coordinator.accountId(), coordRoleId)
-                .then()
-                .statusCode(403)
-                .body("status", equalTo(403));
-
-        assertThat(activeAssignmentCount(coordinator.accountId(), coordRoleId)).isEqualTo(1);
-        assertThat(accountRoleActivityCount()).isZero();
-    }
-
-    @Test
-    @DisplayName("REQ-ACCOUNT-ROLE-008 - Coordinator may drop own COORD role when another Coordinator remains")
-    void coordinatorMayDropOwnCoordRoleWhenAnotherCoordinatorRemains() {
-        AuthSession coordinator = registerAndLogin("COORD");
-        UUID otherCoordinatorId = registerAccount(uniqueEmail(), TEST_PASSWORD, "Other Coordinator");
-        grantRole(otherCoordinatorId, "COORD");
-        UUID coordRoleId = roleId("COORD");
-
-        authenticatedJsonRequest(coordinator)
-                .body(reasonPayload("Remove coordinator access"))
-                .patch("/accounts/{accountId}/roles/{roleId}/drop", coordinator.accountId(), coordRoleId)
-                .then()
-                .statusCode(204);
-
-        assertThat(activeAssignmentCount(coordinator.accountId(), coordRoleId)).isZero();
-        assertThat(activeAssignmentCount(otherCoordinatorId, coordRoleId)).isEqualTo(1);
-    }
-
-    @Test
-    @DisplayName("REQ-ACCOUNT-ROLE-008 - SUDO may drop the final COORD role from self")
-    void sudoMayDropFinalOwnCoordRole() {
-        AuthSession sudo = registerAndLogin("SUDO");
-        grantRole(sudo.accountId(), "COORD");
-        UUID coordRoleId = roleId("COORD");
-
-        authenticatedJsonRequest(sudo)
-                .body(reasonPayload("Remove coordinator access through SUDO maintenance"))
-                .patch("/accounts/{accountId}/roles/{roleId}/drop", sudo.accountId(), coordRoleId)
-                .then()
-                .statusCode(204);
-
-        assertThat(activeAssignmentCount(sudo.accountId(), coordRoleId)).isZero();
-    }
-
     private static Stream<Arguments> invalidReasons() {
         return Stream.of(
                 Arguments.of((String) null),
@@ -632,7 +636,7 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
     }
 
     private static Stream<String> lifecycleRoleNames() {
-        return Stream.of("MEMBER", "VISITOR");
+        return Stream.of("MEMBER", "VISITOR", "COORD");
     }
 
     private Map<String, Object> addPayload(UUID roleId, String reason) {
@@ -713,14 +717,19 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
     }
 
     private UUID createCustomRole() {
+        return createRole(false);
+    }
+
+    private UUID createRole(boolean systemManaged) {
         UUID roleId = UUID.randomUUID();
         Timestamp now = Timestamp.from(Instant.now());
         jdbcTemplate.update(
                 "INSERT INTO roles (id, name, description, system_managed, created_at, updated_at) "
-                        + "VALUES (?, ?, ?, FALSE, ?, ?)",
+                        + "VALUES (?, ?, ?, ?, ?, ?)",
                 roleId,
                 "API_CUSTOM_" + roleId,
                 "API custom role",
+                systemManaged,
                 now,
                 now
         );

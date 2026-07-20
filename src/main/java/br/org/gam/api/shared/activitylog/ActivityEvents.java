@@ -7,6 +7,7 @@ import br.org.gam.api.shared.activitylog.events.AccountRoleRemovedActivity;
 import br.org.gam.api.shared.activitylog.events.DeveloperMaintenanceActivity;
 import br.org.gam.api.shared.activitylog.events.EventCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.MemberStatusChangedActivity;
+import br.org.gam.api.shared.activitylog.events.CoordinatorChangedActivity;
 import br.org.gam.api.shared.activitylog.events.MemberRegisteredActivity;
 import br.org.gam.api.shared.activitylog.events.MembershipSolicitationActivity;
 import br.org.gam.api.rbac.role.application.RoleEntityLoader;
@@ -36,29 +37,48 @@ public class ActivityEvents {
                                 String roleAdded, String roleRemoved, String reason) {
         memberStatusChanged(
                 ActivityAction.MEMBER_ACTIVATED, memberId, accountId, previousStatus, newStatus, roleAdded, roleRemoved,
-                reason);
+                null, reason);
     }
 
     public void memberDeactivated(UUID memberId, UUID accountId, String previousStatus, String newStatus,
                                   String roleAdded, String roleRemoved, String reason) {
         memberStatusChanged(
                 ActivityAction.MEMBER_DEACTIVATED, memberId, accountId, previousStatus, newStatus, roleAdded, roleRemoved,
-                reason);
+                null, reason);
+    }
+
+    public void memberDeactivated(UUID memberId, UUID accountId, String previousStatus, String newStatus,
+                                  String roleAdded, String roleRemoved, UUID additionallyRemovedRoleId,
+                                  String reason) {
+        memberStatusChanged(
+                ActivityAction.MEMBER_DEACTIVATED, memberId, accountId, previousStatus, newStatus, roleAdded, roleRemoved,
+                additionallyRemovedRoleId, reason);
     }
 
     private void memberStatusChanged(ActivityAction action, UUID memberId, UUID accountId, String previousStatus,
-                                     String newStatus, String roleAdded, String roleRemoved, String reason) {
+                                     String newStatus, String roleAdded, String roleRemoved,
+                                     UUID additionallyRemovedRoleId, String reason) {
         UUID roleAddedId = roleEntityLoader.requiredByName(roleAdded).getId();
         UUID roleRemovedId = roleEntityLoader.requiredByName(roleRemoved).getId();
         applicationEventPublisher.publishEvent(new MemberStatusChangedActivity(
                 action, memberId, accountId, previousStatus, newStatus, roleAdded, roleRemoved,
-                roleAddedId, roleRemovedId, reason));
+                roleAddedId, roleRemovedId, additionallyRemovedRoleId, reason));
     }
 
     public void memberRegistered(UUID memberId, UUID accountId, UUID roleAddedId, UUID roleRemovedId, String reason) {
         applicationEventPublisher.publishEvent(
                 new MemberRegisteredActivity(memberId, accountId, roleAddedId, roleRemovedId, reason)
         );
+    }
+
+    public void coordinatorGranted(UUID memberId, UUID accountId, UUID coordRoleId, String reason) {
+        applicationEventPublisher.publishEvent(new CoordinatorChangedActivity(
+                ActivityAction.COORDINATOR_GRANTED, memberId, accountId, coordRoleId, reason));
+    }
+
+    public void coordinatorRevoked(UUID memberId, UUID accountId, UUID coordRoleId, String reason) {
+        applicationEventPublisher.publishEvent(new CoordinatorChangedActivity(
+                ActivityAction.COORDINATOR_REVOKED, memberId, accountId, coordRoleId, reason));
     }
 
     public void membershipSolicitationSubmitted(UUID solicitationId, UUID applicantAccountId) {

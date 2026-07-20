@@ -63,6 +63,7 @@ public class ReviewMembershipSolicitation {
         if (memberRepo.existsByAccountId(applicant.getId())) {
             throw ConflictException.resource("Account", applicant.getId(), "This Account already has a lifetime Member.");
         }
+        roleProjection.assertPreMember(applicant.getId());
 
         UUID memberId = registerMember.register(new RegisterMemberDTO(
                 applicant.getId(), solicitation.getName().firstName(), solicitation.getName().surname(),

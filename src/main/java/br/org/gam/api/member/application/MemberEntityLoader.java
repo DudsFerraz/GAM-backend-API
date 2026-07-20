@@ -19,4 +19,9 @@ public class MemberEntityLoader {
         return memberRepo.findById(id)
                 .orElseThrow(() -> NotFoundException.resource("Member", id));
     }
+
+    public MemberEntity requiredByIdForUpdate(UUID id) {
+        return memberRepo.findByIdForUpdate(id)
+                .orElseThrow(() -> NotFoundException.resource("Member", id));
+    }
 }

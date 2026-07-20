@@ -25,6 +25,7 @@ public enum SystemRole {
                     MEMBER_ACTIVATION,
                     MEMBER_GET_NON_ACTIVE,
                     MEMBER_MANAGE,
+                    COORDINATOR_MANAGE,
                     ACCOUNT_GET,
                     ACCOUNT_SEARCH,
                     ACCOUNT_ROLE_MANAGE,
@@ -38,6 +39,9 @@ public enum SystemRole {
                     GAM_LOCATION_CREATE,
                     GAM_LOCATION_MANAGE,
                     PRESENCES_SEARCH,
+                    PRESENCE_REGISTER,
+                    PRESENCE_EDIT,
+                    PRESENCE_REMOVE,
                     ROLE_GET,
                     PERMISSION_GET
             )

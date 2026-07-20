@@ -89,6 +89,116 @@ class RbacCatalogApiIT extends BaseApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("REQ-RBAC-012 and REQ-RBAC-013 - ROLE_GET lists the complete visible Role collection in deterministic order")
+    void roleCollectionShouldExposeTheUnpagedVisibleCatalogInDeterministicOrder() {
+        UUID laterId = UUID.fromString("ffffffff-ffff-ffff-ffff-fffffffffff0");
+        UUID earlierId = UUID.fromString("00000000-0000-0000-0000-000000000010");
+        createRole(laterId, "catalog_case_" + shortId(), "Later case-insensitive tie", false);
+        String tiedName = roleName(laterId).toUpperCase();
+        createRole(earlierId, tiedName, "Earlier UUID tie", false);
+        UUID deletedRoleId = createRole("DELETED_COLLECTION_" + shortId(), "Deleted collection role", false);
+        UUID staleRoleId = createRole("STALE_SYSTEM_" + shortId(), "Stale system role", true);
+        jdbcTemplate.update("UPDATE roles SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", deletedRoleId);
+        AuthSession caller = registerAndLogin("COORD");
+
+        Map<String, Object> response = authenticatedJsonRequest(caller)
+                .get("/roles")
+                .then()
+                .statusCode(200)
+                .extract()
+                .jsonPath()
+                .getMap("$");
+
+        assertThat(response).containsOnlyKeys("roles");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> roles = (List<Map<String, Object>>) response.get("roles");
+        assertThat(roles).allSatisfy(role ->
+                assertThat(role).containsOnlyKeys("id", "name", "description", "systemManaged"));
+        assertThat(roles).extracting(role -> role.get("name"))
+                .contains("COORD", "MEMBER", "VISITOR", roleName(laterId), tiedName)
+                .doesNotContain("SUDO", roleName(deletedRoleId), roleName(staleRoleId));
+
+        List<String> actualOrder = roles.stream()
+                .map(role -> role.get("name") + ":" + role.get("id"))
+                .toList();
+        List<String> expectedOrder = roles.stream()
+                .sorted(java.util.Comparator
+                        .comparing((Map<String, Object> role) -> role.get("name").toString(), String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(role -> UUID.fromString(role.get("id").toString())))
+                .map(role -> role.get("name") + ":" + role.get("id"))
+                .toList();
+        assertThat(actualOrder).containsExactlyElementsOf(expectedOrder);
+    }
+
+    @Test
+    @DisplayName("REQ-RBAC-013 - trimmed case-insensitive accent-sensitive name search filters visible Roles")
+    void roleCollectionNameSearchShouldApplyTheDocumentedMatchingRules() {
+        String suffix = shortId();
+        String matchingName = "EVENT_MANAGER_" + suffix;
+        String accentedName = "ÁRBITRO_" + suffix;
+        createRole(matchingName, "Matching role", false);
+        createRole(accentedName, "Accent-sensitive role", false);
+        AuthSession caller = registerAndLogin("COORD");
+
+        authenticatedJsonRequest(caller)
+                .queryParam("name", "  manager_" + suffix.toUpperCase() + "  ")
+                .get("/roles")
+                .then()
+                .statusCode(200)
+                .body("roles.name", equalTo(List.of(matchingName)));
+
+        authenticatedJsonRequest(caller)
+                .queryParam("name", "arbitro_" + suffix)
+                .get("/roles")
+                .then()
+                .statusCode(200)
+                .body("roles", equalTo(List.of()));
+
+        authenticatedJsonRequest(caller)
+                .queryParam("name", "unknown-role-" + suffix)
+                .get("/roles")
+                .then()
+                .statusCode(200)
+                .body("roles", equalTo(List.of()));
+
+        authenticatedJsonRequest(caller)
+                .queryParam("name", "SUDO")
+                .get("/roles")
+                .then()
+                .statusCode(200)
+                .body("roles", equalTo(List.of()));
+    }
+
+    @ParameterizedTest
+    @MethodSource("blankRoleNames")
+    @DisplayName("REQ-RBAC-013 - blank supplied name -> HTTP 400")
+    void blankRoleCollectionNameShouldReturnBadRequest(String name) {
+        AuthSession caller = registerAndLogin("COORD");
+
+        authenticatedJsonRequest(caller)
+                .queryParam("name", name)
+                .get("/roles")
+                .then()
+                .statusCode(400)
+                .body("status", equalTo(400));
+    }
+
+    @Test
+    @DisplayName("REQ-RBAC-012 - ACCOUNT_ROLE_MANAGE without ROLE_GET cannot list Roles")
+    void accountRoleManageShouldNotSubstituteForRoleGetOnCollection() {
+        String roleName = "ACCOUNT_ROLE_ONLY_" + shortId();
+        UUID roleId = createRole(roleName, "Account role manager only", false);
+        linkRolePermission(roleId, permissionId("ACCOUNT_ROLE_MANAGE"));
+        AuthSession caller = registerAndLogin(roleName);
+
+        authenticatedJsonRequest(caller)
+                .get("/roles")
+                .then()
+                .statusCode(403)
+                .body("status", equalTo(403));
+    }
+
+    @Test
     @DisplayName("REQ-RBAC-007 and REQ-RBAC-010 - PERMISSION_GET reads an active system permission with the catalog shape")
     void permissionGetPermissionShouldReturnActiveSystemPermissionWithoutPersistenceMetadata() {
         AuthSession coordinator = registerAndLogin("COORD");
@@ -378,6 +488,7 @@ class RbacCatalogApiIT extends BaseApiIntegrationTest {
     private static Stream<String> catalogReadPaths() {
         UUID id = UUID.randomUUID();
         return Stream.of(
+                "/roles",
                 "/roles/" + id,
                 "/permissions/" + id,
                 "/roles/" + id + "/permissions"
@@ -387,10 +498,15 @@ class RbacCatalogApiIT extends BaseApiIntegrationTest {
     private static Stream<Arguments> catalogReadsWithMissingPermission() {
         UUID id = UUID.randomUUID();
         return Stream.of(
+                Arguments.of("MEMBER", "/roles"),
                 Arguments.of("MEMBER", "/roles/" + id),
                 Arguments.of("MEMBER", "/permissions/" + id),
                 Arguments.of("MEMBER", "/roles/" + id + "/permissions")
         );
+    }
+
+    private static Stream<String> blankRoleNames() {
+        return Stream.of("", " ", "\t");
     }
 
     private UUID roleId(String roleName) {
@@ -402,7 +518,10 @@ class RbacCatalogApiIT extends BaseApiIntegrationTest {
     }
 
     private UUID createRole(String name, String description, boolean systemManaged) {
-        UUID id = UUID.randomUUID();
+        return createRole(UUID.randomUUID(), name, description, systemManaged);
+    }
+
+    private UUID createRole(UUID id, String name, String description, boolean systemManaged) {
         Timestamp now = Timestamp.from(Instant.now());
         jdbcTemplate.update(
                 "INSERT INTO roles (id, name, description, system_managed, created_at, updated_at) "
@@ -416,6 +535,14 @@ class RbacCatalogApiIT extends BaseApiIntegrationTest {
         );
         catalogRoleIds.add(id);
         return id;
+    }
+
+    private String roleName(UUID roleId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT name FROM roles WHERE id = ?",
+                String.class,
+                roleId
+        );
     }
 
     private UUID createPermission(String code) {
