@@ -23,6 +23,7 @@ public interface AccountMapper {
     // =====================================================================================
 
     @IgnoreFullAuditFields
+    @Mapping(target = "accountRoles", ignore = true)
     AccountEntity domainToEntity(Account account);
 
     Account entityToDomain(AccountEntity accountEntity);

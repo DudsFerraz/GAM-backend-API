@@ -19,6 +19,8 @@ public interface EventMapper {
     // =====================================================================================
 
     @IgnoreFullAuditFields
+    @Mapping(target = "location", ignore = true)
+    @Mapping(target = "requiredPermission", ignore = true)
     EventEntity domainToEntity(Event event);
 
     Event entityToDomain(EventEntity eventEntity);
