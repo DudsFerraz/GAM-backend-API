@@ -196,6 +196,9 @@
 				<artifactId>maven-compiler-plugin</artifactId>
 				<configuration>
 					<release>${java.version}</release>
+					<compilerArgs>
+						<arg>-Amapstruct.defaultInjectionStrategy=constructor</arg>
+					</compilerArgs>
 					<annotationProcessorPaths>
 						<path>
 							<groupId>org.projectlombok</groupId>
