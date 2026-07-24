@@ -91,7 +91,6 @@ class SpecificationPersistenceIT extends PostgreSQLIntegrationTest {
 
     private final List<UUID> specificationEventIds = new ArrayList<>();
     private final List<UUID> specificationGamLocationIds = new ArrayList<>();
-    private final List<UUID> specificationPermissionIds = new ArrayList<>();
 
     @AfterEach
     void cleanupSpecificationFixtures() {
@@ -101,12 +100,8 @@ class SpecificationPersistenceIT extends PostgreSQLIntegrationTest {
         for (UUID gamLocationId : specificationGamLocationIds) {
             jdbcTemplate.update("DELETE FROM gam_locations WHERE id = ?", gamLocationId);
         }
-        for (UUID permissionId : specificationPermissionIds) {
-            jdbcTemplate.update("DELETE FROM permissions WHERE id = ?", permissionId);
-        }
         specificationEventIds.clear();
         specificationGamLocationIds.clear();
-        specificationPermissionIds.clear();
     }
 
         @Test
@@ -314,15 +309,6 @@ class SpecificationPersistenceIT extends PostgreSQLIntegrationTest {
         member.setPhoneNumber(GamPhoneNumber.fromString(phoneNumber));
         member.setStatus(status);
         return member;
-    }
-
-    private PermissionEntity permission(String code) {
-        PermissionEntity permission = new PermissionEntity();
-        permission.setId(UUIDGenerator.generateUUIDV7());
-        permission.setCode(code);
-        permission.setLabel("Private event");
-        permission.setDescription("Permission for persistence specification test");
-        return permission;
     }
 
     private EventEntity event(String title, PermissionEntity requiredPermission) {

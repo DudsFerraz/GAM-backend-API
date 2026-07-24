@@ -103,6 +103,7 @@ class UUIDIdentityTest {
         }
     }
 
+    @SuppressWarnings("unused")
     private static Stream<Class<?>> persistedResourceTypes() {
         return Stream.of(
                 Account.class,
@@ -117,6 +118,7 @@ class UUIDIdentityTest {
         );
     }
 
+    @SuppressWarnings("unused")
     private static Stream<Class<?>> resourceResponseTypes() {
         return Stream.of(
                 AccountRDTO.class,
@@ -126,6 +128,7 @@ class UUIDIdentityTest {
         );
     }
 
+    @SuppressWarnings("unused")
     private static Stream<Arguments> resourceControllerLookupMethods() {
         return Stream.of(
                 Arguments.of(AccountController.class, "getAccountById"),

@@ -105,6 +105,7 @@ class CommonPrimitiveArchitectureTest {
         }
     }
 
+    @SuppressWarnings("unused")
     private static Stream<Arguments> nameFields() {
         return Stream.of(
                 Arguments.of(Member.class, "name"),
@@ -114,6 +115,7 @@ class CommonPrimitiveArchitectureTest {
         );
     }
 
+    @SuppressWarnings("unused")
     private static Stream<Arguments> emailFields() {
         return Stream.of(
                 Arguments.of(Account.class, "email"),
@@ -121,6 +123,7 @@ class CommonPrimitiveArchitectureTest {
         );
     }
 
+    @SuppressWarnings("unused")
     private static Stream<Arguments> emailRecordComponents() {
         return Stream.of(
                 Arguments.of(RegisterAccountDTO.class, "email"),
@@ -129,6 +132,7 @@ class CommonPrimitiveArchitectureTest {
         );
     }
 
+    @SuppressWarnings("unused")
     private static Stream<Arguments> phoneNumberFields() {
         return Stream.of(
                 Arguments.of(Member.class, "phoneNumber"),
@@ -138,6 +142,7 @@ class CommonPrimitiveArchitectureTest {
         );
     }
 
+    @SuppressWarnings("unused")
     private static Stream<Arguments> phoneNumberRecordComponents() {
         return Stream.of(
                 Arguments.of(RegisterMemberDTO.class, "phoneNumber"),
@@ -146,6 +151,7 @@ class CommonPrimitiveArchitectureTest {
         );
     }
 
+    @SuppressWarnings("unused")
     private static Stream<String> retiredValueObjectClassNames() {
         return Stream.of(
                 "br.org.gam.api.shared.domain.Name",
