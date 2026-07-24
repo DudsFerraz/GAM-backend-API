@@ -124,6 +124,29 @@ Invalid examples:
 - Treating successful primitive creation as proof that the document exists.
 - Treating successful primitive creation as identity verification.
 
+---
+
+### REQ-GAM-RG-007: Reusable JPA persistence
+The `GamRG` primitive shall provide reusable JPA persistence support that is not owned or redefined by an individual feature.
+
+A non-null `GamRG` shall be persisted as its normalized value after surrounding whitespace has been removed. A database null shall map to a null primitive reference and a null primitive reference shall map to a database null.
+
+Rehydrating a non-null persisted value shall apply the same `GamRG` validation rules used for ordinary primitive creation. Invalid persisted data shall fail rehydration instead of producing an invalid primitive or being silently treated as absence.
+
+Rationale:
+Every persistence-owning feature must store and restore the primitive consistently without introducing a second RG representation or validation policy.
+
+Valid examples:
+- `GamRG` with value `12.345.678-X` is persisted as `12.345.678-X`.
+- Persisted `12.345.678-X` rehydrates to an equal `GamRG`.
+- A null primitive reference and a database null round-trip as null.
+
+Invalid examples:
+- Persisting surrounding whitespace that the primitive removed.
+- Rehydrating an overlong or structurally invalid value without applying `GamRG` validation.
+- Treating a blank persisted string as null.
+- Requiring each RG-bearing feature to define its own conversion rules.
+
 ## Acceptance scenarios
 
 ```gherkin
@@ -149,6 +172,17 @@ Scenario: Reject unsafe characters
   Given the raw RG contains a line break
   When a GamRG value is created
   Then the creation fails
+
+Scenario: Persist and restore a normalized RG
+  Given a GamRG has normalized value "12.345.678-X"
+  When the value is persisted and rehydrated through the shared JPA support
+  Then the database value is "12.345.678-X"
+  And the rehydrated GamRG equals the original value
+
+Scenario: Reject an invalid persisted RG
+  Given the persisted RG value is blank
+  When the value is rehydrated through the shared JPA support
+  Then rehydration fails
 ```
 
 ## Reference basis
@@ -171,6 +205,7 @@ Scenario: Reject unsafe characters
 * CIN representation beyond its CPF-based identifier.
 * Person registries, deduplication, or matching.
 * Authorization, masking, logging, and display policies for RG-bearing features.
+* Feature-specific database column names, nullability, indexes, constraints, and schema migrations.
 
 ## Related ADRs
 

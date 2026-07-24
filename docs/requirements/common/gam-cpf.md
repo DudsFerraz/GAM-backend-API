@@ -122,6 +122,29 @@ Invalid examples:
 - Rejecting a CPF because the Receita Federal service is unavailable.
 - Treating successful primitive creation as proof of ownership.
 
+---
+
+### REQ-GAM-CPF-007: Reusable JPA persistence
+The `GamCPF` primitive shall provide reusable JPA persistence support that is not owned or redefined by an individual feature.
+
+A non-null `GamCPF` shall be persisted as its eleven-digit canonical CPF. A database null shall map to a null primitive reference and a null primitive reference shall map to a database null.
+
+Rehydrating a non-null persisted value shall apply the same `GamCPF` validation rules used for ordinary primitive creation. Invalid persisted data shall fail rehydration instead of producing an invalid primitive or being silently treated as absence.
+
+Rationale:
+Every persistence-owning feature must store and restore the primitive consistently without introducing a second CPF representation or validation policy.
+
+Valid examples:
+- `GamCPF` with value `52998224725` is persisted as `52998224725`.
+- Persisted `52998224725` rehydrates to an equal `GamCPF`.
+- A null primitive reference and a database null round-trip as null.
+
+Invalid examples:
+- Persisting `529.982.247-25`.
+- Rehydrating `52998224724` without applying check-digit validation.
+- Treating a blank persisted string as null.
+- Requiring each CPF-bearing feature to define its own conversion rules.
+
 ## Acceptance scenarios
 
 ```gherkin
@@ -145,6 +168,17 @@ Scenario: Reject nonstandard CPF formatting
   Given the raw CPF is "529 982 247 25"
   When a GamCPF value is created
   Then the creation fails
+
+Scenario: Persist and restore a canonical CPF
+  Given a GamCPF has canonical value "52998224725"
+  When the value is persisted and rehydrated through the shared JPA support
+  Then the database value is "52998224725"
+  And the rehydrated GamCPF equals the original value
+
+Scenario: Reject an invalid persisted CPF
+  Given the persisted CPF value is "52998224724"
+  When the value is rehydrated through the shared JPA support
+  Then rehydration fails
 ```
 
 ## Reference basis
@@ -165,6 +199,7 @@ Scenario: Reject nonstandard CPF formatting
 * CPF ownership or identity verification.
 * Person registries, deduplication, or matching.
 * Authorization, masking, logging, and display policies for CPF-bearing features.
+* Feature-specific database column names, nullability, indexes, constraints, and schema migrations.
 
 ## Related ADRs
 
