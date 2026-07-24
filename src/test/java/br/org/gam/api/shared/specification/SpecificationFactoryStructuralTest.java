@@ -22,7 +22,7 @@ import static org.mockito.Mockito.when;
 
 @UnitTest
 @DisplayName("Specification Factory")
-@SuppressWarnings({"unchecked", "rawtypes"})
+@SuppressWarnings("unchecked")
 class SpecificationFactoryStructuralTest {
 
     @Nested

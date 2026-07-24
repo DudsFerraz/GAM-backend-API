@@ -503,7 +503,6 @@ public class OpenApiConfig {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private Object exampleForSchema(OpenAPI openApi, Schema<?> schema, String propertyName, Set<String> resolvingReferences) {
         if (schema == null) {
             return Map.of();
@@ -530,9 +529,8 @@ public class OpenApiConfig {
         }
         if (hasType(schema, "object") || schema.getProperties() != null) {
             Map<String, Object> example = new LinkedHashMap<>();
-            Map<String, Schema> properties = schema.getProperties();
-            if (properties != null) {
-                properties.forEach((name, property) ->
+            if (schema.getProperties() != null) {
+                schema.getProperties().forEach((name, property) ->
                         example.put(name, exampleForSchema(openApi, property, name, resolvingReferences)));
             }
             return example;

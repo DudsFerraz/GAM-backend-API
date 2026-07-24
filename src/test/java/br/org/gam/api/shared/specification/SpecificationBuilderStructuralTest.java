@@ -21,7 +21,7 @@ import static org.mockito.Mockito.when;
 
 @UnitTest
 @DisplayName("Specification Builder")
-@SuppressWarnings({"unchecked", "rawtypes"})
+@SuppressWarnings("unchecked")
 class SpecificationBuilderStructuralTest {
 
     @Nested
