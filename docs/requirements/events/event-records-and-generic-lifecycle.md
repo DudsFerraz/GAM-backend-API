@@ -10,7 +10,7 @@ GAM needs one common Event representation for activities while allowing speciali
 
 The implementation and tests for Events predate the Requirement Specification workflow. They were used only as discovery material and conversation prompts. This document records the behavior agreed during planning and does not treat legacy behavior as authoritative.
 
-This specification owns Generic Event creation, editing, status commands, deletion, common get/search behavior, audience visibility, and activity auditing. Specialized mutation workflows remain owned by their future Requirement Specifications.
+This specification owns Generic Event creation, editing, status commands, deletion, common get/search behavior, audience visibility, and activity auditing. Specialized mutation workflows remain owned by their type-specific Requirement Specifications.
 
 ## Ubiquitous Language
 
@@ -527,6 +527,7 @@ The command transitions in this diagram apply to Generic Events. `SCHEDULED -> C
 * [ADR-0010: Serialize GamLocation Mutation and Event Linking](../../decisions/0010-serialize-gam-location-mutation-and-event-linking.md)
 * [ADR-0011: Serialize Event Mutation and Presence Linking](../../decisions/0011-serialize-event-mutation-and-presence-linking.md) (Superseded)
 * [ADR-0012: Serialize Event and Presence Mutations](../../decisions/0012-serialize-event-and-presence-mutations.md)
+* [ADR-0017: Serialize Oratorio and Oratoriano mutations](../../decisions/0017-serialize-oratorio-and-oratoriano-mutations.md)
 
 ## Related requirements
 
@@ -535,6 +536,8 @@ The command transitions in this diagram apply to Generic Events. `SCHEDULED -> C
 * [RBAC Catalog](../rbac/rbac-catalog.md)
 * [OpenAPI and Frontend API Documentation](../platform/openapi-and-frontend-api-documentation.md)
 * [Member Event Presences](../presences/member-event-presences.md)
+* [Oratorio Occurrences and Planning](../oratorio/oratorio-occurrences-and-planning.md)
+* [Oratorio Attendance Tracker](../oratorio/oratorio-attendance-tracker.md)
 
 ## Related videos
 

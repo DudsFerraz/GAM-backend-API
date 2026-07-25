@@ -344,9 +344,9 @@ The audit history should capture submission and Coordinator decisions without tu
 
 This requirement supersedes the lifecycle Role precondition and projection portions of `REQ-MEMBER-SOL-009`.
 
-Approval shall require the soliciting Account to have no linked Member and no active `MEMBER`, `VISITOR`, or `COORD` assignment. An Account without a Member that has any of those lifecycle-owned Roles is inconsistent and approval shall return `409 Conflict` without repairing Roles, creating a Member, deciding the solicitation, or emitting an activity event.
+Approval shall require the soliciting Account to have no linked Member and no active `MEMBER`, `VISITOR`, `COORD`, or `ORATORIO_COORD` assignment. An Account without a Member that has any of those lifecycle-owned Roles is inconsistent and approval shall return `409 Conflict` without repairing Roles, creating a Member, deciding the solicitation, or emitting an activity event.
 
-Successful approval shall create one active Member without Coordinator designation, assign `MEMBER`, keep `VISITOR` and `COORD` absent, and preserve every active custom Role. The Member, Role projection, solicitation decision, and one `MEMBERSHIP_SOLICITATION_APPROVED` activity event shall commit atomically under `REQ-MEMBER-016`.
+Successful approval shall create one active Member without Coordinator or Oratorio Coordinator designation, assign `MEMBER`, keep `VISITOR`, `COORD`, and `ORATORIO_COORD` absent, and preserve every active custom Role. The Member, Role projection, solicitation decision, and one `MEMBERSHIP_SOLICITATION_APPROVED` activity event shall commit atomically under `REQ-MEMBER-016`.
 
 Rationale:
 Approval must not legitimize or silently repair a lifecycle-owned Role assignment that could not validly exist before membership.
@@ -415,7 +415,7 @@ Scenario: Concurrent decisions preserve one outcome
 
 Scenario: Approval rejects an inconsistent lifecycle Role projection
   Given a pending solicitation belongs to an Account with no Member
-  And the Account has MEMBER, VISITOR, or COORD
+  And the Account has MEMBER, VISITOR, COORD, or ORATORIO_COORD
   And the caller has MEMBER_MANAGE
   When the caller approves with a valid review reason
   Then the system returns 409 Conflict
@@ -445,6 +445,7 @@ Scenario: Approval rejects an inconsistent lifecycle Role projection
 ## Related ADRs
 
 * [ADR-0013: Make Member lifecycle own Coordinator designation](../../decisions/0013-make-member-lifecycle-own-coordinator-designation.md)
+* [ADR-0014: Make Member lifecycle own Oratorio Coordinator designation](../../decisions/0014-make-member-lifecycle-own-oratorio-coordinator-designation.md)
 
 ## Related requirements
 

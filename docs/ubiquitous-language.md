@@ -12,10 +12,13 @@ This document is not a Requirement Specification. It defines canonical terms, di
 |--------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------|----------------------------------|
 | **Oratorio**       | A recurring Salesian activity where people, usually children and teenagers, are welcomed for recreation, friendship, care, and a moment of prayer or reflection.                             | None                 | Oratory                          |
 | **Boa Tarde**      | The closing moment of welcome, prayer, reflection, and encouragement during an Oratorio.                                                                                                     | None                 | Good Afternoon                   |
+| **Lanche**         | The food and beverages distributed to Oratorianos at the Oratorio's 17:00 closing boundary as they leave. It is a closing act, not a scheduled time interval.                                | None                 | Snack interval                   |
+| **Gincana**        | Organized recreational games and challenges conducted during a GAM activity.                                                                                                                 | None                 | Competition                      |
 | **Oratoriano**     | A person who attends an Oratorio. Oratorianos are usually between 5 and 20 years old, but adults can also be Oratorianos; an Oratoriano older than 25 is rare but expected at least monthly. | None                 | Oratorio frequenter, attendee    |
 | **Member**         | A lifetime member of GAM Piracicaba. A Member may become active or inactive, but does not stop being a Member because of inactivity.                                                         | None                 | Participant                      |
 | **Membership Solicitation** | An Account's immutable request to become a Member, submitted for Coordinator review. The Account does not become a Member until the solicitation is approved. | solicitation | Membership application |
 | **Coordinator**    | An active Member whose linked active Account has the current active `COORD` lifecycle-owned Role. Coordinator designation represents responsibility for coordinating a GAM activity, team, responsibility area, or system capability. | coord                | Admin, director                  |
+| **Coordenador do Oratório** | An active Member with current responsibility for Oratorio operations whose linked active Account has the `ORATORIO_COORD` lifecycle-owned Role. | oratorio coord, coordenador de oratório | Oratorio responsible, Mr Oratorio, Oratorio steward |
 | **Account**        | A persisted identity that can authenticate to GAM. An Account is not automatically a Member, Coordinator, or any other role-bearing domain person.                                           | None                 | User account                     |
 | **User**           | A person who uses the GAM application or appears as an actor in product-facing workflows. Do not use this term for the developer interacting with an LLM agent.                              | None                 | Developer                        |
 | **Developer**      | The person working on the GAM project, preparing prompts, making decisions, and interacting with LLM agents. Do not use `User` for this role.                                                | Dev                  | User                             |
@@ -32,7 +35,7 @@ This document is not a Requirement Specification. It defines canonical terms, di
 | **Presence**       | The persisted historical fact that a Member's attendance at an Event was confirmed. At most one active Presence may exist for one Event and Member pair.                                    | None                 | RSVP, planned attendance         |
 | **Generic Event**  | An Event created through the common Event workflow because it requires no specialized Oratorio, Missa, or other type-specific data.                                                          | None                 | Generic activity                 |
 | **UUID**           | The convention that persisted GAM resources use UUID values as public and internal identifiers.                                                                                              | id                   | Numeric ID, database sequence ID |
-| **lifecycle-owned Role** | A `MEMBER`, `VISITOR`, or `COORD` system Role whose assignment is controlled exclusively by Member lifecycle workflows. | None | None |
+| **lifecycle-owned Role** | A system Role whose assignment is controlled exclusively by its owning Member-domain workflow. The current catalog contains `MEMBER`, `VISITOR`, `COORD`, and `ORATORIO_COORD`. | None | None |
 | **Proxy** | GAM's public HTTP entry point that terminates TLS, serves the static frontend, routes `/api` requests to the private backend, and preserves trustworthy public request information. | None | Caddy or Nginx when no product has been selected |
 | **Canonical Public Origin** | The one configured scheme, host, and effective port from which the GAM browser frontend and public API are served. | public origin | domain when scheme or port also matters |
 
@@ -41,11 +44,14 @@ This document is not a Requirement Specification. It defines canonical terms, di
 - A **Member** may serve in an **Oratorio**.
 - An **Oratoriano** attends an **Oratorio** but is not necessarily a **Member**.
 - A **Boa Tarde** happens as part of an **Oratorio**.
+- A **Lanche** is distributed at an **Oratorio**'s closing boundary.
+- A **Gincana** may happen as part of an **Oratorio** or another GAM activity.
 - A **Coordinator** is an active **Member** with coordination responsibility whose linked active **Account** has the current active `MEMBER` and `COORD` lifecycle-owned Roles and does not have an active `VISITOR` Role.
+- A **Coordenador do Oratório** is an active **Member** whose linked active **Account** has the current active `MEMBER` and `ORATORIO_COORD` lifecycle-owned Roles and does not have an active `VISITOR` Role.
 - A **Coordinator** may deactivate a **Member** in the system because of real-life inactivity in GAM actions and events.
 - An **Account** may submit a **Membership Solicitation** only for itself.
 - An approved **Membership Solicitation** creates the lifetime **Member** linked to its submitting **Account**.
-- An active **Member** requires the `MEMBER` **lifecycle-owned Role** on the linked **Account**; an inactive **Member** requires `VISITOR` instead and cannot remain a **Coordinator**.
+- An active **Member** requires the `MEMBER` **lifecycle-owned Role** on the linked **Account**; an inactive **Member** requires `VISITOR` instead and cannot remain a **Coordinator** or **Coordenador do Oratório**.
 - An **Account** may authenticate to GAM and may receive roles or permissions through RBAC workflows.
 - An **Account** is not automatically a **Member** or **Coordinator**.
 - A **User** may have an **Account**, but product-facing User language must not be used for the **Developer** interacting with agents.

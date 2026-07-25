@@ -410,21 +410,21 @@ Invalid examples:
 
 ---
 
-### REQ-MEMBER-016: Member lifecycle owns MEMBER, VISITOR, and COORD
+### REQ-MEMBER-016: Member lifecycle owns authorization-facing Member responsibilities
 
 This requirement supersedes `REQ-MEMBER-005`.
 
-Member lifecycle workflows shall exclusively manage the `MEMBER`, `VISITOR`, and `COORD` system Roles for a Member's linked Account. The valid current projections shall be:
+Member-domain lifecycle workflows shall exclusively manage the `MEMBER`, `VISITOR`, `COORD`, and `ORATORIO_COORD` system Roles for a Member's linked Account. The valid current projections shall be:
 
 | Member lifecycle state | Required active Roles | Roles that shall not remain active |
 | --- | --- | --- |
 | Active Member without Coordinator designation | `MEMBER` | `VISITOR`, `COORD` |
 | Active Coordinator | `MEMBER`, `COORD` | `VISITOR` |
-| Inactive Member | `VISITOR` | `MEMBER`, `COORD` |
+| Inactive Member | `VISITOR` | `MEMBER`, `COORD`, `ORATORIO_COORD` |
 
-Direct registration and membership-solicitation approval shall create an active Member without Coordinator designation. Reactivation shall restore `MEMBER` and remove `VISITOR`, but shall not restore a previously revoked or deactivation-removed `COORD` assignment. Deactivation shall remove both `MEMBER` and `COORD` and assign `VISITOR`.
+An active Member may independently hold or not hold `ORATORIO_COORD` under the dedicated Oratorio Coordinator designation workflow. Direct registration and membership-solicitation approval shall create an active Member without `COORD` or `ORATORIO_COORD`. Reactivation shall restore `MEMBER` and remove `VISITOR`, but shall not restore a previously revoked or deactivation-removed `COORD` or `ORATORIO_COORD` assignment. Deactivation shall remove `MEMBER`, `COORD`, and `ORATORIO_COORD` and assign `VISITOR`.
 
-Before direct registration or membership-solicitation approval, an Account without a Member shall have no active `MEMBER`, `VISITOR`, or `COORD` assignment. Any such assignment shall be treated as an inconsistent pre-existing projection and shall return `409 Conflict` without repair, Member creation, Role mutation, or activity logging.
+Before direct registration or membership-solicitation approval, an Account without a Member shall have no active `MEMBER`, `VISITOR`, `COORD`, or `ORATORIO_COORD` assignment. Any such assignment shall be treated as an inconsistent pre-existing projection and shall return `409 Conflict` without repair, Member creation, Role mutation, or activity logging.
 
 Each lifecycle workflow shall synchronize Member state and all affected lifecycle-owned Role assignments in one transaction while preserving every active custom Role. Generic Account-role administration shall reject direct addition or removal of every system-managed Role under `REQ-ACCOUNT-ROLE-016` through `REQ-ACCOUNT-ROLE-018`.
 
@@ -432,12 +432,12 @@ Rationale:
 A Coordinator is an active Member with current coordination responsibility. Authorization-facing system Roles must not drift from Member state or bypass that responsibility through generic Account administration.
 
 Valid examples:
-- Deactivating a Coordinator removes MEMBER and COORD, assigns VISITOR, and preserves custom Roles.
-- Reactivating a former Coordinator assigns MEMBER but leaves COORD absent.
+- Deactivating a Member removes MEMBER, COORD, and ORATORIO_COORD when present, assigns VISITOR, and preserves custom Roles.
+- Reactivating a former Coordinator and Coordenador do Oratório assigns MEMBER but leaves both responsibility Roles absent.
 
 Invalid examples:
-- An inactive Member retains COORD.
-- Direct Member registration automatically grants COORD.
+- An inactive Member retains COORD or ORATORIO_COORD.
+- Direct Member registration automatically grants COORD or ORATORIO_COORD.
 - Generic Account-role administration grants COORD to an Account without an active Member.
 
 ---
@@ -518,14 +518,24 @@ Coordinator authority needs the same fail-safe recovery protection as the prior 
 
 This requirement supersedes the lifecycle Role effects in `REQ-MEMBER-007`; its routes, `MEMBER_ACTIVATION` permission, required reason, and `204 No Content` success response remain unchanged.
 
-Reactivation shall require the valid inactive projection: active `VISITOR`, no active `MEMBER`, and no active `COORD`. It shall change the Member to `ACTIVE`, assign `MEMBER`, remove `VISITOR`, leave `COORD` absent, preserve custom Roles, and emit exactly one `MEMBER_ACTIVATED` event.
+Reactivation shall require the valid inactive projection: active `VISITOR`, no active `MEMBER`, no active `COORD`, and no active `ORATORIO_COORD`. It shall change the Member to `ACTIVE`, assign `MEMBER`, remove `VISITOR`, leave both responsibility Roles absent, preserve custom Roles, and emit exactly one `MEMBER_ACTIVATED` event.
 
-Deactivation shall require either valid active projection from `REQ-MEMBER-016`. It shall change the Member to `INACTIVE`, remove `MEMBER`, remove `COORD` when present, assign `VISITOR`, preserve custom Roles, and emit exactly one `MEMBER_DEACTIVATED` event. Removing COORD shall not emit a separate `COORDINATOR_REVOKED` or `ACCOUNT_ROLE_REMOVED` event.
+Deactivation shall require either valid active projection from `REQ-MEMBER-016`, with or without `ORATORIO_COORD`. It shall change the Member to `INACTIVE`, remove `MEMBER`, remove `COORD` and `ORATORIO_COORD` when present, assign `VISITOR`, preserve custom Roles, and emit exactly one `MEMBER_DEACTIVATED` event. Removing either responsibility Role shall not emit a separate designation-revoked or `ACCOUNT_ROLE_REMOVED` event.
 
 Deactivation of the final current Coordinator shall enforce `REQ-MEMBER-019`. Activation or deactivation against an inconsistent lifecycle Role projection shall return `409 Conflict` without repair, mutation, or activity logging.
 
 Rationale:
 Member status transitions must keep Coordinator authority consistent without treating deactivation as a separate Coordinator revocation decision.
+
+---
+
+### REQ-MEMBER-021: Oratorio Coordinator lifecycle integration
+
+The dedicated Oratorio Coordinator designation workflow shall follow `REQ-ORATORIO-COORD-001` through `REQ-ORATORIO-COORD-006`.
+
+Grant and revoke shall target an active Member and preserve ordinary Member status, `MEMBER`, `COORD`, and custom Roles. `ORATORIO_COORD` shall have no final-holder protection.
+
+Grant, revoke, activation, and deactivation affecting the same Member and linked Account shall serialize. Every committed operation shall leave one valid projection from `REQ-MEMBER-016` and emit only its one high-level business activity.
 
 ## Acceptance scenarios
 
@@ -548,7 +558,7 @@ Scenario: Pending solicitation blocks direct registration
   And no Member, role change, or activity event is created
 
 Scenario: Direct registration rejects an inconsistent lifecycle Role projection
-  Given an Account has no Member but has MEMBER, VISITOR, or COORD
+  Given an Account has no Member but has MEMBER, VISITOR, COORD, or ORATORIO_COORD
   And the caller has MEMBER_MANAGE
   When the caller submits valid Member data and an activation reason
   Then the system returns 409 Conflict
@@ -556,14 +566,14 @@ Scenario: Direct registration rejects an inconsistent lifecycle Role projection
   And no Member or activity event is created
 
 Scenario: Deactivate an active Member
-  Given an ACTIVE Member is linked to an Account with MEMBER and COORD
+  Given an ACTIVE Member is linked to an Account with MEMBER, COORD, and ORATORIO_COORD
   And the caller has MEMBER_ACTIVATION
   When the caller deactivates the Member with a valid reason
   Then the Member becomes INACTIVE
   And MEMBER is removed and VISITOR is assigned
-  And COORD is removed
+  And COORD and ORATORIO_COORD are removed
   And exactly one MEMBER_DEACTIVATED activity event is recorded
-  And no COORDINATOR_REVOKED or ACCOUNT_ROLE_REMOVED event is recorded
+  And no COORDINATOR_REVOKED, ORATORIO_COORDINATOR_REVOKED, or ACCOUNT_ROLE_REMOVED event is recorded
 
 Scenario: Reject repeated deactivation
   Given a Member is already INACTIVE
@@ -724,8 +734,8 @@ flowchart TD
 * Deleting, soft-deleting, restoring, or merging Members.
 * Creating an Account through Member registration.
 * Account deactivation, deletion, or restoration workflows.
-* Manually adding or dropping lifecycle-owned `MEMBER`, `VISITOR`, and `COORD` Roles outside their Member lifecycle workflows.
-* A separate Coordinator entity, Coordinator Member status, or automatic restoration of a former Coordinator designation.
+* Manually adding or dropping lifecycle-owned `MEMBER`, `VISITOR`, `COORD`, and `ORATORIO_COORD` Roles outside their owning Member-domain workflows.
+* A separate Coordinator or Oratorio Coordinator entity, additional Member status, or automatic restoration of a former responsibility designation.
 * Repair or reconciliation of inconsistent historical lifecycle Role projections.
 * Reading activity-log history through Member endpoints.
 * Event-centric presence visibility, including `GET /events/{eventId}/presences`.
@@ -735,6 +745,7 @@ flowchart TD
 ## Related ADRs
 
 * [ADR-0013: Make Member lifecycle own Coordinator designation](../../decisions/0013-make-member-lifecycle-own-coordinator-designation.md)
+* [ADR-0014: Make Member lifecycle own Oratorio Coordinator designation](../../decisions/0014-make-member-lifecycle-own-oratorio-coordinator-designation.md)
 
 ## Related requirements
 
@@ -745,6 +756,7 @@ flowchart TD
 * [Account Role Management](../rbac/account-role-management.md)
 * [RBAC Catalog](../rbac/rbac-catalog.md)
 * [Member Event Presences](../presences/member-event-presences.md)
+* [Oratorio Coordinator Designation](../oratorio/oratorio-coordinator-designation.md)
 
 ## Related videos
 

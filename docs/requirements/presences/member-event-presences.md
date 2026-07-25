@@ -16,7 +16,7 @@ This specification owns Member Presence identity, registration, observation edit
 
 - `active Presence`: A Presence that has not been removed and is available through normal application workflows.
 - `removed Presence`: A soft-deleted Presence retained for history but excluded from normal reads and active duplicate identity.
-- `registration-eligible Event`: An active Event whose `beginDate` has been reached and whose effective status is `SCHEDULED` or `COMPLETED`.
+- `registration-eligible Event`: An active Event whose attendance window has opened and whose effective status is `SCHEDULED` or `COMPLETED`. Generic Event and Missa windows open at `beginDate`; an Oratorio window opens under its specialized tracker rule.
 
 ## Functional requirements
 
@@ -71,11 +71,12 @@ The system shall capture one clock instant for a registration request and use it
 A Presence may be registered only when:
 
 - the Event exists, is active, and has type `GENERIC`, `ORATORIO`, or `MISSA`;
-- the evaluation instant is equal to or after the Event's `beginDate`;
+- for `GENERIC` and `MISSA`, the evaluation instant is equal to or after the Event's `beginDate`;
+- for `ORATORIO`, the evaluation instant is equal to or after the 30-minute early boundary defined by `REQ-ORATORIO-ATT-004`;
 - the Event's effective status is `SCHEDULED` or `COMPLETED`; and
 - the Member exists and is not soft-deleted, regardless of whether the Member is `ACTIVE` or `INACTIVE`.
 
-Registration before `beginDate` or against a `CANCELLED`, `LOCKED`, or `FINALIZED` Event shall return `409 Conflict` with code `PRESENCE_REGISTRATION_NOT_ALLOWED`. Structured details shall include `eventId`, effective Event `status`, `beginDate`, and `evaluationInstant`.
+Registration before the type-specific attendance boundary or against a `CANCELLED`, `LOCKED`, or `FINALIZED` Event shall return `409 Conflict` with code `PRESENCE_REGISTRATION_NOT_ALLOWED`. Structured details shall include `eventId`, effective Event `status`, applicable boundary, and `evaluationInstant`.
 
 A missing or soft-deleted Event or Member shall return `404 RESOURCE_NOT_FOUND` for the corresponding resource.
 
@@ -83,11 +84,13 @@ Rationale:
 Presence confirms attendance rather than advance intent. Attendance can be recorded during an Event or entered later until administrative closure.
 
 Valid examples:
-- A Coordinator records attendance after a scheduled Event has begun but before it ends.
+- A Coordinator records Generic Event attendance after it begins.
+- A Coordinator records Oratorio attendance at its 13:30 early boundary.
 - A Coordinator enters late attendance while the Event is `COMPLETED`.
 
 Invalid examples:
-- Attendance is recorded before the Event begins.
+- Generic Event or Missa attendance is recorded before the Event begins.
+- Oratorio attendance is recorded before its 30-minute early boundary.
 - Attendance is recorded after the Event is locked or finalized.
 - Attendance is recorded for a cancelled Event.
 
@@ -108,6 +111,8 @@ An unauthenticated request shall return `401 Unauthorized`. An authenticated cal
 ### REQ-PRESENCE-005: Duplicate registration and concurrent uniqueness
 
 When an active Presence already exists for the Event and Member, registration shall return `409 Conflict` with code `PRESENCE_ALREADY_REGISTERED`. Structured details shall include `eventId`, `memberId`, and the existing active `presenceId`.
+
+The specialized Oratorio tracker check under `REQ-ORATORIO-ATT-005` shall instead return the existing Presence as an idempotent `200 OK` no-op. The common `POST /events/{eventId}/presences` route shall retain the conflict contract above.
 
 A removed Presence for the same pair shall not cause this conflict.
 
@@ -237,6 +242,8 @@ Activity failure shall roll back a changed edit. A rejected edit shall not mutat
 
 `DELETE /events/{eventId}/presences/{memberId}` shall remove one active Presence by soft deletion. The JSON body shall contain a required `reason` that is trimmed and contains 1 to 2,000 characters. A missing, null, blank, oversized, or structurally invalid reason shall return `400 Bad Request`.
 
+The specialized Oratorio tracker uncheck shall instead apply the status-dependent reason and idempotent missing-pair contract in `REQ-ORATORIO-ATT-005` and `REQ-ORATORIO-ATT-006`. The common Presence deletion route shall retain the required-reason and missing-resource contract in this requirement.
+
 Removal shall require `PRESENCE_REMOVE` and current Event audience visibility. It shall not additionally require `EVENT_GET_PRESENCES`, `PRESENCE_REGISTER`, `PRESENCE_EDIT`, or a Member-read permission.
 
 An unauthenticated removal shall return `401 Unauthorized`. An authenticated caller missing `PRESENCE_REMOVE` shall receive `403 Forbidden`. A caller with `PRESENCE_REMOVE` that cannot view the Event shall receive `404 RESOURCE_NOT_FOUND`. Roles shall not substitute for the required permissions.
@@ -272,6 +279,16 @@ The following guarantees shall hold:
 
 Rejected concurrent operations shall return their domain error rather than exposing locking, constraint, or persistence failures.
 
+---
+
+### REQ-PRESENCE-016: Specialized Oratorio tracker delegation
+
+The common Presence resource shall remain the persisted attendance fact for a Member attending an Oratorio. The specialized tracker routes, permissions, response composition, early window, idempotent check/uncheck behavior, and conditional removal reason shall be owned by the accepted Oratorio Attendance Tracker specification.
+
+Specialized tracker mutation shall require `ORATORIO_ATTENDANCE_MANAGE`; it shall not additionally require `PRESENCE_REGISTER`, `PRESENCE_REMOVE`, or `PRESENCE_EDIT`. Combined tracker read shall require `ORATORIO_ATTENDANCE_GET`; it shall not be implied by `EVENT_GET_PRESENCES`.
+
+The common Presence routes and permissions in this specification shall remain available with their existing contracts. The specialization shall not create a second Member-attendance resource.
+
 ## Acceptance scenarios
 
 ```gherkin
@@ -284,12 +301,24 @@ Scenario: Register confirmed attendance during an Event
   And Location identifies /api/events/{eventId}/presences/{memberId}
   And one PRESENCE_REGISTERED activity contains the normalized observation
 
-Scenario: Reject attendance before the Event begins
-  Given a visible SCHEDULED Event has not reached beginDate
+Scenario: Reject Generic Event attendance before it begins
+  Given a visible SCHEDULED Generic Event has not reached beginDate
   And the caller has PRESENCE_REGISTER and the Event audience permission
   When the caller registers a Member
   Then the response is 409 PRESENCE_REGISTRATION_NOT_ALLOWED
   And no Presence or activity is created
+
+Scenario: Register Oratorio Presence during the early window
+  Given a visible SCHEDULED Oratorio begins at 14:00 local time
+  And the caller has ORATORIO_ATTENDANCE_MANAGE
+  When the caller checks a Member present at 13:30 through the specialized tracker
+  Then one common Presence is created
+
+Scenario: Specialized repeated check is idempotent
+  Given an active common Presence exists for an Oratorio and Member
+  When an authorized tracker caller checks the Member again
+  Then the existing Presence is returned with 200 OK
+  And no second Presence or activity is created
 
 Scenario: Reject an active duplicate
   Given an active Presence exists for an Event and Member
@@ -395,6 +424,7 @@ The diagram represents active identity for one Event and Member pair. Re-registr
 ## Related ADRs
 
 * [ADR-0012: Serialize Event and Presence Mutations](../../decisions/0012-serialize-event-and-presence-mutations.md)
+* [ADR-0017: Serialize Oratorio and Oratoriano mutations](../../decisions/0017-serialize-oratorio-and-oratoriano-mutations.md)
 
 ## Related requirements
 
@@ -403,6 +433,7 @@ The diagram represents active identity for one Event and Member pair. Re-registr
 * [Member Records and Lifecycle](../members/member-records-and-lifecycle.md)
 * [RBAC Catalog](../rbac/rbac-catalog.md)
 * [OpenAPI and Frontend API Documentation](../platform/openapi-and-frontend-api-documentation.md)
+* [Oratorio Attendance Tracker](../oratorio/oratorio-attendance-tracker.md)
 
 ## Related videos
 

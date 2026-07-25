@@ -13,7 +13,7 @@ Roles remain permission bundles; authorization decisions must use permissions ra
 
 `SUDO` is a developer-controlled unrestricted-access role. Its assignment and removal require a separate maintenance workflow because ordinary Account-role administration must not be able to remove the application's developer recovery path.
 
-`COORD`, `MEMBER`, and `VISITOR` are lifecycle-owned roles. Member registration, membership-solicitation approval, reactivation, deactivation, and Coordinator designation workflows synchronize them from Member state and Coordinator responsibility. Generic Account-role administration must not assign or remove them independently.
+`COORD`, `ORATORIO_COORD`, `MEMBER`, and `VISITOR` are lifecycle-owned roles. Member registration, membership-solicitation approval, reactivation, deactivation, Coordinator designation, and Oratorio Coordinator designation workflows synchronize them from Member state and current responsibility. Generic Account-role administration must not assign or remove them independently.
 
 ## Ubiquitous Language
 
@@ -524,6 +524,7 @@ System Role assignment and removal shall be routed by ownership:
 | --- | --- |
 | `SUDO` | Developer-controlled SUDO maintenance under `REQ-ACCOUNT-ROLE-009` through `REQ-ACCOUNT-ROLE-015`. |
 | `MEMBER`, `VISITOR`, `COORD` | Member lifecycle under `REQ-MEMBER-016` through `REQ-MEMBER-020`. |
+| `ORATORIO_COORD` | Member-targeted Oratorio Coordinator designation under `REQ-ORATORIO-COORD-001` through `REQ-ORATORIO-COORD-006`. |
 
 The last-SUDO protection in `REQ-ACCOUNT-ROLE-008` and `REQ-ACCOUNT-ROLE-013` remains unchanged. The COORD-specific generic-drop rules in `REQ-ACCOUNT-ROLE-008` are superseded by the Member lifecycle's final-Coordinator rule because only Member lifecycle operations may now remove COORD.
 
@@ -562,7 +563,7 @@ Scenario: Authorized caller adds a custom role
 
 Scenario: Account-role API cannot manage system roles
   Given the caller has ACCOUNT_ROLE_MANAGE
-  When the caller tries to add or drop COORD, MEMBER, VISITOR, or SUDO through the Account-role API
+  When the caller tries to add or drop COORD, ORATORIO_COORD, MEMBER, VISITOR, or SUDO through the Account-role API
   Then the system returns 403 Forbidden
   And no assignment is mutated
   And no Account-role activity event is recorded
@@ -753,7 +754,7 @@ flowchart TD
 * Role-permission assignment and removal.
 * Reading activity logs or developer-only soft-deleted assignments through HTTP.
 * Account registration, authentication, deactivation, restoration, or deletion.
-* Member registration, membership-solicitation decisions, reactivation, deactivation, and Coordinator designation beyond the prohibition on manually mutating their lifecycle-owned Roles.
+* Member registration, membership-solicitation decisions, reactivation, deactivation, Coordinator designation, and Oratorio Coordinator designation beyond the prohibition on manually mutating their lifecycle-owned Roles.
 * Account search and pagination or filtering of Account-role assignments.
 * Role collection and name search, which are owned by the RBAC Catalog Requirement Specification.
 * Reading dropped or otherwise historical Account-role assignments through HTTP.
@@ -763,6 +764,7 @@ flowchart TD
 
 * [ADR-0002: Serialize last-SUDO removal decisions](../../decisions/0002-serialize-last-sudo-removal.md)
 * [ADR-0013: Make Member lifecycle own Coordinator designation](../../decisions/0013-make-member-lifecycle-own-coordinator-designation.md)
+* [ADR-0014: Make Member lifecycle own Oratorio Coordinator designation](../../decisions/0014-make-member-lifecycle-own-oratorio-coordinator-designation.md)
 
 ## Related requirements
 
@@ -770,6 +772,7 @@ flowchart TD
 * [Account Records](../accounts/account-records.md)
 * [Member Records and Lifecycle](../members/member-records-and-lifecycle.md)
 * [Membership Solicitations](../members/membership-solicitations.md)
+* [Oratorio Coordinator Designation](../oratorio/oratorio-coordinator-designation.md)
 
 ## Related videos
 

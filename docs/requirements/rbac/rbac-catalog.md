@@ -35,6 +35,7 @@ The RBAC catalog shall define these baseline system role codes:
 | --- | --- |
 | `SUDO` | Developer-controlled unrestricted system access. |
 | `COORD` | Coordinator access to GAM operational administration. |
+| `ORATORIO_COORD` | Oratorio operational responsibility for an active Member. |
 | `MEMBER` | Standard authenticated member access. |
 | `VISITOR` | No baseline permission; public visibility is represented by a null event `requiredPermissionId`. |
 
@@ -64,6 +65,9 @@ The RBAC catalog shall maintain a code-defined registry of system permissions. T
 | Events | `EVENT_CREATE`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `EVENT_GET_COORD`, `EVENT_MANAGE` |
 | GamLocations | `GAM_LOCATION_GET`, `GAM_LOCATION_CREATE`, `GAM_LOCATION_MANAGE` |
 | Presences | `PRESENCES_SEARCH`, `PRESENCE_REGISTER`, `PRESENCE_EDIT`, `PRESENCE_REMOVE` |
+| Oratorio | `ORATORIO_GET`, `ORATORIO_CREATE`, `ORATORIO_MANAGE`, `ORATORIO_ATTENDANCE_GET`, `ORATORIO_ATTENDANCE_MANAGE`, `ORATORIO_COORD_MANAGE` |
+| Oratorianos | `ORATORIANO_GET`, `ORATORIANO_REGISTER`, `ORATORIANO_MANAGE` |
+| Oratoriano forms | `ORATORIANO_FORM_GET`, `ORATORIANO_FORM_MANAGE`, `ORATORIANO_FORM_PDF_GENERATE`, `ORATORIANO_FORM_ATTACHMENT_GET` |
 | RBAC catalog | `ROLE_GET`, `PERMISSION_GET` |
 
 Each system permission shall have a stable machine `code`, a human-readable `label`, and a `description`. Permission codes shall not be renamed after this Requirement Specification is accepted.
@@ -96,6 +100,19 @@ The accepted display metadata for every system permission is:
 | `PRESENCE_REGISTER` | `Register presences` | `Allows recording Member attendance at Events` |
 | `PRESENCE_EDIT` | `Edit presences` | `Allows editing observations on Member attendance records` |
 | `PRESENCE_REMOVE` | `Remove presences` | `Allows removing mistaken Member attendance records` |
+| `ORATORIO_GET` | `View Oratorios` | `Allows viewing specialized Oratorio details` |
+| `ORATORIO_CREATE` | `Create Oratorios` | `Allows creating Oratorio occurrences` |
+| `ORATORIO_MANAGE` | `Manage Oratorios` | `Allows managing Oratorio planning and lifecycle` |
+| `ORATORIO_ATTENDANCE_GET` | `View Oratorio attendance` | `Allows viewing combined Member and Oratoriano attendance trackers` |
+| `ORATORIO_ATTENDANCE_MANAGE` | `Manage Oratorio attendance` | `Allows recording and correcting Member and Oratoriano attendance` |
+| `ORATORIO_COORD_MANAGE` | `Manage Oratorio coordinators` | `Allows granting and revoking Oratorio Coordinator designation` |
+| `ORATORIANO_GET` | `View Oratorianos` | `Allows searching and viewing ordinary Oratoriano profiles` |
+| `ORATORIANO_REGISTER` | `Register Oratorianos` | `Allows registering Oratorianos` |
+| `ORATORIANO_MANAGE` | `Manage Oratorianos` | `Allows correcting, deleting, and restoring Oratoriano records` |
+| `ORATORIANO_FORM_GET` | `View Oratoriano forms` | `Allows viewing sensitive Oratoriano form details` |
+| `ORATORIANO_FORM_MANAGE` | `Manage Oratoriano forms` | `Allows creating and managing Oratoriano form versions` |
+| `ORATORIANO_FORM_PDF_GENERATE` | `Generate Oratoriano form PDFs` | `Allows creating and rendering identified Oratoriano print snapshots` |
+| `ORATORIANO_FORM_ATTACHMENT_GET` | `Download signed Oratoriano forms` | `Allows downloading signed Oratoriano form attachments` |
 | `ROLE_GET` | `View roles` | `Allows reading role catalog entries` |
 | `PERMISSION_GET` | `View permissions` | `Allows reading permission catalog entries` |
 
@@ -121,11 +138,14 @@ The current baseline shall seed these active permission bundles:
 | Role | Permissions |
 | --- | --- |
 | `SUDO` | Every permission in the accepted system permission registry. |
-| `COORD` | `MEMBER_GET`, `MEMBER_SEARCH`, `MEMBER_ACTIVATION`, `MEMBER_GET_NON_ACTIVE`, `MEMBER_MANAGE`, `COORDINATOR_MANAGE`, `ACCOUNT_GET`, `ACCOUNT_SEARCH`, `ACCOUNT_ROLE_MANAGE`, `EVENT_CREATE`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `EVENT_GET_COORD`, `EVENT_MANAGE`, `GAM_LOCATION_GET`, `GAM_LOCATION_CREATE`, `GAM_LOCATION_MANAGE`, `PRESENCES_SEARCH`, `PRESENCE_REGISTER`, `PRESENCE_EDIT`, `PRESENCE_REMOVE`, `ROLE_GET`, and `PERMISSION_GET`. |
-| `MEMBER` | `MEMBER_GET`, `ACCOUNT_GET`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, and `GAM_LOCATION_GET`. |
+| `COORD` | `MEMBER_GET`, `MEMBER_SEARCH`, `MEMBER_ACTIVATION`, `MEMBER_GET_NON_ACTIVE`, `MEMBER_MANAGE`, `COORDINATOR_MANAGE`, `ACCOUNT_GET`, `ACCOUNT_SEARCH`, `ACCOUNT_ROLE_MANAGE`, `EVENT_CREATE`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `EVENT_GET_COORD`, `EVENT_MANAGE`, `GAM_LOCATION_GET`, `GAM_LOCATION_CREATE`, `GAM_LOCATION_MANAGE`, `PRESENCES_SEARCH`, `PRESENCE_REGISTER`, `PRESENCE_EDIT`, `PRESENCE_REMOVE`, `ROLE_GET`, `PERMISSION_GET`, `ORATORIO_GET`, `ORATORIO_CREATE`, `ORATORIO_MANAGE`, `ORATORIO_ATTENDANCE_GET`, `ORATORIO_ATTENDANCE_MANAGE`, `ORATORIO_COORD_MANAGE`, `ORATORIANO_GET`, `ORATORIANO_REGISTER`, `ORATORIANO_MANAGE`, `ORATORIANO_FORM_GET`, `ORATORIANO_FORM_MANAGE`, `ORATORIANO_FORM_PDF_GENERATE`, and `ORATORIANO_FORM_ATTACHMENT_GET`. |
+| `ORATORIO_COORD` | `ORATORIO_GET`, `ORATORIO_CREATE`, `ORATORIO_MANAGE`, `ORATORIO_ATTENDANCE_GET`, `ORATORIO_ATTENDANCE_MANAGE`, `ORATORIANO_GET`, `ORATORIANO_REGISTER`, `ORATORIANO_MANAGE`, `ORATORIANO_FORM_GET`, `ORATORIANO_FORM_MANAGE`, `ORATORIANO_FORM_PDF_GENERATE`, and `ORATORIANO_FORM_ATTACHMENT_GET`. |
+| `MEMBER` | `MEMBER_GET`, `ACCOUNT_GET`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `GAM_LOCATION_GET`, and `ORATORIO_GET`. |
 | `VISITOR` | No permissions. |
 
-`SUDO` shall receive a newly accepted system permission automatically. `COORD` shall receive only the permissions explicitly listed above; a future permission shall not be added to `COORD` unless this requirement is deliberately updated. `ACCOUNT_ROLE_MANAGE` is explicitly included in `COORD` and is not included in `MEMBER` or `VISITOR`.
+`SUDO` shall receive a newly accepted system permission automatically. `COORD` shall receive only the permissions explicitly listed above; a future permission shall not be added to `COORD` unless this requirement is deliberately updated. `ACCOUNT_ROLE_MANAGE` is explicitly included in `COORD` and is not included in `ORATORIO_COORD`, `MEMBER`, or `VISITOR`.
+
+The source registry shall compose `ORATORIO_READ` from `ORATORIO_GET` and shall compose `ORATORIO_OPERATIONS` from `ORATORIO_READ` plus every accepted Oratorio, Oratoriano, and Oratoriano-form permission except `ORATORIO_COORD_MANAGE`. Repeatable seeding shall flatten those source groups into the direct links listed above. The groups shall not be persisted as Roles or create runtime inheritance.
 
 The cumulative event-view behavior shall be produced by seeded links, not by runtime role inheritance:
 
@@ -382,7 +402,7 @@ The system shall expose `GET /roles` for an authenticated caller with the `ROLE_
 The collection shall start from Roles visible through ordinary current active catalog reads and then exclude every Role in the `role collection blacklist`. It shall therefore:
 
 - include active custom Roles;
-- include the current active `COORD`, `MEMBER`, and `VISITOR` system Roles;
+- include the current active `COORD`, `ORATORIO_COORD`, `MEMBER`, and `VISITOR` system Roles;
 - exclude `SUDO`;
 - exclude soft-deleted Roles; and
 - exclude stale system Roles absent from the accepted registry.
@@ -412,7 +432,7 @@ Rationale:
 Clients need one protected source of Role identifiers and display names. Omitting SUDO keeps developer-controlled authority out of ordinary collection-driven workflows, while `systemManaged` lets an Account-role client distinguish custom assignment targets without inferring eligibility from Role names.
 
 Valid examples:
-- A caller with `ROLE_GET` receives current `COORD`, `MEMBER`, `VISITOR`, and active custom Roles.
+- A caller with `ROLE_GET` receives current `COORD`, `ORATORIO_COORD`, `MEMBER`, `VISITOR`, and active custom Roles.
 - An authorized caller that knows the SUDO UUID reads it through `GET /roles/{roleId}`.
 
 Invalid examples:
@@ -452,7 +472,7 @@ Invalid examples:
 Scenario: Repeatable seeding creates the current RBAC catalog
   Given the current system role and permission registry is configured
   When the repeatable RBAC seed runs
-  Then the four baseline system roles exist as system-managed roles
+  Then the five baseline system roles exist as system-managed roles
   And the current system permission registry exists as system-managed permissions
   And the baseline role-permission bundles are present
 
@@ -479,6 +499,14 @@ Scenario: Baseline Coordinator receives Coordinator-management permission
   When the repeatable RBAC seed synchronizes the baseline bundles
   Then SUDO and COORD receive COORDINATOR_MANAGE
   And MEMBER and VISITOR do not receive it
+
+Scenario: Oratorio bundles are flattened consistently
+  Given the accepted Oratorio source permission groups are configured
+  When the repeatable RBAC seed synchronizes the baseline bundles
+  Then MEMBER receives ORATORIO_GET
+  And ORATORIO_COORD receives every ORATORIO_OPERATIONS permission as direct links
+  And COORD receives every ORATORIO_OPERATIONS permission and ORATORIO_COORD_MANAGE
+  And ORATORIO_COORD does not receive ORATORIO_COORD_MANAGE
 
 Scenario: Stale registry data is fail-closed
   Given a persisted system Permission or system-role bundle link is absent from the accepted registry
@@ -557,11 +585,11 @@ Scenario: Missing, soft-deleted, or stale catalog data is not visible
   Then the system returns 404 Not Found
 
 Scenario: Authorized caller lists the visible Role catalog
-  Given current active COORD, MEMBER, VISITOR, SUDO, and custom Roles exist
+  Given current active COORD, ORATORIO_COORD, MEMBER, VISITOR, SUDO, and custom Roles exist
   And the caller has ROLE_GET
   When the caller requests GET /roles without a name parameter
   Then the system returns 200 OK with a top-level roles list
-  And COORD, MEMBER, VISITOR, and the custom Roles are present
+  And COORD, ORATORIO_COORD, MEMBER, VISITOR, and the custom Roles are present
   And SUDO is absent
   And the result is not paginated
 
@@ -641,10 +669,17 @@ flowchart LR
 
 * [ADR-0003: Keep stale RBAC registry data fail-closed](../../decisions/0003-keep-stale-rbac-registry-data-fail-closed.md)
 * [ADR-0013: Make Member lifecycle own Coordinator designation](../../decisions/0013-make-member-lifecycle-own-coordinator-designation.md)
+* [ADR-0014: Make Member lifecycle own Oratorio Coordinator designation](../../decisions/0014-make-member-lifecycle-own-oratorio-coordinator-designation.md)
+* [ADR-0015: Compose Oratorio permission bundles in code](../../decisions/0015-compose-oratorio-permission-bundles-in-code.md)
 
 ## Related requirements
 
 * [Member Event Presences](../presences/member-event-presences.md)
+* [Oratorio Coordinator Designation](../oratorio/oratorio-coordinator-designation.md)
+* [Oratorio Occurrences and Planning](../oratorio/oratorio-occurrences-and-planning.md)
+* [Oratorio Attendance Tracker](../oratorio/oratorio-attendance-tracker.md)
+* [Oratoriano Records](../oratorianos/oratoriano-records.md)
+* [Oratoriano Additional Forms](../oratorianos/oratoriano-additional-forms.md)
 
 ## Related videos
 
