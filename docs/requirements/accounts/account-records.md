@@ -14,7 +14,6 @@ Account identity rules are governed by the common UUID and authentication requir
 - `account record`: A read-oriented representation of an Account identity and its current active role assignments.
 - `self-view`: The visibility exception that allows an authenticated Account to retrieve its own account record by Account identifier without the account-view permission.
 - `active role assignment`: A non-deleted Account-to-Role assignment whose Account and Role are also visible through normal application reads.
-- `row audit metadata`: Low-level auditing columns such as `createdAt`, `createdBy`, `updatedAt`, `updatedBy`, `deletedAt`, and `deletedBy`.
 
 ## Functional requirements
 
