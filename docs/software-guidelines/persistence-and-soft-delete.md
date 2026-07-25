@@ -42,16 +42,17 @@ mvn spring-boot:run "-Dspring-boot.run.profiles=maintenance" "-Dspring-boot.run.
 
 ---
 
-## 3. User-Facing Actions vs. Technical Soft Delete
+## 3. User-Facing Lifecycle and Removal Actions
 
-The UI and application workflows must avoid soft-delete terminology. Instead of "deleting" records, the system exposes intentional domain actions. The underlying technical implementation may execute a soft delete, but the user intent is distinct.
+The UI and application workflows must use the owning domain action. Deactivation and cancellation are lifecycle transitions and must not be implemented as soft deletion. Soft deletion represents deliberate removal from ordinary identity and visibility only when an Accepted Requirement Specification defines that workflow.
 
-| Technical Action       | Domain Action Exposed to User                                |
-|------------------------|--------------------------------------------------------------|
-| Soft Delete `Member`   | **Deactivate** member                                        |
-| Soft Delete `Event`    | **Cancel** event (or delete if within the correction window) |
-| Soft Delete `Presence` | **Remove** mistaken presence                                 |
-| Soft Delete `Role`     | **Disable / Remove** custom role                             |
+| Persistence or lifecycle mechanism | Domain action exposed to the User |
+|------------------------------------|-----------------------------------|
+| Member lifecycle transition        | **Deactivate** or **reactivate** a Member |
+| Event lifecycle transition         | **Cancel** or **reopen** an Event |
+| Soft-delete an Event               | **Remove** a mistaken Event when its owning requirement permits |
+| Soft-delete a Presence             | **Remove** mistaken attendance |
+| Soft-delete a custom Role          | **Remove** the custom Role when its owning requirement permits |
 
 ---
 
@@ -61,18 +62,21 @@ Different entities follow different lifecycle rules regarding deletion.
 
 ### 4.1. People and Identity (`Account`, `Member`, `Oratoriano`)
 
-**Rule: Deactivate, do not delete.**
+**Rule: Preserve lifetime identity and follow the owning lifecycle.**
 
-* These entities are audit actors and participate in historical facts (e.g., event presences). Deleting them risks rewriting history.
-* Use deactivation/disabling to express their current inactive state.
-* *Exception:* Soft deletion is permitted only for an immediate-correction workflow explicitly defined by the owning Requirement Specification, including its dependency and restoration rules.
+* Accounts and Members use their owning activation or deactivation lifecycle instead of soft deletion to represent current participation.
+* Oratoriano active/inactive status is currently out of scope under [`REQ-ORATORIANO-003`](../requirements/oratorianos/oratoriano-records.md#req-oratoriano-003-ordinary-profile).
+* [`REQ-ORATORIANO-009`](../requirements/oratorianos/oratoriano-records.md#req-oratoriano-009-soft-deletion) explicitly permits correction of an erroneous Oratoriano through protected soft deletion and defines which attendance and form relationships are preserved, removed, or blocking.
+* [`REQ-ORATORIANO-010`](../requirements/oratorianos/oratoriano-records.md#req-oratoriano-010-restoration) owns the corresponding domain restoration workflow.
 
 ### 4.2. Events (`Event`, `Missa`, `Oratorio`)
 
-**Rule: Cancel, do not delete (outside the correction window).**
+**Rule: Cancel real Events; use owning correction rules for mistaken records.**
 
-* If an event is real and part of history, it must be **cancelled**, not deleted.
-* A soft-delete action is only allowed if it falls within a strict, configurable correction window (e.g., 15 minutes after creation), the event has not started, and it has zero presences or operational data attached.
+* Cancellation and soft deletion are distinct: cancellation records that an Event will not proceed, while protected soft deletion corrects an Event record that should not remain in ordinary identity and visibility.
+* Deletion eligibility, lifecycle state, required reason, relationship blockers, and historical projections shall come from the owning Accepted Requirement Specification. This guideline does not impose a generic correction window.
+* [`REQ-EVENT-019`](../requirements/events/event-records-and-generic-lifecycle.md#req-event-019-protected-generic-event-deletion-after-presence-correction) defines protected Generic Event deletion after Presence correction.
+* [`REQ-ORATORIO-010`](../requirements/oratorio/oratorio-occurrences-and-planning.md#req-oratorio-010-protected-deletion) defines protected Oratorio deletion, including its accepted lifecycle states, active-attendance blockers, and preservation of removed attendance history.
 
 ### 4.3. RBAC & Configuration (`Role`, `Permission`, `GamLocation`)
 
