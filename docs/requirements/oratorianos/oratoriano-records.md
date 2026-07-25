@@ -147,6 +147,8 @@ Attendance—active or removed—shall not block deletion and shall not be remov
 
 A deleted Oratoriano shall be excluded from ordinary search and new tracker selection. The reserved human-equivalent name shall remain unavailable for new registration.
 
+Name reservation after deletion is an intentional initial-scope constraint. Releasing the name would allow a new Oratoriano to claim it while the deleted record remains restorable. Restoring the earlier record could then require identity resolution and a restoration merge capable of reconciling UUIDs, profiles, attendance, form, and audit history. Because that workflow is out of scope, ordinary deletion shall not release the reserved name.
+
 Existing attendance shall remain visible in each related occurrence with the Oratoriano marked deleted and may be corrected under the occurrence's normal rules.
 
 ---
@@ -232,6 +234,12 @@ Scenario: Completed form blocks deletion
   When an authorized caller attempts ordinary deletion
   Then deletion is rejected
 
+Scenario: Deleted name remains reserved
+  Given an Oratoriano has been soft-deleted
+  When an authorized caller attempts to register a human-equivalent name
+  Then registration is rejected as a reserved-name conflict
+  And the caller is directed toward restoration of the deleted record
+
 Scenario: Restore a deleted Oratoriano
   Given a soft-deleted Oratoriano's name remains reserved
   When an authorized caller restores the record with a valid reason
@@ -253,10 +261,14 @@ Scenario: Read a requested attendance summary
 
 * Oratoriano active/inactive lifecycle.
 * Homonyms or duplicate human-equivalent names.
-* Automatic merging, record deduplication, or attendance/form history transfer.
+* Restoration merging, record deduplication, or attendance/form history transfer that would permit a deleted name to be released for reuse.
 * Explicit rankings, attendance scores, thresholds, rates, streaks, averages, or absence counts.
 * CPF, RG, address, family, health, or consent fields in the ordinary profile.
 * Hard deletion through ordinary application workflows.
+
+## Future consideration
+
+Releasing an Oratoriano name after deletion may be reconsidered together with a restoration-merge feature. That future feature must define identity confirmation, the canonical surviving record, UUID and relationship handling, attendance and form-history reconciliation, audit history, authorization, and concurrent restoration or registration behavior before name reuse can be safe.
 
 ## Related requirements
 
