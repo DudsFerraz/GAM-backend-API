@@ -1,0 +1,1 @@
+create an "agents-guidelines" directory under and a "skills-guidelines.md" in it. Write the skill guidelines there, stating the rules and goals we agreeded on. I will then read and together we will iteratively improve this new guideline.

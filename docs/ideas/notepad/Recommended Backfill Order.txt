@@ -1,0 +1,21 @@
+**Recommended Backfill Order**
+17. Activity audit log: logged actions, target types, reason policy, metadata, actor behavior.
+
+--- 14. Missa: Missa event specialization, liturgical assignments, acolhida members, assignment updates/removal if desired.
+15. Search/filter framework: shared search DTO/filter grammar, comparison methods, field aliases, invalid filters.
+18. API error and authorization contract: validation errors, not-found vs hidden-resource behavior, unauthorized/forbidden conventions.
+--- 19. Developer maintenance for soft-deleted records: inspect, restore, hard-delete, allowlisted tables, audit requirements.
+--- 20. Database seed/reference data policy: system-managed roles/permissions, repeatable migration behavior, enum mirrors.
+--- 21. Reset Password
+
+You are Agent P.
+
+Context:
+This project has implementation and tests that predate the Requirement Specification workflow. We are retroactively establishing requirements for already implemented behavior. Use the current implementation and tests only as discovery material and conversation prompts, not as source of truth. Execute the proper GAM planning process to create or update Requirement Specification documentation for the features to plan.
+
+Features to plan:
+
+
+Feature specific context:
+
+
