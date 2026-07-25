@@ -8,6 +8,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,7 +22,50 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
 
     private static final Set<String> HTTP_METHODS = Set.of("get", "post", "put", "patch", "delete");
     private static final Set<String> CONSUMER_TAGS = Set.of(
-            "Authentication", "Accounts", "Members", "Membership Solicitations", "Events", "GamLocations", "Presences", "RBAC"
+            "Authentication", "Accounts", "Members", "Membership Solicitations", "Events", "GamLocations",
+            "Presences", "RBAC", "Oratorios", "Oratorianos", "Oratoriano Forms"
+    );
+
+    private static final List<Route> ORATORIO_MODULE_ROUTES = List.of(
+            route("patch", "/members/{memberId}/oratorio-coordinator/grant"),
+            route("patch", "/members/{memberId}/oratorio-coordinator/revoke"),
+            route("post", "/oratorios"),
+            route("get", "/oratorios/{oratorioId}"),
+            route("put", "/oratorios/{oratorioId}/planning"),
+            route("put", "/oratorios/{oratorioId}/teams/{teamType}/members/{memberId}"),
+            route("delete", "/oratorios/{oratorioId}/teams/{teamType}/members/{memberId}"),
+            route("patch", "/oratorios/{oratorioId}/lock"),
+            route("patch", "/oratorios/{oratorioId}/finalize"),
+            route("patch", "/oratorios/{oratorioId}/reopen"),
+            route("patch", "/oratorios/{oratorioId}/cancel"),
+            route("delete", "/oratorios/{oratorioId}"),
+            route("get", "/oratorios/{oratorioId}/attendance/members"),
+            route("get", "/oratorios/{oratorioId}/attendance/oratorianos"),
+            route("get", "/oratorios/{oratorioId}/attendance/present"),
+            route("put", "/oratorios/{oratorioId}/attendance/members/{memberId}"),
+            route("delete", "/oratorios/{oratorioId}/attendance/members/{memberId}"),
+            route("put", "/oratorios/{oratorioId}/attendance/oratorianos/{oratorianoId}"),
+            route("delete", "/oratorios/{oratorioId}/attendance/oratorianos/{oratorianoId}"),
+            route("post", "/oratorios/{oratorioId}/attendance/oratorianos/register-and-mark"),
+            route("post", "/oratorianos"),
+            route("get", "/oratorianos/{oratorianoId}"),
+            route("put", "/oratorianos/{oratorianoId}"),
+            route("delete", "/oratorianos/{oratorianoId}"),
+            route("patch", "/oratorianos/{oratorianoId}/restore"),
+            route("get", "/oratorianos/{oratorianoId}/attendances"),
+            route("get", "/oratorianos/{oratorianoId}/attendance-summary"),
+            route("post", "/oratorianos/search"),
+            route("post", "/oratorianos/{oratorianoId}/forms"),
+            route("get", "/oratorianos/{oratorianoId}/forms"),
+            route("get", "/oratorianos/{oratorianoId}/forms/{formId}"),
+            route("put", "/oratorianos/{oratorianoId}/forms/{formId}"),
+            route("delete", "/oratorianos/{oratorianoId}/forms/{formId}"),
+            route("patch", "/oratorianos/{oratorianoId}/forms/{formId}/complete"),
+            route("patch", "/oratorianos/{oratorianoId}/forms/{formId}/revoke"),
+            route("post", "/oratorianos/{oratorianoId}/forms/{formId}/print-snapshots"),
+            route("get", "/oratorianos/{oratorianoId}/forms/{formId}/print-snapshots/{printSnapshotId}/pdf"),
+            route("put", "/oratorianos/{oratorianoId}/forms/{formId}/signed-attachments"),
+            route("get", "/oratorianos/{oratorianoId}/forms/{formId}/signed-attachments/{attachmentId}")
     );
 
     @Test
@@ -62,6 +107,267 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
                     .anySatisfy(status -> assertions.assertThat(status).startsWith("4"));
             assertExamples(operationId, operation, assertions);
         }
+
+        assertions.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIO-012, REQ-ORATORIO-ATT-011, REQ-ORATORIANO-012 and REQ-ORATORIANO-FORM-019 - accepted route catalog -> generated contract")
+    void acceptedOratorioModuleRouteCatalogShouldBeGeneratedExactly() {
+        Map<String, Object> paths = object(openApiContract().jsonPath().getMap("$"), "paths");
+        SoftAssertions assertions = new SoftAssertions();
+
+        for (Route route : ORATORIO_MODULE_ROUTES) {
+            Object pathItem = paths.get(route.path());
+            assertions.assertThat(pathItem)
+                    .as("%s %s path", route.method().toUpperCase(), route.path())
+                    .isInstanceOf(Map.class);
+            if (pathItem instanceof Map<?, ?> methods) {
+                assertions.assertThat(methods.containsKey(route.method()))
+                        .as("%s %s method", route.method().toUpperCase(), route.path())
+                        .isTrue();
+            }
+        }
+
+        assertions.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-OPENAPI-003 and module route catalogs - Oratorio operations -> exact tags, success statuses, media types, and paging parameters")
+    void acceptedOratorioModuleOperationsShouldExposeExactHttpContracts() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> paths = object(contract, "paths");
+        SoftAssertions assertions = new SoftAssertions();
+        Map<Route, String> expectedSuccess = Map.ofEntries(
+                Map.entry(route("post", "/oratorios"), "201"),
+                Map.entry(route("put", "/oratorios/{oratorioId}/planning"), "200"),
+                Map.entry(route("put", "/oratorios/{oratorioId}/teams/{teamType}/members/{memberId}"), "204"),
+                Map.entry(route("delete", "/oratorios/{oratorioId}/teams/{teamType}/members/{memberId}"), "204"),
+                Map.entry(route("patch", "/oratorios/{oratorioId}/lock"), "204"),
+                Map.entry(route("patch", "/oratorios/{oratorioId}/finalize"), "204"),
+                Map.entry(route("patch", "/oratorios/{oratorioId}/reopen"), "204"),
+                Map.entry(route("patch", "/oratorios/{oratorioId}/cancel"), "204"),
+                Map.entry(route("delete", "/oratorios/{oratorioId}"), "204"),
+                Map.entry(route("post", "/oratorianos"), "201"),
+                Map.entry(route("delete", "/oratorianos/{oratorianoId}"), "204"),
+                Map.entry(route("patch", "/oratorianos/{oratorianoId}/restore"), "204"),
+                Map.entry(route("post", "/oratorianos/{oratorianoId}/forms"), "201"),
+                Map.entry(route("delete", "/oratorianos/{oratorianoId}/forms/{formId}"), "204"),
+                Map.entry(route("patch", "/oratorianos/{oratorianoId}/forms/{formId}/complete"), "204"),
+                Map.entry(route("patch", "/oratorianos/{oratorianoId}/forms/{formId}/revoke"), "204"),
+                Map.entry(route("post", "/oratorianos/{oratorianoId}/forms/{formId}/print-snapshots"), "201")
+        );
+
+        for (Route route : ORATORIO_MODULE_ROUTES) {
+            Map<String, Object> operation = operation(paths, route);
+            assertions.assertThat(strings(operation, "tags"))
+                    .as("%s %s tag", route.method().toUpperCase(), route.path())
+                    .containsExactly(expectedModuleTag(route.path()));
+        }
+        expectedSuccess.forEach((route, expectedStatus) -> {
+            Map<String, Object> responses = object(operation(paths, route), "responses");
+            Set<String> successfulStatuses = responses.keySet().stream()
+                    .filter(status -> status.startsWith("2"))
+                    .collect(Collectors.toSet());
+            assertions.assertThat(successfulStatuses)
+                    .as("%s %s success response", route.method().toUpperCase(), route.path())
+                    .containsOnly(expectedStatus)
+                    .hasSize(1);
+        });
+
+        Route pdfRoute = route(
+                "get",
+                "/oratorianos/{oratorianoId}/forms/{formId}/print-snapshots/{printSnapshotId}/pdf"
+        );
+        Map<String, Object> pdfResponse = object(
+                object(operation(paths, pdfRoute), "responses"),
+                "200"
+        );
+        assertions.assertThat(object(pdfResponse, "content").keySet())
+                .as("rendered PDF response media type")
+                .containsExactly("application/pdf");
+
+        Route attachmentUpload = route(
+                "put",
+                "/oratorianos/{oratorianoId}/forms/{formId}/signed-attachments"
+        );
+        Map<String, Object> requestBody = object(operation(paths, attachmentUpload), "requestBody");
+        assertions.assertThat(object(requestBody, "content").keySet())
+                .as("signed attachment upload media type")
+                .containsExactly("multipart/form-data");
+
+        assertParameterNames(
+                paths,
+                route("get", "/oratorianos/{oratorianoId}/forms"),
+                assertions,
+                "oratorianoId", "page", "size"
+        );
+        assertParameterNames(
+                paths,
+                route("get", "/oratorianos/{oratorianoId}/attendances"),
+                assertions,
+                "oratorianoId", "page", "size"
+        );
+        assertParameterNames(
+                paths,
+                route("post", "/oratorianos/search"),
+                assertions,
+                "sort", "attendanceYear", "page", "size"
+        );
+        Map<String, Object> search = operation(
+                paths,
+                route("post", "/oratorianos/search")
+        );
+        Map<String, Object> searchSort = objects(search, "parameters").stream()
+                .filter(parameter -> "sort".equals(parameter.get("name")))
+                .findFirst()
+                .orElseThrow();
+        Map<String, Object> searchSortSchema = object(searchSort, "schema");
+        assertions.assertThat(searchSortSchema)
+                .as("Oratoriano search repeatable sort schema")
+                .containsEntry("type", "array");
+        assertions.assertThat(searchSortSchema.get("default"))
+                .as("omitting sort selects the deterministic ordinary-profile default")
+                .isNull();
+        assertions.assertThat(String.valueOf(searchSort.get("description")))
+                .as("allowed derived sort plus normalized-name and UUID tie-breakers")
+                .contains("Allowed fields: oratorioYearAttendances.")
+                .contains("oratorioYearAttendances")
+                .containsIgnoringCase("name")
+                .containsIgnoringCase("UUID");
+
+        for (Route creation : List.of(
+                route("post", "/oratorios"),
+                route("post", "/oratorianos"),
+                route("post", "/oratorianos/{oratorianoId}/forms")
+        )) {
+            Map<String, Object> created = object(
+                    object(operation(paths, creation), "responses"),
+                    "201"
+            );
+            Object headersValue = created.get("headers");
+            assertions.assertThat(headersValue)
+                    .as("%s response headers", creation.path())
+                    .isInstanceOf(Map.class);
+            Map<String, Object> headers = mapOrEmpty(headersValue);
+            Object locationHeaderValue = headers.get("Location");
+            assertions.assertThat(locationHeaderValue)
+                    .as("%s Location response header", creation.path())
+                    .isInstanceOf(Map.class);
+            Map<String, Object> locationHeader = mapOrEmpty(locationHeaderValue);
+            assertions.assertThat(mapOrEmpty(locationHeader.get("schema")))
+                    .as("%s Location response schema", creation.path())
+                    .containsEntry("type", "string")
+                    .containsEntry("format", "uri");
+        }
+        assertions.assertAll();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> mapOrEmpty(Object value) {
+        return value instanceof Map<?, ?> ? (Map<String, Object>) value : Map.of();
+    }
+
+    @Test
+    @DisplayName("OpenAPI guideline and module requirements - operation-specific preconditions, idempotency, stable codes, and details")
+    void acceptedOratorioModuleOperationsShouldDocumentTheirDomainSpecificBehavior() {
+        Map<String, Object> paths = object(openApiContract().jsonPath().getMap("$"), "paths");
+        SoftAssertions assertions = new SoftAssertions();
+
+        Map<String, Object> createOccurrence = operation(paths, route("post", "/oratorios"));
+        assertions.assertThat(String.valueOf(createOccurrence.get("description")))
+                .as("Oratorio creation preconditions")
+                .containsIgnoringCase("date")
+                .contains("ORATORIO_DATE_ALREADY_EXISTS");
+        Map<String, Object> duplicateDate = errorExample(createOccurrence, "409");
+        assertions.assertThat(duplicateDate)
+                .containsEntry("status", 409)
+                .containsEntry("code", "ORATORIO_DATE_ALREADY_EXISTS");
+        assertions.assertThat(object(duplicateDate, "details"))
+                .containsEntry("resource", "Oratorio")
+                .containsKey("identifier");
+
+        Map<String, Object> markMemberPresent = operation(
+                paths,
+                route("put", "/oratorios/{oratorioId}/attendance/members/{memberId}")
+        );
+        assertions.assertThat(String.valueOf(markMemberPresent.get("description")))
+                .as("tracker check behavior")
+                .containsIgnoringCase("idempotent");
+
+        Map<String, Object> completeForm = operation(
+                paths,
+                route("patch", "/oratorianos/{oratorianoId}/forms/{formId}/complete")
+        );
+        assertions.assertThat(String.valueOf(completeForm.get("description")))
+                .as("form completion preconditions and overwrite choice")
+                .containsIgnoringCase("signed attachment")
+                .containsIgnoringCase("print snapshot")
+                .containsIgnoringCase("overwrite");
+        Map<String, Object> overwriteChoice = errorExample(completeForm, "409");
+        assertions.assertThat(overwriteChoice)
+                .containsEntry("status", 409)
+                .containsEntry("code", "ORATORIANO_FORM_PROFILE_OVERWRITE_CHOICE_REQUIRED");
+        assertions.assertThat(object(overwriteChoice, "details"))
+                .containsEntry("resource", "OratorianoForm")
+                .containsKey("identifier");
+        assertions.assertThat(String.valueOf(
+                        object(object(completeForm, "responses"), "409").get("description")
+                ))
+                .as("all stable form-completion conflict codes")
+                .contains(
+                        "ORATORIANO_FORM_PROFILE_OVERWRITE_CHOICE_REQUIRED",
+                        "ORATORIANO_FORM_PROFILE_SOURCE_IS_NEWER"
+                );
+        Map<String, Object> completionRequest = object(completeForm, "requestBody");
+        assertions.assertThat(completionRequest)
+                .as("completion overwrite-choice request")
+                .isNotNull();
+        if (completionRequest != null) {
+            Map<String, Object> completionJson = object(
+                    object(completionRequest, "content"),
+                    "application/json"
+            );
+            assertions.assertThat(completionJson)
+                    .as("completion JSON media type")
+                    .isNotNull();
+            if (completionJson != null) {
+                Map<String, Object> example = object(completionJson, "example");
+                assertions.assertThat(example)
+                        .as("selected-snapshot completion example")
+                        .containsEntry("overwriteNewerProfileValues", true)
+                        .containsKey("printSnapshotId");
+                if (example.get("printSnapshotId") != null) {
+                    assertions.assertThatCode(() -> UUID.fromString(
+                                    example.get("printSnapshotId").toString()
+                            ))
+                            .as("completion printSnapshotId example")
+                            .doesNotThrowAnyException();
+                }
+            }
+        }
+
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> completeFormSchema = object(
+                object(object(contract, "components"), "schemas"),
+                "CompleteFormDTO"
+        );
+        Object requiredCompletionFieldsValue = completeFormSchema.get("required");
+        assertions.assertThat(requiredCompletionFieldsValue)
+                .as("completion request required fields")
+                .isInstanceOf(List.class);
+        List<String> requiredCompletionFields = requiredCompletionFieldsValue instanceof List<?> fields
+                ? fields.stream().map(String::valueOf).toList()
+                : List.of();
+        assertions.assertThat(requiredCompletionFields)
+                .as("selected print snapshot is required for completion")
+                .contains("printSnapshotId");
+        assertions.assertThat(object(
+                        object(completeFormSchema, "properties"),
+                        "printSnapshotId"
+                ))
+                .containsEntry("type", "string")
+                .containsEntry("format", "uuid");
 
         assertions.assertAll();
     }
@@ -108,5 +414,49 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
         return mediaTypes.stream()
                 .map(mediaType -> (Map<String, Object>) mediaType)
                 .anyMatch(mediaType -> mediaType.containsKey("example") || mediaType.containsKey("examples"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> operation(Map<String, Object> paths, Route route) {
+        return (Map<String, Object>) ((Map<String, Object>) paths.get(route.path())).get(route.method());
+    }
+
+    private Map<String, Object> errorExample(Map<String, Object> operation, String status) {
+        Map<String, Object> response = object(object(operation, "responses"), status);
+        Map<String, Object> mediaType = object(object(response, "content"), "application/json");
+        return object(mediaType, "example");
+    }
+
+    private String expectedModuleTag(String path) {
+        if (path.contains("/forms")) {
+            return "Oratoriano Forms";
+        }
+        if (path.startsWith("/oratorianos")) {
+            return "Oratorianos";
+        }
+        if (path.startsWith("/oratorios")) {
+            return "Oratorios";
+        }
+        return "Members";
+    }
+
+    private void assertParameterNames(
+            Map<String, Object> paths,
+            Route route,
+            SoftAssertions assertions,
+            String... expectedNames
+    ) {
+        List<Map<String, Object>> parameters = objects(operation(paths, route), "parameters");
+        assertions.assertThat(parameters)
+                .as("%s %s parameters", route.method().toUpperCase(), route.path())
+                .extracting(parameter -> parameter.get("name"))
+                .containsExactlyInAnyOrder((Object[]) expectedNames);
+    }
+
+    private static Route route(String method, String path) {
+        return new Route(method, path);
+    }
+
+    private record Route(String method, String path) {
     }
 }

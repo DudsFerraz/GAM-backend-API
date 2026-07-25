@@ -10,6 +10,8 @@ import br.org.gam.api.event.application.useCases.GetEvent;
 import br.org.gam.api.event.application.useCases.SearchEvents;
 import br.org.gam.api.event.application.useCases.createEvent.CreateEvent;
 import br.org.gam.api.event.application.useCases.manageEvent.ManageGenericEvent;
+import br.org.gam.api.event.oratorio.application.useCases.OratorioOperations;
+import br.org.gam.api.event.oratorio.web.OratorioController;
 import br.org.gam.api.event.web.EventController;
 import br.org.gam.api.gamLocation.application.useCases.CreateGamLocation;
 import br.org.gam.api.gamLocation.application.useCases.GetGamLocations;
@@ -26,6 +28,10 @@ import br.org.gam.api.member.solicitation.application.useCases.SearchMembershipS
 import br.org.gam.api.member.solicitation.application.useCases.SubmitMembershipSolicitation;
 import br.org.gam.api.member.solicitation.web.MembershipSolicitationController;
 import br.org.gam.api.member.web.MemberController;
+import br.org.gam.api.oratoriano.application.useCases.OratorianoForms;
+import br.org.gam.api.oratoriano.application.useCases.OratorianoRecords;
+import br.org.gam.api.oratoriano.web.OratorianoController;
+import br.org.gam.api.oratoriano.web.OratorianoFormController;
 import br.org.gam.api.presence.application.useCases.GetPresence;
 import br.org.gam.api.presence.application.useCases.registerPresence.RegisterPresence;
 import br.org.gam.api.rbac.accountRole.application.useCases.AddAccountRole;
@@ -87,9 +93,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         controllers = {
                 AccountController.class,
                 EventController.class,
+                OratorioController.class,
                 GamLocationController.class,
                 MemberController.class,
                 MembershipSolicitationController.class,
+                OratorianoController.class,
+                OratorianoFormController.class,
                 AccountRoleController.class,
                 PermissionController.class,
                 RoleController.class,
@@ -107,9 +116,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         PaginationWebConfiguration.class,
         AccountController.class,
         EventController.class,
+        OratorioController.class,
         GamLocationController.class,
         MemberController.class,
         MembershipSolicitationController.class,
+        OratorianoController.class,
+        OratorianoFormController.class,
         AccountRoleController.class,
         PermissionController.class,
         RoleController.class,
@@ -136,6 +148,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         GetPresence.class,
         ManageGenericEvent.class,
         RegisterPresence.class,
+        OratorioOperations.class,
         CreateGamLocation.class,
         GetGamLocations.class,
         UpdateGamLocation.class,
@@ -144,6 +157,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         GetMember.class,
         SearchMembers.class,
         Activation.class,
+        OratorianoRecords.class,
+        OratorianoForms.class,
         SubmitMembershipSolicitation.class,
         GetMembershipSolicitation.class,
         SearchMembershipSolicitations.class,

@@ -636,7 +636,7 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
     }
 
     private static Stream<String> lifecycleRoleNames() {
-        return Stream.of("MEMBER", "VISITOR", "COORD");
+        return Stream.of("MEMBER", "VISITOR", "COORD", "ORATORIO_COORD");
     }
 
     private Map<String, Object> addPayload(UUID roleId, String reason) {

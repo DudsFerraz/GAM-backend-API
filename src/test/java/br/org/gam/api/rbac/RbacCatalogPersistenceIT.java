@@ -35,10 +35,11 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
      * These literals intentionally remain independent from PermissionEnum, SystemRole, and the seed's
      * role-permission mappings. This class is the persistence-level oracle for REQ-RBAC-001 through
      * REQ-RBAC-005; deriving the expected values from production registry code would make an incorrect
-     * registry self-validate. When the Draft Requirement Specification changes its accepted baseline,
+     * registry self-validate. When an accepted Requirement Specification changes the baseline,
      * update these sets in the same change so the exact-set assertions expose any registry drift.
      */
-    private static final Set<String> BASELINE_ROLES = Set.of("SUDO", "COORD", "MEMBER", "VISITOR");
+    private static final Set<String> BASELINE_ROLES =
+            Set.of("SUDO", "COORD", "ORATORIO_COORD", "MEMBER", "VISITOR");
 
     private static final Set<String> BASELINE_PERMISSIONS = Set.of(
             "MEMBER_GET",
@@ -64,7 +65,20 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
             "PRESENCE_EDIT",
             "PRESENCE_REMOVE",
             "ROLE_GET",
-            "PERMISSION_GET"
+            "PERMISSION_GET",
+            "ORATORIO_GET",
+            "ORATORIO_CREATE",
+            "ORATORIO_MANAGE",
+            "ORATORIO_ATTENDANCE_GET",
+            "ORATORIO_ATTENDANCE_MANAGE",
+            "ORATORIO_COORD_MANAGE",
+            "ORATORIANO_GET",
+            "ORATORIANO_REGISTER",
+            "ORATORIANO_MANAGE",
+            "ORATORIANO_FORM_GET",
+            "ORATORIANO_FORM_MANAGE",
+            "ORATORIANO_FORM_PDF_GENERATE",
+            "ORATORIANO_FORM_ATTACHMENT_GET"
     );
 
     private static final Set<String> MEMBER_PERMISSIONS = Set.of(
@@ -73,7 +87,23 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
             "EVENT_SEARCH",
             "EVENT_GET_PRESENCES",
             "EVENT_GET_MEMBER",
-            "GAM_LOCATION_GET"
+            "GAM_LOCATION_GET",
+            "ORATORIO_GET"
+    );
+
+    private static final Set<String> ORATORIO_OPERATIONS = Set.of(
+            "ORATORIO_GET",
+            "ORATORIO_CREATE",
+            "ORATORIO_MANAGE",
+            "ORATORIO_ATTENDANCE_GET",
+            "ORATORIO_ATTENDANCE_MANAGE",
+            "ORATORIANO_GET",
+            "ORATORIANO_REGISTER",
+            "ORATORIANO_MANAGE",
+            "ORATORIANO_FORM_GET",
+            "ORATORIANO_FORM_MANAGE",
+            "ORATORIANO_FORM_PDF_GENERATE",
+            "ORATORIANO_FORM_ATTACHMENT_GET"
     );
 
     @Autowired
@@ -102,12 +132,15 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
     void baselineRolesShouldContainDocumentedPermissionBundles() {
         assertThat(activePermissionCodesForRole("SUDO")).containsExactlyInAnyOrderElementsOf(BASELINE_PERMISSIONS);
         assertThat(activePermissionCodesForRole("COORD")).containsExactlyInAnyOrderElementsOf(BASELINE_PERMISSIONS);
+        assertThat(activePermissionCodesForRole("ORATORIO_COORD"))
+                .containsExactlyInAnyOrderElementsOf(ORATORIO_OPERATIONS);
         assertThat(activePermissionCodesForRole("MEMBER")).containsExactlyInAnyOrderElementsOf(MEMBER_PERMISSIONS);
         assertThat(activePermissionCodesForRole("VISITOR")).isEmpty();
         assertThat(activePermissionCodesForRole("MEMBER")).doesNotContain("ACCOUNT_ROLE_MANAGE");
         assertThat(activePermissionCodesForRole("VISITOR")).doesNotContain("ACCOUNT_ROLE_MANAGE");
         assertThat(activePermissionCodesForRole("MEMBER")).doesNotContain("COORDINATOR_MANAGE");
         assertThat(activePermissionCodesForRole("VISITOR")).doesNotContain("COORDINATOR_MANAGE");
+        assertThat(activePermissionCodesForRole("ORATORIO_COORD")).doesNotContain("ORATORIO_COORD_MANAGE");
     }
 
     @Test
