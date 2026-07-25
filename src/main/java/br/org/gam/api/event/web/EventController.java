@@ -11,6 +11,8 @@ import br.org.gam.api.event.application.useCases.manageEvent.ManageGenericEvent;
 import br.org.gam.api.event.application.useCases.manageEvent.ReopenEventDTO;
 import br.org.gam.api.presence.application.PresenceRDTO;
 import br.org.gam.api.presence.application.useCases.GetPresence;
+import br.org.gam.api.presence.application.useCases.managePresence.RemovePresenceDTO;
+import br.org.gam.api.presence.application.useCases.managePresence.UpdatePresenceObservationsDTO;
 import br.org.gam.api.presence.application.useCases.registerPresence.RegisterPresence;
 import br.org.gam.api.presence.application.useCases.registerPresence.RegisterPresenceDTO;
 import br.org.gam.api.presence.application.useCases.registerPresence.RegisterPresenceRDTO;
@@ -20,6 +22,7 @@ import br.org.gam.api.shared.specification.SearchDTO;
 import br.org.gam.api.shared.web.PagedResponse;
 import br.org.gam.api.shared.web.PublicApiUri;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.headers.Header;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -168,9 +171,50 @@ public class EventController {
     @PreAuthorize("hasAuthority('" + PermissionEnum.Code.EVENT_GET_PRESENCES + "')")
     @Operation(operationId = "getEventPresences")
     @GetMapping("/{eventId}/presences")
-    public ResponseEntity<PagedResponse<PresenceRDTO>> getEventPresences(@PathVariable UUID eventId,
-                                                                           Pageable pageable){
+    public ResponseEntity<PagedResponse<PresenceRDTO>> getEventPresences(
+            @PathVariable UUID eventId,
+            @Parameter(
+                    description = "Trimmed, case-insensitive, accent-sensitive literal substring matched "
+                            + "separately against Member firstName and surname. Blank values return 400."
+            )
+            @RequestParam(required = false) String name,
+            Pageable pageable
+    ){
 
-        return ResponseEntity.ok(PagedResponse.from(getPresence.allByEvent(eventId, pageable)));
+        return ResponseEntity.ok(PagedResponse.from(getPresence.allByEvent(eventId, name, pageable)));
+    }
+
+    @PreAuthorize("hasAuthority('" + PermissionEnum.Code.EVENT_GET_PRESENCES + "')")
+    @Operation(operationId = "getEventPresence")
+    @GetMapping("/{eventId}/presences/{memberId}")
+    public ResponseEntity<PresenceRDTO> getEventPresence(
+            @PathVariable UUID eventId,
+            @PathVariable UUID memberId
+    ) {
+        return ResponseEntity.ok(getPresence.byEventAndMember(eventId, memberId));
+    }
+
+    @PreAuthorize("hasAuthority('" + PermissionEnum.Code.PRESENCE_EDIT + "')")
+    @Operation(operationId = "updateEventPresenceObservations")
+    @PatchMapping("/{eventId}/presences/{memberId}")
+    public ResponseEntity<PresenceRDTO> updateEventPresenceObservations(
+            @PathVariable UUID eventId,
+            @PathVariable UUID memberId,
+            @RequestBody @Valid UpdatePresenceObservationsDTO dto
+    ) {
+        return ResponseEntity.ok(getPresence.updateObservations(eventId, memberId, dto));
+    }
+
+    @PreAuthorize("hasAuthority('" + PermissionEnum.Code.PRESENCE_REMOVE + "')")
+    @Operation(operationId = "removeEventPresence")
+    @ApiResponse(responseCode = "204", description = "Presence removed", content = @Content)
+    @DeleteMapping("/{eventId}/presences/{memberId}")
+    public ResponseEntity<Void> removeEventPresence(
+            @PathVariable UUID eventId,
+            @PathVariable UUID memberId,
+            @RequestBody @Valid RemovePresenceDTO dto
+    ) {
+        getPresence.remove(eventId, memberId, dto);
+        return ResponseEntity.noContent().build();
     }
 }

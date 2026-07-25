@@ -34,4 +34,24 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().code()).isEqualTo("RESOURCE_CONFLICT");
     }
+
+    @Test
+    @DisplayName("REQ-PRESENCE-005 - active Presence uniqueness safeguard -> Presence duplicate conflict")
+    void activePresenceUniquenessViolationShouldReturnPresenceConflict() {
+        ConstraintViolationException constraintViolation = new ConstraintViolationException(
+                "duplicate active Event-Member Presence",
+                null,
+                "idx_presence_not_deleted"
+        );
+        DataIntegrityViolationException exception = new DataIntegrityViolationException(
+                "active Presence uniqueness violation",
+                constraintViolation
+        );
+
+        var response = new GlobalExceptionHandler().dataIntegrityViolationHandler(exception);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().code()).isEqualTo("PRESENCE_ALREADY_REGISTERED");
+    }
 }

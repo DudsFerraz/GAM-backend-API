@@ -13,6 +13,8 @@ import java.util.HashMap;
 import br.org.gam.api.shared.activitylog.events.MissaCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.OratorioCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.PresenceRegisteredActivity;
+import br.org.gam.api.shared.activitylog.events.PresenceRemovedActivity;
+import br.org.gam.api.shared.activitylog.events.PresenceUpdatedActivity;
 import br.org.gam.api.shared.activitylog.events.GamLocationCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.GamLocationRemovedActivity;
 import br.org.gam.api.shared.activitylog.events.GamLocationUpdatedActivity;
@@ -220,6 +222,39 @@ public class ActivityLogEventListener {
                 activity.presenceId(),
                 null,
                 "Presence registered for member " + activity.memberId() + " and event " + activity.eventId(),
+                metadata
+        );
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    public void handle(PresenceUpdatedActivity activity) {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("memberId", activity.memberId());
+        metadata.put("eventId", activity.eventId());
+        metadata.put("previousObservations", activity.previousObservations());
+        metadata.put("newObservations", activity.newObservations());
+        activityLogger.log(
+                ActivityAction.PRESENCE_UPDATED,
+                ActivityTargetType.PRESENCE,
+                activity.presenceId(),
+                null,
+                "Presence observations updated",
+                metadata
+        );
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    public void handle(PresenceRemovedActivity activity) {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("memberId", activity.memberId());
+        metadata.put("eventId", activity.eventId());
+        metadata.put("observations", activity.observations());
+        activityLogger.log(
+                ActivityAction.PRESENCE_REMOVED,
+                ActivityTargetType.PRESENCE,
+                activity.presenceId(),
+                activity.reason(),
+                "Presence removed",
                 metadata
         );
     }

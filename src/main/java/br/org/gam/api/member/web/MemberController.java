@@ -116,6 +116,6 @@ public class MemberController {
     public ResponseEntity<PagedResponse<PresenceRDTO>> getMemberPresences(@PathVariable UUID memberId,
                                                                             Pageable pageable) {
 
-        return ResponseEntity.ok(PagedResponse.from(getPresence.allByMember(memberId, pageable)));
+        return ResponseEntity.ok(PagedResponse.from(getPresence.allByMemberOrdered(memberId, pageable)));
     }
 }

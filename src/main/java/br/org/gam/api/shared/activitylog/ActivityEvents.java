@@ -15,6 +15,8 @@ import br.org.gam.api.rbac.role.application.RoleEntityLoader;
 import br.org.gam.api.shared.activitylog.events.MissaCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.OratorioCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.PresenceRegisteredActivity;
+import br.org.gam.api.shared.activitylog.events.PresenceRemovedActivity;
+import br.org.gam.api.shared.activitylog.events.PresenceUpdatedActivity;
 import br.org.gam.api.shared.activitylog.events.GamLocationCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.GamLocationRemovedActivity;
 import br.org.gam.api.shared.activitylog.events.GamLocationUpdatedActivity;
@@ -148,6 +150,30 @@ public class ActivityEvents {
         applicationEventPublisher.publishEvent(
                 new PresenceRegisteredActivity(presenceId, memberId, eventId, observations)
         );
+    }
+
+    public void presenceUpdated(
+            UUID presenceId,
+            UUID memberId,
+            UUID eventId,
+            String previousObservations,
+            String newObservations
+    ) {
+        applicationEventPublisher.publishEvent(new PresenceUpdatedActivity(
+                presenceId, memberId, eventId, previousObservations, newObservations
+        ));
+    }
+
+    public void presenceRemoved(
+            UUID presenceId,
+            UUID memberId,
+            UUID eventId,
+            String observations,
+            String reason
+    ) {
+        applicationEventPublisher.publishEvent(new PresenceRemovedActivity(
+                presenceId, memberId, eventId, observations, reason
+        ));
     }
 
     public void gamLocationCreated(UUID locationId) {

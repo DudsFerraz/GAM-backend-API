@@ -20,6 +20,9 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,16 +34,34 @@ public class RegisterPresence {
     private final EventEntityLoader getEventInstance;
     private final ActivityEvents activityEvents;
     private final EventSecurity eventSecurity;
+    private final PresenceConflictResolver conflictResolver;
 
+    @Autowired
     public RegisterPresence(PresenceRepository presenceRepo, PresenceMapper presenceMapper,
                             MemberEntityLoader getMemberInstance, EventEntityLoader getEventInstance,
-                            ActivityEvents activityEvents, EventSecurity eventSecurity) {
+                            ActivityEvents activityEvents, EventSecurity eventSecurity,
+                            PresenceConflictResolver conflictResolver) {
         this.presenceRepo = presenceRepo;
         this.presenceMapper = presenceMapper;
         this.getMemberInstance = getMemberInstance;
         this.getEventInstance = getEventInstance;
         this.activityEvents = activityEvents;
         this.eventSecurity = eventSecurity;
+        this.conflictResolver = conflictResolver;
+    }
+
+    RegisterPresence(PresenceRepository presenceRepo, PresenceMapper presenceMapper,
+                     MemberEntityLoader getMemberInstance, EventEntityLoader getEventInstance,
+                     ActivityEvents activityEvents, EventSecurity eventSecurity) {
+        this(
+                presenceRepo,
+                presenceMapper,
+                getMemberInstance,
+                getEventInstance,
+                activityEvents,
+                eventSecurity,
+                null
+        );
     }
 
     @Transactional
@@ -67,18 +88,8 @@ public class RegisterPresence {
             );
         }
 
-        if(presenceRepo.existsByMember_IdAndEvent_Id(dto.memberId(), dto.eventId())){
-            var existingPresence = presenceRepo.findByMember_IdAndEvent_Id(dto.memberId(), dto.eventId());
-            Map<String, Object> details = new LinkedHashMap<>();
-            details.put("eventId", dto.eventId());
-            details.put("memberId", dto.memberId());
-            existingPresence.map(PresenceEntity::getId).ifPresent(id -> details.put("presenceId", id));
-            throw ConflictException.resource(
-                    "PRESENCE_ALREADY_REGISTERED", "Presence",
-                    "%s:%s".formatted(dto.memberId(), dto.eventId()),
-                    "Presence already registered",
-                    details
-            );
+        if (presenceRepo.existsByMember_IdAndEvent_Id(dto.memberId(), dto.eventId())) {
+            throw alreadyRegistered(dto, false);
         }
 
         MemberEntity presentMember = getMemberInstance.requiredById(dto.memberId());
@@ -93,7 +104,16 @@ public class RegisterPresence {
         String observations = normalizeObservations(dto.observations());
         newPresenceEntity.setObservations(observations);
 
-        PresenceEntity savedPresenceEntity = presenceRepo.save(newPresenceEntity);
+        PresenceEntity savedPresenceEntity;
+        try {
+            savedPresenceEntity = presenceRepo.save(newPresenceEntity);
+            presenceRepo.flush();
+        } catch (DataIntegrityViolationException exception) {
+            if (!isPresenceUniquenessViolation(exception)) {
+                throw exception;
+            }
+            throw alreadyRegistered(dto, true);
+        }
 
         activityEvents.presenceRegistered(
                 newPresenceEntity.getId(),
@@ -106,6 +126,37 @@ public class RegisterPresence {
                 presenceMapper.entityToRegisterPresenceRDTO(savedPresenceEntity),
                 status
         );
+    }
+
+    private ConflictException alreadyRegistered(RegisterPresenceDTO dto, boolean afterConstraintViolation) {
+        var existingPresenceId = afterConstraintViolation && conflictResolver != null
+                ? conflictResolver.findWinningPresenceId(dto.memberId(), dto.eventId())
+                : presenceRepo.findByMember_IdAndEvent_Id(dto.memberId(), dto.eventId())
+                        .map(PresenceEntity::getId);
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("eventId", dto.eventId());
+        details.put("memberId", dto.memberId());
+        existingPresenceId.ifPresent(id -> details.put("presenceId", id));
+        return ConflictException.resource(
+                "PRESENCE_ALREADY_REGISTERED",
+                "Presence",
+                "%s:%s".formatted(dto.eventId(), dto.memberId()),
+                "Presence already registered",
+                details
+        );
+    }
+
+    private boolean isPresenceUniquenessViolation(DataIntegrityViolationException exception) {
+        Throwable current = exception;
+        while (current != null) {
+            if (current instanceof ConstraintViolationException constraintViolation
+                    && "idx_presence_not_deleted".equals(constraintViolation.getConstraintName())) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return exception.getMessage() != null
+                && exception.getMessage().contains("idx_presence_not_deleted");
     }
 
     private RegisterPresenceRDTO withEffectiveStatus(RegisterPresenceRDTO response, EventStatus status) {

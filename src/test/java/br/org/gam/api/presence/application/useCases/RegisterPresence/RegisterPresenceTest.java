@@ -18,8 +18,10 @@ import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.Nested;
@@ -31,6 +33,7 @@ import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.Mock;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -64,6 +67,9 @@ class RegisterPresenceTest {
 
     @Mock
     private EventSecurity eventSecurity;
+
+    @Mock
+    private PresenceConflictResolver conflictResolver;
 
     @InjectMocks
     private RegisterPresence registerPresence;
@@ -182,6 +188,46 @@ class RegisterPresenceTest {
 
             verifyNoInteractions(getMemberInstance, presenceMapper);
             verify(presenceRepo, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("REQ-PRESENCE-005 - uniqueness safeguard wins registration race -> duplicate conflict identifies winning Presence")
+        void uniquenessSafeguardLossShouldReturnDetailedPresenceConflict() {
+            UUID memberId = UUID.randomUUID();
+            UUID eventId = UUID.randomUUID();
+            UUID winningPresenceId = UUID.randomUUID();
+            RegisterPresenceDTO dto = new RegisterPresenceDTO(eventId, memberId, null);
+            EventEntity event = registrationEligibleEvent();
+            MemberEntity member = new MemberEntity();
+            ConstraintViolationException constraintViolation = new ConstraintViolationException(
+                    "duplicate active Event-Member Presence",
+                    null,
+                    "idx_presence_not_deleted"
+            );
+            DataIntegrityViolationException uniquenessLoss = new DataIntegrityViolationException(
+                    "active Presence uniqueness violation",
+                    constraintViolation
+            );
+
+            when(getEventInstance.requiredByIdForUpdate(eventId)).thenReturn(event);
+            when(eventSecurity.canGetEvent(event)).thenReturn(true);
+            when(presenceRepo.existsByMember_IdAndEvent_Id(memberId, eventId)).thenReturn(false);
+            when(getMemberInstance.requiredById(memberId)).thenReturn(member);
+            when(presenceRepo.save(anyPresenceEntity())).thenThrow(uniquenessLoss);
+            when(conflictResolver.findWinningPresenceId(memberId, eventId))
+                    .thenReturn(Optional.of(winningPresenceId));
+
+            assertThatThrownBy(() -> registerPresence.register(dto))
+                    .isInstanceOfSatisfying(ConflictException.class, conflict -> {
+                        assertThat(conflict.getCode()).isEqualTo("PRESENCE_ALREADY_REGISTERED");
+                        assertThat(conflict.getDetails())
+                                .containsEntry("eventId", eventId)
+                                .containsEntry("memberId", memberId)
+                                .containsEntry("presenceId", winningPresenceId);
+                    });
+
+            verifyNoInteractions(presenceMapper, activityEvents);
+            verify(conflictResolver).findWinningPresenceId(memberId, eventId);
         }
 
         @Test

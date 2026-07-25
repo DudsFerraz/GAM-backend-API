@@ -79,6 +79,17 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiErrorDTO> dataIntegrityViolationHandler(DataIntegrityViolationException e) {
         log.warn("Data integrity violation detected.", e);
+        if (isPresenceUniquenessConflict(e)) {
+            return buildApplicationErrorResponse(
+                    HttpStatus.CONFLICT,
+                    ConflictException.resource(
+                            "PRESENCE_ALREADY_REGISTERED",
+                            "Presence",
+                            null,
+                            "Presence already registered for the Event and Member."
+                    )
+            );
+        }
         if (isConcurrentUniquenessConflict(e)) {
             return buildApplicationErrorResponse(
                     HttpStatus.CONFLICT,
@@ -268,6 +279,19 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 && (exception.getMessage().contains("idx_account_role_not_deleted")
                 || exception.getMessage().contains("idx_members_account_id")
                 || exception.getMessage().contains("idx_membership_solicitations_one_pending"));
+    }
+
+    private boolean isPresenceUniquenessConflict(DataIntegrityViolationException exception) {
+        Throwable current = exception;
+        while (current != null) {
+            if (current instanceof org.hibernate.exception.ConstraintViolationException constraintViolation
+                    && "idx_presence_not_deleted".equals(constraintViolation.getConstraintName())) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return exception.getMessage() != null
+                && exception.getMessage().contains("idx_presence_not_deleted");
     }
 
     private boolean isConcurrentUniquenessConstraint(String constraintName) {

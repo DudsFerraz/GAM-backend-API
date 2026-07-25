@@ -73,6 +73,12 @@ public class PaginationWebConfiguration implements WebMvcConfigurer {
         }
 
         private Set<String> allowedSortFields(String requestUri) {
+            if (requestUri.matches("/events/[^/]+/presences")) {
+                return Set.of("memberFirstName", "memberSurname", "registeredAt");
+            }
+            if (requestUri.matches("/members/[^/]+/presences")) {
+                return Set.of("eventBeginDate", "eventTitle", "registeredAt");
+            }
             return SORT_FIELDS.entrySet().stream()
                     .filter(entry -> requestUri.startsWith(entry.getKey()))
                     .map(Map.Entry::getValue)
