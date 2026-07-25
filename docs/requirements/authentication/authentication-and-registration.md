@@ -343,10 +343,17 @@ Invalid examples:
 ### REQ-AUTH-020: Authentication flow auditing boundary
 The system shall not emit custom activity-log events for login success, login failure, refresh-token rotation, or logout.
 
-Account creation auditing is governed by the activity-audit-log policy for Account workflows and is not expanded by this authentication-session requirement.
+Successful public Account registration shall emit exactly one `ACCOUNT_REGISTERED` activity in the same transaction as Account creation. The activity shall:
+
+- target the new `ACCOUNT` resource and its real UUID;
+- use the `ANONYMOUS` actor kind;
+- use reason mode `NONE`; and
+- use an empty metadata object.
+
+The activity shall not contain the Account's email, `displayName`, password, password hash, tokens, cookies, or other personal or authentication data. Account creation shall roll back when activity validation or persistence fails. Failed registration shall emit no activity.
 
 Rationale:
-Project audit-log guidelines exclude authentication and session flows from custom activity logging to avoid log bloat and sensitive metadata risks.
+Public registration is a meaningful identity-creation outcome even though no Account actor exists before it commits. Authentication-session activity would duplicate dedicated security logging and create high-volume noise without improving the business activity history.
 
 Valid examples:
 - Login failure is handled as an authentication failure without a custom activity-log event.
@@ -365,6 +372,8 @@ Scenario: Register an unprivileged Account
   And the response status is 201 Created
   And the response contains the Account identifier
   And the HTTP Location header points to /api/accounts/{accountId}
+  And one ACCOUNT_REGISTERED activity targets the new Account
+  And the activity actor is ANONYMOUS with no reason or personal metadata
 
 Scenario: Reject duplicate registration
   Given an active Account exists with email "user@example.com"
@@ -439,7 +448,6 @@ sequenceDiagram
 
 * Should stored refresh-token secrets be hashed at rest instead of stored as raw UUID v4 values?
 * What exact generic HTTP status and error code should refresh-token failures use?
-* Should successful public Account registration emit a custom Account-created activity event, or is low-level row auditing enough for self-service registration?
 
 ## Out of scope
 
@@ -462,6 +470,7 @@ sequenceDiagram
 
 * [Browser Session and Frontend Integration](browser-session-and-frontend-integration.md)
 * [Cross-Site Refresh Cookie Compatibility](cross-site-refresh-cookie-compatibility.md) — superseded historical requirements.
+* [Activity Audit Log](../platform/activity-audit-log.md)
 
 ## Related videos
 

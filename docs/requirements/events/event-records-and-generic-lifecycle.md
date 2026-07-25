@@ -136,7 +136,7 @@ Creating or editing an otherwise active Event with an ended range shall yield `C
 
 Successful Generic Event creation shall return `201 Created`, the complete Event representation, and `Location: /api/events/{id}`.
 
-Creation shall emit one `EVENT_CREATED` activity in the same transaction. The Event UUID shall be the activity target, the reason shall be `null`, and metadata shall contain `title`, `type`, initial effective `status`, `gamLocationId`, and nullable `requiredPermissionId`.
+Creation shall emit one `EVENT_CREATED` activity in the same transaction. The Event UUID shall be the activity target, the reason shall be `null`, and metadata shall contain `type`, initial effective `status`, `gamLocationId`, and nullable `requiredPermissionId`. It shall not copy the Event title or description.
 
 If activity persistence fails, Event creation shall roll back.
 
@@ -334,7 +334,7 @@ Removed Presences shall not block Event deletion. Their historical records, acti
 
 Deletion shall require `EVENT_MANAGE`, current audience visibility, and a JSON body containing a normalized 1-to-2,000-character `reason`. Missing permission shall return `403`; missing visibility, a missing Event, or an already soft-deleted Event shall return `404 RESOURCE_NOT_FOUND`.
 
-Successful deletion shall return `204 No Content` and emit one `EVENT_DELETED` activity in the same transaction. The activity shall target the Event UUID, store the required reason, and include `title`, `type`, prior effective `status`, and `gamLocationId` metadata. Activity failure shall roll back deletion.
+Successful deletion shall return `204 No Content` and emit one `EVENT_DELETED` activity in the same transaction. The activity shall target the Event UUID, store the required reason, and include `type`, prior effective `status`, and `gamLocationId` metadata. It shall not copy the Event title or description. Activity failure shall roll back deletion.
 
 A soft-deleted Event shall be excluded from common get and search. It shall continue to count as a historical GamLocation reference under `REQ-GAM-LOCATION-010`. Restoration and hard deletion remain developer-maintenance concerns.
 
@@ -538,6 +538,7 @@ The command transitions in this diagram apply to Generic Events. `SCHEDULED -> C
 * [Member Event Presences](../presences/member-event-presences.md)
 * [Oratorio Occurrences and Planning](../oratorio/oratorio-occurrences-and-planning.md)
 * [Oratorio Attendance Tracker](../oratorio/oratorio-attendance-tracker.md)
+* [Activity Audit Log](../platform/activity-audit-log.md)
 
 ## Related videos
 

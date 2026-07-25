@@ -247,7 +247,9 @@ Clients need stable distinctions between authentication, authorization, missing 
 
 A successful direct Account-role add shall emit exactly one `ACCOUNT_ROLE_ADDED` activity event. A successful direct Account-role drop shall emit exactly one `ACCOUNT_ROLE_REMOVED` activity event.
 
-Each event shall capture the actor, Account-role assignment identifier, Account identifier, Role identifier, Role name, trimmed reason, and request metadata according to the activity-audit policy. The business mutation and activity-log row shall commit together.
+Each event shall target the Account-role assignment UUID and shall include exactly `accountId`, `roleId`, and `systemManaged` metadata. It shall not copy the Role name or other user-authored text. Actor, normalized reason, time, and request correlation shall use the top-level activity fields rather than metadata.
+
+Direct HTTP Account-role workflows shall use an `ACCOUNT` actor. SUDO maintenance shall use a `DEVELOPER` actor and a trusted actor reference. The business mutation and activity-log row shall commit together.
 
 Failed or forbidden operations shall not emit Account-role activity events. A higher-level workflow such as direct Member registration, membership-solicitation approval, Member reactivation, or Member deactivation shall emit its own high-level activity event and shall not emit unrelated duplicate Account-role events for the same workflow.
 
@@ -290,6 +292,8 @@ The SUDO protection in this Requirement Specification applies to explicit SUDO r
 The system shall make SUDO assignment and removal available only through the dedicated maintenance workflow running with the `maintenance` profile.
 
 The HTTP Account-role API and ordinary application workflows shall reject SUDO assignment and removal with a forbidden-operation outcome. The dedicated maintenance workflow shall support only the `assign-sudo` and `remove-sudo` actions.
+
+The maintenance workflow shall establish a trusted, stable, non-secret Developer actor reference according to `REQ-ACTIVITY-006`. It shall reject the command before mutation when that reference is unavailable. The reference shall not be taken from the Account selector, reason, activity metadata, or another arbitrary command value.
 
 Rationale:
 SUDO grants unrestricted system access and must not be manageable through ordinary authenticated administration or an accidental general-purpose application path.
@@ -645,6 +649,7 @@ Scenario: Successful SUDO maintenance has an observable outcome
   When the mutation and activity event commit
   Then the command prints SUDO_MAINTENANCE_OK with the action and Account UUID
   And the process exits with code 0
+  And the activity actor is DEVELOPER with the trusted Developer actor reference
 
 Scenario: Expected SUDO maintenance failure has a stable error outcome
   Given a valid assign-sudo command targets an Account that already has active SUDO
@@ -773,6 +778,7 @@ flowchart TD
 * [Member Records and Lifecycle](../members/member-records-and-lifecycle.md)
 * [Membership Solicitations](../members/membership-solicitations.md)
 * [Oratorio Coordinator Designation](../oratorio/oratorio-coordinator-designation.md)
+* [Activity Audit Log](../platform/activity-audit-log.md)
 
 ## Related videos
 

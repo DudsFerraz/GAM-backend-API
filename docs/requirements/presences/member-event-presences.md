@@ -124,7 +124,7 @@ When concurrent requests attempt to register the same Event and Member, exactly 
 
 Successful registration shall return `201 Created`, the complete Presence representation from `REQ-PRESENCE-007`, and `Location: /api/events/{eventId}/presences/{memberId}`.
 
-Successful registration shall emit exactly one `PRESENCE_REGISTERED` activity targeting the new Presence UUID. The activity shall use a `null` reason and include `memberId`, `eventId`, and the normalized `observations`, including `null`, as metadata.
+Successful registration shall emit exactly one `PRESENCE_REGISTERED` activity targeting the new Presence UUID. The activity shall use a `null` reason and include `memberId`, `eventId`, and `observationsPresent`, a boolean stating whether normalized observations are present, as metadata. It shall not copy observation text into activity metadata.
 
 Presence persistence and activity persistence shall commit in one transaction. Activity failure shall roll back registration. A failed request shall emit no activity.
 
@@ -230,7 +230,7 @@ A changed edit shall return `200 OK` and the complete updated Presence represent
 
 ### REQ-PRESENCE-012: Observation-edit activity and normalized no-op
 
-A changed observation shall emit exactly one transactional `PRESENCE_UPDATED` activity targeting the Presence UUID. The activity shall use a `null` reason and include `memberId`, `eventId`, `previousObservations`, and `newObservations` metadata.
+A changed observation shall emit exactly one transactional `PRESENCE_UPDATED` activity targeting the Presence UUID. The activity shall use a `null` reason and include `memberId`, `eventId`, `previousObservationsPresent`, and `newObservationsPresent` metadata. The two observation indicators shall be booleans and shall not copy either observation value.
 
 A normalized no-op shall return `200 OK` with the complete current Presence representation but shall perform no persistence update and emit no activity.
 
@@ -258,7 +258,7 @@ Successful removal shall return `204 No Content`. The removed Presence shall dis
 
 ### REQ-PRESENCE-014: Presence-removal activity
 
-Successful removal shall emit exactly one `PRESENCE_REMOVED` activity targeting the removed Presence UUID. The activity shall store the required normalized reason and include `memberId`, `eventId`, and the final normalized `observations` as metadata.
+Successful removal shall emit exactly one `PRESENCE_REMOVED` activity targeting the removed Presence UUID. The activity shall store the required normalized reason and include `memberId`, `eventId`, and `observationsPresent`, a boolean describing the final Presence state, as metadata. It shall not copy the observation value.
 
 Presence removal and activity persistence shall commit in one transaction. Activity failure shall roll back removal. A rejected removal shall not mutate or audit the Presence.
 
@@ -299,7 +299,7 @@ Scenario: Register confirmed attendance during an Event
   When the caller registers the Member with an observation
   Then the response is 201 Created with the complete Presence
   And Location identifies /api/events/{eventId}/presences/{memberId}
-  And one PRESENCE_REGISTERED activity contains the normalized observation
+  And one PRESENCE_REGISTERED activity records that an observation is present without copying its text
 
 Scenario: Reject Generic Event attendance before it begins
   Given a visible SCHEDULED Generic Event has not reached beginDate
@@ -355,7 +355,7 @@ Scenario: Edit an observation
   And the caller has PRESENCE_EDIT
   When the caller changes the observation
   Then the response is 200 OK with the normalized observation
-  And one PRESENCE_UPDATED activity contains the previous and new observations
+  And one PRESENCE_UPDATED activity records only the previous and new observation-presence indicators
 
 Scenario: Normalized observation no-op is not audited
   Given an active Presence has observation "Arrived late"
@@ -370,7 +370,7 @@ Scenario: Remove mistaken attendance
   When the caller removes it with a valid reason
   Then the response is 204 No Content
   And the Presence is hidden from normal retrieval and active duplicate detection
-  And one PRESENCE_REMOVED activity stores the reason and final observation
+  And one PRESENCE_REMOVED activity stores the reason and only the final observation-presence indicator
 
 Scenario: Locked Event rejects attendance correction
   Given an active Presence belongs to a LOCKED Event
@@ -434,6 +434,7 @@ The diagram represents active identity for one Event and Member pair. Re-registr
 * [RBAC Catalog](../rbac/rbac-catalog.md)
 * [OpenAPI and Frontend API Documentation](../platform/openapi-and-frontend-api-documentation.md)
 * [Oratorio Attendance Tracker](../oratorio/oratorio-attendance-tracker.md)
+* [Activity Audit Log](../platform/activity-audit-log.md)
 
 ## Related videos
 

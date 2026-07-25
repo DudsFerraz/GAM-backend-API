@@ -294,6 +294,10 @@ The system shall not create a generic activity entry for every database write. O
 
 Any developer-controlled restoration or physical deletion of a soft-deletable domain record shall require an explicit reason and append an immutable maintenance activity in the same transaction. The maintenance command or interface shape shall remain outside this specification.
 
+Any Developer inspection that deliberately bypasses ordinary deleted-row filtering shall require an explicit reason and a trusted Developer actor reference. Its immutable maintenance activity shall identify the inspected domain resource type through a scope target and shall commit before deleted records are disclosed.
+
+Restoration and physical-deletion maintenance activities shall target the actual domain resource type and real UUID rather than a database table or generic maintenance record. Actor, target, reason, metadata, and append-only behavior shall follow the Activity Audit Log Requirement Specification.
+
 Rationale:
 
 Separating row state from business intent keeps each audit mechanism meaningful and prevents noisy or incomplete activity history.
@@ -383,8 +387,13 @@ Scenario: Restore while preserving lifecycle history
 Scenario: Exceptional maintenance requires accountability
   Given a Developer is authorized to physically delete a soft-deletable domain record
   When the Developer supplies a valid reason and the operation commits
-  Then one immutable maintenance activity records the target, actor when available, time, and reason
+  Then one immutable maintenance activity records the actual resource target, required Developer actor reference, time, and reason
   And the physical deletion and activity commit atomically
+
+Scenario: Inspect soft-deleted records with a reason
+  Given a Developer is authorized to inspect one domain resource type outside ordinary deleted-row filtering
+  When the Developer supplies a valid reason and trusted actor reference
+  Then a scope-targeted maintenance activity commits before any deleted record is disclosed
 ```
 
 ## Diagrams
@@ -420,6 +429,7 @@ The diagram distinguishes application-level soft-delete policy from database phy
 ## Related ADRs
 
 * [ADR-0018: Standardize persistence auditing, soft deletion, and relationship enforcement](../../decisions/0018-standardize-persistence-auditing-soft-deletion-and-relationship-enforcement.md)
+* [ADR-0019: Model activity history as typed append-only entries](../../decisions/0019-model-activity-history-as-typed-append-only-entries.md)
 
 ## Related requirements
 
@@ -427,6 +437,7 @@ The diagram distinguishes application-level soft-delete policy from database phy
 * [`REQ-ORATORIANO-002`: Unique human-equivalent names](../oratorianos/oratoriano-records.md#req-oratoriano-002-unique-human-equivalent-names)
 * [`REQ-ORATORIANO-010`: Restoration](../oratorianos/oratoriano-records.md#req-oratoriano-010-restoration)
 * [`REQ-PRESENCE-001`: Presence identity, relationships, and active uniqueness](../presences/member-event-presences.md#req-presence-001-presence-identity-relationships-and-active-uniqueness)
+* [Activity Audit Log](activity-audit-log.md)
 * [`REQ-GAM-LOCATION-007`: Active duplicate prevention](../gam-locations/gam-location-records.md#req-gam-location-007-active-duplicate-prevention)
 * [`REQ-GAM-LOCATION-010`: Protected removal](../gam-locations/gam-location-records.md#req-gam-location-010-protected-removal)
 

@@ -255,6 +255,32 @@ Invalid examples:
 - Production consumes mutable `latest` artifacts.
 - Deployment configuration exists only as manually edited files on the VPS.
 
+---
+
+### REQ-WEB-012: Trusted request-correlation boundary
+
+Deployment shall explicitly configure the backend request-correlation mode defined by `REQ-ACTIVITY-007`.
+
+A local development or test environment without a trusted proxy shall use `APPLICATION_GENERATED`. The backend shall ignore inbound `X-Request-Id` values, generate a UUID version 7, expose it in the response, and make it available to activity logging.
+
+A production environment, or an explicit development environment that reproduces the documented proxy boundary, shall use `TRUSTED_PROXY`. Its Proxy shall strip or overwrite any client-supplied `X-Request-Id` before forwarding the request. The backend shall accept a forwarded value only from that configured boundary and only when it is a syntactically valid UUID; it shall generate a UUID version 7 when the trusted value is absent or invalid.
+
+The backend shall not infer trusted-proxy mode or proxy identity from client-controlled forwarding headers. Deployment configuration and tests shall demonstrate that an untrusted client cannot choose the request identifier stored in activity history.
+
+Rationale:
+
+Direct local development must work safely without a proxy, while proxied environments need one correlation identifier that cannot be spoofed across the public boundary.
+
+Valid examples:
+
+- A locally hosted backend ignores a caller's `X-Request-Id` and returns its own UUID version 7.
+- Caddy removes an Internet client's request id and forwards a proxy-controlled UUID to a backend configured for `TRUSTED_PROXY`.
+
+Invalid examples:
+
+- The backend trusts `X-Request-Id` merely because a client also sends `X-Forwarded-For`.
+- Local development requires a proxy solely to create activity request identifiers.
+
 ## Acceptance scenarios
 
 ```gherkin
@@ -282,6 +308,18 @@ Scenario: Publish independently and deploy deliberately
   When production deployment is approved
   Then the deployment records the selected compatible versions
   And artifact publication alone has not changed production
+
+Scenario: Develop locally without a trusted proxy
+  Given the backend is locally hosted in APPLICATION_GENERATED mode
+  When a client supplies an X-Request-Id
+  Then the backend ignores the supplied value
+  And returns and records one backend-generated UUID version 7
+
+Scenario: Prevent correlation spoofing at the production boundary
+  Given the Proxy fronts a backend in TRUSTED_PROXY mode
+  When an Internet client supplies its own X-Request-Id
+  Then the Proxy strips or overwrites the client value
+  And the backend accepts only a syntactically valid value from the configured Proxy boundary
 ```
 
 ## Diagrams
@@ -315,6 +353,7 @@ Scenario: Publish independently and deploy deliberately
 * [Browser Session and Frontend Integration](../authentication/browser-session-and-frontend-integration.md)
 * [Production Operations](production-operations.md)
 * [OpenAPI and Frontend API Documentation](openapi-and-frontend-api-documentation.md)
+* [Activity Audit Log](activity-audit-log.md)
 
 ## Related documentation
 

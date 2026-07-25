@@ -39,6 +39,7 @@ This document is not a Requirement Specification. It defines canonical terms, di
 | **Proxy** | GAM's public HTTP entry point that terminates TLS, serves the static frontend, routes `/api` requests to the private backend, and preserves trustworthy public request information. | None | Caddy or Nginx when no product has been selected |
 | **Canonical Public Origin** | The one configured scheme, host, and effective port from which the GAM browser frontend and public API are served. | public origin | domain when scheme or port also matters |
 | **row audit metadata** | Low-level persisted creation, latest non-deletion update, and deletion timestamps and actor identifiers. It describes row state and does not replace an activity entry that records business or security intent. | None | activity log, action history |
+| **activity entry** | An immutable append-only record of one meaningful business or security outcome, designated sensitive read, or exceptional Developer-maintenance operation. | activity | row audit, database-write log |
 
 ## Relationships
 
@@ -65,7 +66,7 @@ This document is not a Requirement Specification. It defines canonical terms, di
 - A **Generic Event** is an **Event** whose type is `GENERIC`.
 - **UUID** is used to identify persisted resources such as Accounts, Members, Oratorianos, Events, Presences, GamLocations, Roles, and Permissions.
 - The **Proxy** serves the frontend and API from the **Canonical Public Origin** while keeping backend and database application ports private.
-- **row audit metadata** records low-level persisted state, while activity entries record meaningful business and security actions, reasons, and non-sensitive context.
+- **row audit metadata** records low-level persisted state, while an **activity entry** records meaningful business and security intent, reason, and minimized non-sensitive context.
 
 ## Usage rules
 

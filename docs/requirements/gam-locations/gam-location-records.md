@@ -263,11 +263,13 @@ Successful state-changing workflows shall emit one high-level activity event in 
 | --- | --- | --- | --- |
 | Create | `GAM_LOCATION_CREATED` | `null` | Empty |
 | Changed update | `GAM_LOCATION_UPDATED` | `null` | Names of normalized fields that changed |
-| Remove | `GAM_LOCATION_REMOVED` | Required normalized removal reason | Display `name` only |
+| Remove | `GAM_LOCATION_REMOVED` | Required normalized removal reason | Empty |
 
 Each activity shall use the GamLocation UUID as its target. If activity persistence fails, the business mutation shall roll back.
 
 Get, list, no-op update, validation failure, duplicate conflict, in-use conflict, and not-found behavior shall not emit GamLocation activity events.
+
+Activity metadata shall not copy the GamLocation name, address values, or other user-authored text.
 
 Rationale:
 The activity log records meaningful user intent without duplicating full address data or producing noise for reads and failed commands.
@@ -409,6 +411,7 @@ flowchart TD
 * [UUID Identity](../common/uuid.md)
 * [RBAC Catalog](../rbac/rbac-catalog.md)
 * [OpenAPI and Frontend API Documentation](../platform/openapi-and-frontend-api-documentation.md)
+* [Activity Audit Log](../platform/activity-audit-log.md)
 
 ## Related ADRs
 
