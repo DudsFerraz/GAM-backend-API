@@ -2,6 +2,8 @@
 
 GAM will deploy the backend to production as an **OCI container image**.
 
+This file is a non-normative deployment idea for later deployment requirements and runbooks. Accepted Requirement Specifications remain the source of truth.
+
 The Java JAR remains part of the backend build process, but it is not the canonical production deployment artifact. The production deployment procedure will select and run an immutable OCI image containing the compiled backend JAR and its required Java runtime.
 
 Direct deployment of a JAR to the production host is not part of the initial production procedure.
@@ -257,6 +259,7 @@ Environment-specific configuration must be provided when the container starts.
 This includes:
 
 - `GAM_PUBLIC_ORIGIN`
+- Explicit request-correlation mode: `APPLICATION_GENERATED` for direct local/test hosting or `TRUSTED_PROXY` for the documented Proxy boundary
 - Database connection information
 - Authentication and signing secrets
 - Backup or external-service configuration, where relevant
@@ -271,6 +274,8 @@ Production secrets must not be:
 - Written into image labels
 - Printed in build logs
 - Printed in deployment logs
+
+The runtime configuration and Proxy template should implement [`REQ-WEB-012`](../../requirements/platform/web-delivery-and-frontend-contract.md#req-web-012-trusted-request-correlation-boundary) and [`REQ-ACTIVITY-007`](../../requirements/platform/activity-audit-log.md#req-activity-007-http-request-correlation-modes). These deployment ideas do not define a second request-id policy.
 
 Secrets should be mounted or injected through the approved production secret-management procedure.
 

@@ -6,6 +6,8 @@
 
 GAM will use **Caddy** as the initial production reverse proxy.
 
+This file is a non-normative deployment idea for later deployment requirements and runbooks. The accepted Requirement Specifications remain the source of truth.
+
 ## Rationale
 
 For GAM, the decision is not based on raw performance. Caddy, Nginx, and Traefik can all handle the expected traffic. The deciding factor is **operational simplicity and the probability of configuration mistakes**.
@@ -83,9 +85,12 @@ The production configuration must ensure that:
 - Only ports 80 and 443 are publicly exposed for application traffic.
 - Backend and PostgreSQL ports are not published.
 - Sensitive headers and cookies are not logged.
+- Public client `X-Request-Id` values are stripped or overwritten before proxying to a backend configured in `TRUSTED_PROXY` mode.
 - HSTS is enabled only after the official domain and HTTPS operation are verified.
 - Certificate expiry is monitored externally.
 - The backend continues enforcing authentication, authorization, CSRF protection, and input validation.
+
+The future Caddy configuration and deployment tests should demonstrate the request-correlation boundary in [`REQ-WEB-012`](../../requirements/platform/web-delivery-and-frontend-contract.md#req-web-012-trusted-request-correlation-boundary) and [`REQ-ACTIVITY-007`](../../requirements/platform/activity-audit-log.md#req-activity-007-http-request-correlation-modes). This reminder does not define a competing header contract.
 
 ## Recommendation: run Caddy in a container
 

@@ -1,3 +1,7 @@
+# Initial Deployment Ideas
+
+This file is a non-normative collection of ideas for later deployment requirements and runbooks. Accepted Requirement Specifications remain the source of truth.
+
 The priority should be **reproducibility, recovery and security**, not high availability.
 
 ---
@@ -427,6 +431,7 @@ Do not declare GAM production-ready until all of the following are demonstrated:
 * Public scans confirm that only intended ports are exposed.
 * Backend and PostgreSQL are unreachable publicly.
 * Origin, CSRF, refresh-cookie and proxy-forwarding tests pass.
+* Request-correlation tests prove that direct local development uses application-generated UUID version 7 values and that the production Proxy prevents public clients from selecting persisted request identifiers, as required by `REQ-WEB-012` and `REQ-ACTIVITY-007`.
 * Load test meets the agreed service thresholds.
 * A fresh backup has been restored successfully.
 * Deployment and rollback have been rehearsed.
