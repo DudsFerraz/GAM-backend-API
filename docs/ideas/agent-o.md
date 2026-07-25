@@ -387,17 +387,16 @@ Do not require role agents to persist runtime state in repository files.
 * expanded coverage exposes a production issue;
 * T/D loop complete;
 * requirement ambiguity;
-* test conflicts with an accepted source;
-* no valid test boundary;
+* an existing test outside safe Agent T self-correction conflicts with its
+  authoritative artifact;
+* no valid existing test seam;
 * verification or environment blocker.
 
 ### Agent D outcomes must cover at least
 
 * initial implementation satisfies the functional tests;
 * production issue fixed;
-* more Agent T work is expected;
-* T/D loop complete;
-* test conflicts with accepted requirements;
+* a supplied test conflicts with its authoritative artifact;
 * architecture or durable design decision required;
 * verification or environment blocker.
 
@@ -410,7 +409,7 @@ Do not require role agents to persist runtime state in repository files.
 * unambiguous production or documentation implementation issue;
 * requirement, domain-model, scope, or architecture gap;
 * verification concern;
-* mixed findings.
+* deterministic aggregation of mixed findings.
 
 Agent R reports findings and classifications. Agent R does not route them.
 
@@ -493,7 +492,8 @@ After expanded testing:
 
 * return a structured production-gap result when valid tests expose a production issue;
 * return a loop-complete result when test-design work and required verification are complete;
-* return an escalation result for requirement ambiguity, invalid seams, conflicting sources, or blockers;
+* return an escalation result for requirement ambiguity, invalid seams,
+  conflicting authoritative artifacts, or blockers;
 * stop after returning the result.
 
 Agent T must not name or activate Agent D or Agent R except where a target-role label is unavoidable in a standardized outcome name. Prefer outcome semantics over routing commands.
@@ -507,15 +507,16 @@ Update Agent D’s workflow so it no longer invokes a handoff skill.
 After the initial implementation:
 
 * return a structured result containing changed production files and observed verification;
-* state whether more Agent T work is expected;
 * stop.
 
 After fixing production issues exposed by expanded tests:
 
 * return a structured fixed result;
-* return a loop-complete result only when the documented completion conditions are satisfied;
 * return escalation results for test/requirement conflict, missing architecture decisions, or blockers;
 * stop after returning the result.
+
+Every successful Agent D result resumes Agent T. Only Agent T may declare the
+T/D loop complete after evaluating coverage and the latest correction.
 
 Agent D must not activate Agent T or Agent R.
 
@@ -540,7 +541,8 @@ Preserve these routing semantics in `$gam-agent-workflow`:
 
 * missing coverage, misleading test seams, or unprotected defects → Agent T;
 * production defects already exposed by adequate coverage → Agent D;
-* unambiguous implementation issues supported by accepted sources and evidence → Agent D;
+* unambiguous implementation issues supported by authoritative artifacts and
+  evidence → Agent D;
 * requirement, domain, scope, or architecture gaps → developer escalation;
 * no actionable findings → orchestration completion;
 * mixed findings involving an unprotected defect → Agent T first.
@@ -647,8 +649,8 @@ Agent O must stop and return control to the developer when:
 * expected behavior lacks an authoritative source;
 * a durable architecture or design decision is required;
 * Agent T cannot establish a meaningful red signal;
-* Agent T identifies no correct test boundary;
-* Agent D reports a valid test/requirement conflict;
+* Agent T identifies no valid existing test seam;
+* Agent D reports a valid test/authority conflict;
 * verification fails for unexpected or unrelated reasons that prevent safe continuation;
 * required permissions are unavailable;
 * work expands beyond the approved scope;

@@ -1,0 +1,6 @@
+interface:
+  display_name: "GAM Human Handoff"
+  short_description: "Render manual GAM chat handoffs"
+  default_prompt: "Use $gam-human-handoff to render a concise Markdown handoff that I can copy to another GAM role chat."
+policy:
+  allow_implicit_invocation: false

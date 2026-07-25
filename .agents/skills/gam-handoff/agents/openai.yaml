@@ -1,4 +1,0 @@
-interface:
-  display_name: "GAM Handoff"
-  short_description: "Write concise GAM agent handoffs"
-  default_prompt: "Use $gam-handoff to produce a concise chat-ready handoff for the next GAM agent chat."

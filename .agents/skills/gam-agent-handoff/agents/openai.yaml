@@ -1,0 +1,6 @@
+interface:
+  display_name: "GAM Agent Handoff"
+  short_description: "Build structured GAM agent assignments"
+  default_prompt: "Use $gam-agent-handoff to construct a validated assignment envelope for the next GAM role agent."
+policy:
+  allow_implicit_invocation: false

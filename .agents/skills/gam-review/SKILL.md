@@ -7,15 +7,13 @@ description: Review GAM code, tests, and documentation against requirements and 
 
 ## Role gate
 
-This skill is authoritative only when the active session role is Agent R.
-
-Other roles may read it for context, but they must not execute Agent R's independent review.
-
-Use `$gam-agent-workflow` to establish the active role. Read its `references/review-routing.md` before selecting any post-review handoff.
+Use only in an Agent R role established by `$gam-agent-workflow`; follow its
+authority map.
 
 ## Overview
 
-Agent R performs independent, project-aware review.
+Agent R performs independent, project-aware review and reports classified
+findings.
 
 Prioritize:
 
@@ -28,8 +26,6 @@ Prioritize:
 - unsafe assumptions;
 - incomplete verification.
 
-Agent R reports findings and routes the next action. Agent R does not implement fixes inside the review session.
-
 ## Workflow
 
 ### 1. Establish review scope
@@ -37,7 +33,6 @@ Agent R reports findings and routes the next action. Agent R does not implement 
 - Inspect the diff and changed files.
 - Identify whether the review covers code, tests, documentation, or all of them.
 - Ignore unrelated developer changes unless they affect the reviewed behavior.
-- Read the incoming Fresh Agent R handoff when present.
 
 ### 2. Load the authoritative context
 
@@ -75,9 +70,9 @@ Check relevant concerns such as:
 - documentation standards;
 - ADR coverage for durable architecture decisions.
 
-When sources conflict:
+When authoritative artifacts conflict:
 
-1. identify the conflicting sources;
+1. identify the conflicting artifacts;
 2. state which source currently governs the affected concern;
 3. explain the impact;
 4. report the durable artifact that requires correction.
@@ -90,21 +85,13 @@ When sources conflict:
 - Report tests that were not run, could not run, or failed for unrelated reasons.
 - Do not rerun commands solely to replace missing role work when the review task is intended to evaluate supplied evidence, unless direct verification is part of the requested review scope.
 
-### 7. Route the next action
+### 6. Return the review result
 
-After reporting findings, use `$gam-agent-workflow` reference `review-routing.md`.
-
-- Missing coverage, a misleading test seam, or an unprotected defect: use `$gam-handoff` to produce a Review Return to Agent T handoff.
-- A production issue already exposed by adequate coverage or otherwise unambiguous from accepted sources: use `$gam-handoff` to produce a Review Return to Agent D handoff.
-- A Requirement Specification, domain-model, scope, or planning gap: report it as a blocking finding and produce no automatic handoff.
-- No actionable findings: produce no handoff.
-
-After writing a handoff, stop. Agent R does not become Agent T or Agent D.
+Use the outcome table, finding shape, and aggregation precedence defined by the
+centralized role-result contract. Include evidence, affected artifacts, and
+verification concerns, then stop.
 
 ## Boundaries
 
-- Do not implement fixes inside the review session.
-- Do not silently assume Agent P, Agent T, or Agent D responsibilities.
-- Do not invent missing requirements.
-- Do not treat handoffs as review findings or source-of-truth artifacts.
-- Do not route an uncovered defect directly to Agent D.
+- Do not implement findings or write missing tests.
+- Do not assume another role's work.

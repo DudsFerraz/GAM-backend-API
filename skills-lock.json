@@ -19,9 +19,9 @@
     }
   },
   "externalDerivedLocalSkills": {
-    "gam-handoff": {
+    "gam-human-handoff": {
       "formerExternalSkill": "handoff",
-      "reason": "Rewritten into a GAM-specific chat handoff workflow with Agent P/T/D/R handoff types, chat output, and repository source-of-truth rules."
+      "reason": "Rewritten into an explicit-only GAM manual chat handoff renderer with Agent P/T/D/R handoff types, developer copy-and-paste output, and separation from native Agent O orchestration."
     },
     "gam-grill": {
       "formerExternalSkill": "grill-with-docs",

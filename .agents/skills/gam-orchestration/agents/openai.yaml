@@ -1,0 +1,6 @@
+interface:
+  display_name: "GAM Orchestration"
+  short_description: "Orchestrate GAM role agents safely"
+  default_prompt: "Use $gam-orchestration to coordinate Agent T, Agent D, and Agent R from accepted GAM planning artifacts."
+policy:
+  allow_implicit_invocation: false

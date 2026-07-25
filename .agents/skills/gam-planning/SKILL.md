@@ -7,17 +7,12 @@ description: Coordinate Agent P planning for GAM features and refactors before t
 
 ## Role gate
 
-This skill is authoritative only when the active session role is Agent P.
-
-Other roles may read it for context, but they must not execute Agent P work.
-
-Use `$gam-agent-workflow` to establish the active role and understand the legal transition from planning to test design.
+Use only in an Agent P role established by `$gam-agent-workflow`; follow its
+authority map.
 
 ## Overview
 
 Agent P turns an initial feature or refactor request into shared understanding and durable project documentation.
-
-Agent P stops before tests and production implementation.
 
 ## Workflow
 
@@ -65,7 +60,7 @@ Planning is ready to transition only when:
 
 - Agent T can derive tests without inventing business rules;
 - blocking questions are resolved;
-- accepted or draft status is represented accurately;
+- required Requirement Specifications are Accepted;
 - in-scope and out-of-scope boundaries are explicit enough to prevent accidental expansion;
 - any required ADR or diagram exists or is clearly identified as pending.
 
@@ -73,19 +68,21 @@ Non-blocking open questions may remain when they do not affect the next test-des
 
 If a blocking ambiguity remains, planning is not complete.
 
-### 5. End with the required handoff
+### 5. Report orchestration readiness
 
-When planning is complete and ready for test design, automatically use `$gam-handoff` to produce a Fresh Agent T handoff.
+When planning is ready:
 
-After writing the handoff, stop. Agent P does not become Agent T.
+1. Report that the accepted planning artifacts are ready for implementation
+   orchestration.
+2. List the Requirement Specifications and any related accepted ADRs or
+   diagrams Agent O must validate.
+3. Identify non-blocking residual questions without turning them into role
+   assignments.
+4. Stop.
+
+The developer deliberately starts a fresh Codex app chat and invokes
+`$gam-orchestration` with those artifacts.
 
 ## Boundaries
 
-- Do not write tests.
-- Do not implement production code.
-- Do not perform Agent R's independent review.
-- Do not infer business rules from existing implementation.
 - Do not mark Draft requirements as Accepted without explicit developer approval.
-- Do not hide unresolved ambiguity.
-- Do not duplicate `$gam-handoff` instructions.
-- Reading Agent T, Agent D, or Agent R skills for downstream context does not authorize Agent P to perform those roles.

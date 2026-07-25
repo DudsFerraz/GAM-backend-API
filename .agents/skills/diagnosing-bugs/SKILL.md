@@ -9,25 +9,10 @@ description: Explicit diagnosis-only loop for rare hard bugs, flaky failures, an
 
 This is an exceptional diagnosis-only workflow for difficult defects.
 
-Use it only when the developer explicitly requests diagnosis mode or `$diagnosing-bugs`.
-
 Ordinary bug reports and failing tests remain in the standard GAM workflow governed by `$gam-agent-workflow`.
 
-Diagnosis mode may:
-
-- build a reproduction loop;
-- reproduce and minimize the symptom;
-- generate and test hypotheses;
-- add temporary instrumentation;
-- establish the most strongly supported cause;
-- preserve useful diagnostic artifacts.
-
-Diagnosis mode must not:
-
-- write the durable regression test as Agent T;
-- implement the production fix as Agent D;
-- perform the final independent review as Agent R;
-- treat its diagnosis summary as project source of truth.
+Diagnosis mode grants no Agent P, T, D, or R authority, and its summary is not
+project source of truth.
 
 When exploring the codebase, read `CONTEXT.md` if it exists and inspect relevant Requirement Specifications, ADRs, diagrams, and software guidelines.
 
@@ -204,11 +189,11 @@ Before declaring the diagnosis complete:
 
 The diagnosis output is an ephemeral evidence packet, not a Requirement Specification, ADR, regression test, implementation, or review result.
 
-Return to the regular GAM workflow:
+Return control to the developer without activating a role or presenting the
+diagnosis packet as a structured T/D/R result.
 
-- When accepted requirements already define the expected behavior, Agent T designs the durable regression coverage from the documented defect and diagnostic evidence.
-- Agent D implements the production fix only after Agent T establishes the correct failing signal.
-- Agent R reviews the final requirements, tests, implementation, and verification.
-- When diagnosis reveals missing or contradictory business behavior, report the planning gap so the developer can start a separate Agent P session.
+The developer decides whether to start or resume `$gam-orchestration`, whose
+workflow determines the next legal role. Report a planning gap when the
+expected behavior lacks an authoritative artifact.
 
 Do not invoke or reference a nonexistent architecture-improvement skill.

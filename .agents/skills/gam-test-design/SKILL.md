@@ -7,19 +7,14 @@ description: Derive GAM test suites from requirements and testing guidelines. Us
 
 ## Role gate
 
-This skill is authoritative only when the active session role is Agent T.
-
-Other roles may read it for context, but they must not execute Agent T work.
-
-Use `$gam-agent-workflow` to establish the active role. Read its `references/agent-t-agent-d-loop.md` before participating in the Agent T / Agent D alternation.
+Use only in an Agent T role established by `$gam-agent-workflow`; follow its
+authority map.
 
 ## Overview
 
 Agent T designs and implements tests from documented behavior.
 
 Tests protect the intended domain contract. They must not merely preserve accidental current implementation behavior.
-
-Agent T does not implement production code.
 
 ## Workflow
 
@@ -29,8 +24,6 @@ Agent T does not implement production code.
 - Read `docs/software-guidelines/testing.md`.
 - Read the related Requirement Specification under `docs/requirements/`.
 - Read related ADRs or diagrams when they affect behavior, architecture, or flow.
-- Read the incoming handoff and referenced test or verification artifacts.
-- Read other role skills only when their constraints are relevant; doing so does not change the active role.
 
 Stop when a requirement is incomplete, contradictory, or missing a constraint necessary for correct test design. Report the gap instead of inventing behavior.
 
@@ -42,7 +35,8 @@ Stop when a requirement is incomplete, contradictory, or missing a constraint ne
 - Cover valid behavior, invalid behavior, and error outputs.
 - Avoid duplicate cases that produce the same behavioral signal.
 - Trace every test to requirement behavior or an explicitly documented defect.
-- Derive expected values from requirements, worked examples, known literals, or another independent source of truth.
+- Derive expected values from accepted requirements, their worked examples, or
+  independently established known literals.
 
 ### 3. Confirm the initial red signal
 
@@ -52,16 +46,19 @@ For the first pass:
 2. Run the focused test command.
 3. Confirm that failures represent the expected missing production behavior.
 4. Separate unrelated environment, infrastructure, compilation, or existing-suite failures.
-5. Automatically use `$gam-handoff` to produce a Fresh Agent D handoff.
-6. Stop. Agent T does not become Agent D.
+5. Return `expected_red_confirmed` using the centralized structured result
+   contract, including test paths and the meaningful observed red signal.
+6. Stop the role turn.
 
-Do not hand off a test suite whose failure is caused only by a broken test, incorrect fixture, or unrelated blocker.
+Correct a broken new test or fixture within Agent T. When safe test design
+cannot continue, return the matching escalation outcome from the result
+contract.
 
-### 4. Resume for expanded coverage
+### 4. Expanded coverage
 
-After Agent D returns the implementation, resume in the same Agent T context.
+In `t_expanded`, evaluate whether feature risk calls for additional coverage.
 
-Derive additional coverage when the feature risk calls for it:
+Consider:
 
 - Structural tests:
    - map decisions and individual boolean conditions;
@@ -78,10 +75,14 @@ Derive additional coverage when the feature risk calls for it:
 If expanded tests expose a production issue:
 
 1. Confirm the meaningful failure signal.
-2. Use `$gam-handoff` to produce a Return to Agent D handoff.
+2. Return `production_issue_exposed` with test paths and observed evidence.
 3. Stop.
 
-If the agreed test-design work and verification are complete, use `$gam-handoff` to produce a Fresh Agent R handoff and stop.
+If the agreed test-design work and verification are complete, return
+`td_loop_complete` with the completion evidence and stop.
+
+For an escalation condition, return the matching result-contract outcome and
+stop.
 
 ### 5. Choose the correct execution level
 
@@ -108,15 +109,9 @@ If the agreed test-design work and verification are complete, use `$gam-handoff`
 - Tests survive internal refactoring when behavior remains unchanged.
 - Expected values do not repeat the production calculation tautologically.
 - Regression tests fail for the original symptom before Agent D fixes it and pass afterward.
-- When no correct regression-test boundary exists, report the gap instead of writing a misleading test.
 - A production defect revealed by a valid test must be fixed in production rather than hidden by weakening the test.
 
 ## Boundaries
 
 - Do not implement production code.
-- Do not invent missing business rules.
 - Do not rewrite accepted requirements inside a test-design session.
-- Do not weaken, delete, skip, or distort tests to accommodate current implementation.
-- Do not perform Agent R's independent review.
-- Do not invoke `$diagnosing-bugs` for ordinary failures. It is used only when the developer explicitly requests diagnosis mode.
-- Handoffs reference requirements, test files, and observed verification; they do not replace those artifacts.

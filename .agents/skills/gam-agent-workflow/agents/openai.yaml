@@ -1,4 +1,4 @@
 interface:
   display_name: "GAM Agent Workflow"
   short_description: "Coordinate GAM roles and transitions"
-  default_prompt: "Use $gam-agent-workflow to establish the active GAM role, enforce role boundaries, and select the legal next transition."
+  default_prompt: "Use $gam-agent-workflow to establish the active GAM role, validate a structured role result, and map it to the only legal transition."
