@@ -80,6 +80,109 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
     }
 
     @Test
+    @DisplayName("REQ-PRESENCE-002/004/011/013 and REQ-OPENAPI-003/004 - Presence request schemas -> exact normalized text contracts")
+    void presenceRequestsShouldDocumentExactNormalizedTextContracts() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> paths = object(contract, "paths");
+        Map<String, Object> registrationSchema = requestSchema(
+                contract,
+                object(object(paths, "/events/{eventId}/presences"), "post")
+        );
+        Map<String, Object> editSchema = requestSchema(
+                contract,
+                object(object(paths, "/events/{eventId}/presences/{memberId}"), "patch")
+        );
+        Map<String, Object> removalSchema = requestSchema(
+                contract,
+                object(object(paths, "/events/{eventId}/presences/{memberId}"), "delete")
+        );
+
+        assertThat(strings(registrationSchema, "required")).containsExactly("memberId");
+        assertThat(object(registrationSchema, "properties"))
+                .containsOnlyKeys("memberId", "observations");
+        assertNormalizedObservationsSchema(
+                object(object(registrationSchema, "properties"), "observations")
+        );
+
+        assertThat(strings(editSchema, "required")).containsExactly("observations");
+        assertThat(object(editSchema, "properties")).containsOnlyKeys("observations");
+        assertNormalizedObservationsSchema(
+                object(object(editSchema, "properties"), "observations")
+        );
+
+        assertThat(strings(removalSchema, "required")).containsExactly("reason");
+        assertThat(object(removalSchema, "properties")).containsOnlyKeys("reason");
+        Map<String, Object> reason = object(object(removalSchema, "properties"), "reason");
+        assertThat(reason)
+                .containsEntry("type", "string")
+                .containsEntry("minLength", 1)
+                .doesNotContainKey("maxLength");
+        assertThat(reason.get("description")).asString()
+                .containsIgnoringCase("trim")
+                .containsIgnoringCase("1")
+                .containsIgnoringCase("2,000")
+                .containsIgnoringCase("code point")
+                .containsIgnoringCase("blank");
+    }
+
+    @Test
+    @DisplayName("REQ-PRESENCE-009/010 and REQ-OPENAPI-003 - Presence collection inputs -> exact filter and deterministic ordering semantics")
+    void presenceCollectionsShouldDocumentFilteringAndDeterministicOrdering() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> paths = object(contract, "paths");
+        Map<String, Object> eventRoster = object(
+                object(paths, "/events/{eventId}/presences"), "get"
+        );
+        Map<String, Object> memberHistory = object(
+                object(paths, "/members/{memberId}/presences"), "get"
+        );
+        Map<String, Object> name = objects(eventRoster, "parameters").stream()
+                .filter(parameter -> "name".equals(parameter.get("name")))
+                .findFirst()
+                .orElseThrow();
+        Map<String, Object> eventSort = objects(eventRoster, "parameters").stream()
+                .filter(parameter -> "sort".equals(parameter.get("name")))
+                .findFirst()
+                .orElseThrow();
+        Map<String, Object> memberSort = objects(memberHistory, "parameters").stream()
+                .filter(parameter -> "sort".equals(parameter.get("name")))
+                .findFirst()
+                .orElseThrow();
+        SoftAssertions softly = new SoftAssertions();
+
+        softly.assertThat(String.valueOf(name.get("description"))).as("Event roster name filter")
+                .containsIgnoringCase("trim")
+                .containsIgnoringCase("blank")
+                .containsIgnoringCase("case-insensitive")
+                .containsIgnoringCase("accent-sensitive")
+                .contains("firstName", "surname")
+                .containsIgnoringCase("separately");
+        softly.assertThat(object(eventSort, "schema").get("default"))
+                .as("Event roster default sort")
+                .isEqualTo(List.of(
+                        "memberFirstName,asc",
+                        "memberSurname,asc"
+                ));
+        softly.assertThat(eventSort.get("description")).as("Event roster sort semantics")
+                .asString()
+                .contains("memberFirstName", "memberSurname", "registeredAt")
+                .containsIgnoringCase("default")
+                .containsIgnoringCase("Presence UUID ascending")
+                .containsIgnoringCase("requested sort");
+        softly.assertThat(object(memberSort, "schema").get("default"))
+                .as("Member history default sort")
+                .isEqualTo(List.of("eventBeginDate,desc"));
+        softly.assertThat(memberSort.get("description")).as("Member history sort semantics")
+                .asString()
+                .contains("eventBeginDate", "eventTitle", "registeredAt")
+                .containsIgnoringCase("default")
+                .containsIgnoringCase("Event UUID descending")
+                .containsIgnoringCase("Presence UUID ascending")
+                .containsIgnoringCase("requested sort");
+        softly.assertAll();
+    }
+
+    @Test
     @DisplayName("REQ-EVENT-010 - Event search OpenAPI contract -> effective-status sort and beginDate/id default")
     void eventSearchShouldDocumentExactSortingContract() {
         Map<String, Object> contract = openApiContract().body();
@@ -484,5 +587,26 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
         if (headers != null) {
             softly.assertThat(headers).as("%s %s response headers", operation, status).containsKey("Location");
         }
+    }
+
+    private Map<String, Object> requestSchema(
+            Map<String, Object> contract,
+            Map<String, Object> operation
+    ) {
+        Map<String, Object> requestBody = object(operation, "requestBody");
+        assertThat(requestBody).containsEntry("required", true);
+        Map<String, Object> json = object(object(requestBody, "content"), "application/json");
+        return resolveSchema(contract, object(json, "schema"));
+    }
+
+    private void assertNormalizedObservationsSchema(Map<String, Object> observations) {
+        assertThat(observations.get("type")).isEqualTo(List.of("string", "null"));
+        assertThat(observations).doesNotContainKey("maxLength");
+        assertThat(observations.get("description")).asString()
+                .containsIgnoringCase("trim")
+                .containsIgnoringCase("2,000")
+                .containsIgnoringCase("code point")
+                .containsIgnoringCase("blank")
+                .containsIgnoringCase("null");
     }
 }

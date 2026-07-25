@@ -85,6 +85,7 @@ public class OpenApiConfig {
                     new Tag().name("Membership Solicitations"),
                     new Tag().name("Members"),
                     new Tag().name("Events"),
+                    new Tag().name("Presences"),
                     new Tag().name("GamLocations"),
                     new Tag().name("RBAC"),
                     new Tag().name("Accounts")
@@ -153,6 +154,9 @@ public class OpenApiConfig {
     }
 
     private String consumerTag(String path) {
+        if (path.contains("/presences")) {
+            return "Presences";
+        }
         if (path.startsWith("/auth")) {
             return "Authentication";
         }
@@ -320,14 +324,25 @@ public class OpenApiConfig {
     private Parameter sortParameter(String operationId) {
         ArraySchema schema = new ArraySchema();
         schema.setItems(new StringSchema());
-        schema.setDefault("searchEvents".equals(operationId)
-                ? List.of("beginDate,asc", "id,asc")
-                : List.of("name,asc"));
+        schema.setDefault(switch (operationId) {
+            case "searchEvents" -> List.of("beginDate,asc", "id,asc");
+            case "getEventPresences" ->
+                    List.of("memberFirstName,asc", "memberSurname,asc");
+            case "getMemberPresences" ->
+                    List.of("eventBeginDate,desc");
+            default -> List.of("name,asc");
+        });
         String description = "Repeat this parameter as field,direction. Allowed fields: "
                 + String.join(", ", allowedSortFields(operationId)) + ". Directions: asc, desc.";
         if ("searchEvents".equals(operationId)) {
             description += " Status ordering uses effective status at the request evaluation instant. "
                     + "The default is beginDate ascending, then id ascending.";
+        } else if ("getEventPresences".equals(operationId)) {
+            description += " The default is memberFirstName ascending, memberSurname ascending, "
+                    + "then Presence UUID ascending. Presence UUID ascending is appended to every requested sort.";
+        } else if ("getMemberPresences".equals(operationId)) {
+            description += " The default is eventBeginDate descending, Event UUID descending, "
+                    + "then Presence UUID ascending. Presence UUID ascending is appended to every requested sort.";
         }
         return new Parameter()
                 .in("query")
@@ -342,7 +357,10 @@ public class OpenApiConfig {
         return switch (operationId) {
             case "searchAccounts" -> List.of("email", "displayName", "createdAt");
             case "searchEvents" -> List.of("title", "beginDate", "endDate", "type", "status");
-            case "getEventPresences", "getMemberPresences" -> List.of("createdAt", "updatedAt");
+            case "getEventPresences" ->
+                    List.of("memberFirstName", "memberSurname", "registeredAt");
+            case "getMemberPresences" ->
+                    List.of("eventBeginDate", "eventTitle", "registeredAt");
             case "listGamLocations" -> List.of("name", "city", "state", "countryCode");
             case "searchMembers" -> List.of("firstName", "surname", "birthDate", "status");
             case "searchMembershipSolicitations" -> List.of("status", "createdAt", "updatedAt");
@@ -412,6 +430,30 @@ public class OpenApiConfig {
                             "eventId", "019f6343-321a-7c90-a096-a551e8f88eb4",
                             "memberId", "019f6343-321a-7c90-a096-a551e8f88eb5",
                             "presenceId", "019f6343-321a-7c90-a096-a551e8f88eb6"
+                    )
+            );
+        }
+        if ("updateEventPresenceObservations".equals(operationId)) {
+            return new ConflictDocumentation(
+                    "PRESENCE_EDIT_NOT_ALLOWED",
+                    "Editing is not allowed while the Event is LOCKED or FINALIZED. "
+                            + "Details include eventId, presenceId, and effective status.",
+                    Map.of(
+                            "eventId", "019f6343-321a-7c90-a096-a551e8f88eb4",
+                            "presenceId", "019f6343-321a-7c90-a096-a551e8f88eb6",
+                            "status", "LOCKED"
+                    )
+            );
+        }
+        if ("removeEventPresence".equals(operationId)) {
+            return new ConflictDocumentation(
+                    "PRESENCE_REMOVAL_NOT_ALLOWED",
+                    "Removal is not allowed while the Event is LOCKED or FINALIZED. "
+                            + "Details include eventId, presenceId, and effective status.",
+                    Map.of(
+                            "eventId", "019f6343-321a-7c90-a096-a551e8f88eb4",
+                            "presenceId", "019f6343-321a-7c90-a096-a551e8f88eb6",
+                            "status", "LOCKED"
                     )
             );
         }
