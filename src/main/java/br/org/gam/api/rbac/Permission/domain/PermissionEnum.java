@@ -33,6 +33,53 @@ public enum PermissionEnum {
     PRESENCE_EDIT(Code.PRESENCE_EDIT, "Edit presences", "Allows editing observations on Member attendance records"),
     PRESENCE_REMOVE(Code.PRESENCE_REMOVE, "Remove presences", "Allows removing mistaken Member attendance records"),
 
+    ORATORIO_GET(Code.ORATORIO_GET, "View Oratorios", "Allows viewing specialized Oratorio details"),
+    ORATORIO_CREATE(Code.ORATORIO_CREATE, "Create Oratorios", "Allows creating Oratorio occurrences"),
+    ORATORIO_MANAGE(Code.ORATORIO_MANAGE, "Manage Oratorios", "Allows managing Oratorio planning and lifecycle"),
+    ORATORIO_ATTENDANCE_GET(
+            Code.ORATORIO_ATTENDANCE_GET,
+            "View Oratorio attendance",
+            "Allows viewing combined Member and Oratoriano attendance trackers"
+    ),
+    ORATORIO_ATTENDANCE_MANAGE(
+            Code.ORATORIO_ATTENDANCE_MANAGE,
+            "Manage Oratorio attendance",
+            "Allows recording and correcting Member and Oratoriano attendance"
+    ),
+    ORATORIO_COORD_MANAGE(
+            Code.ORATORIO_COORD_MANAGE,
+            "Manage Oratorio coordinators",
+            "Allows granting and revoking Oratorio Coordinator designation"
+    ),
+
+    ORATORIANO_GET(Code.ORATORIANO_GET, "View Oratorianos", "Allows searching and viewing ordinary Oratoriano profiles"),
+    ORATORIANO_REGISTER(Code.ORATORIANO_REGISTER, "Register Oratorianos", "Allows registering Oratorianos"),
+    ORATORIANO_MANAGE(
+            Code.ORATORIANO_MANAGE,
+            "Manage Oratorianos",
+            "Allows correcting, deleting, and restoring Oratoriano records"
+    ),
+    ORATORIANO_FORM_GET(
+            Code.ORATORIANO_FORM_GET,
+            "View Oratoriano forms",
+            "Allows viewing sensitive Oratoriano form details"
+    ),
+    ORATORIANO_FORM_MANAGE(
+            Code.ORATORIANO_FORM_MANAGE,
+            "Manage Oratoriano forms",
+            "Allows creating and managing Oratoriano form versions"
+    ),
+    ORATORIANO_FORM_PDF_GENERATE(
+            Code.ORATORIANO_FORM_PDF_GENERATE,
+            "Generate Oratoriano form PDFs",
+            "Allows creating and rendering identified Oratoriano print snapshots"
+    ),
+    ORATORIANO_FORM_ATTACHMENT_GET(
+            Code.ORATORIANO_FORM_ATTACHMENT_GET,
+            "Download signed Oratoriano forms",
+            "Allows downloading signed Oratoriano form attachments"
+    ),
+
     ROLE_GET(Code.ROLE_GET, "View roles", "Allows reading role catalog entries"),
     PERMISSION_GET(Code.PERMISSION_GET, "View permissions", "Allows reading permission catalog entries");
 
@@ -79,6 +126,21 @@ public enum PermissionEnum {
         public static final String PRESENCE_REGISTER = "PRESENCE_REGISTER";
         public static final String PRESENCE_EDIT = "PRESENCE_EDIT";
         public static final String PRESENCE_REMOVE = "PRESENCE_REMOVE";
+
+        public static final String ORATORIO_GET = "ORATORIO_GET";
+        public static final String ORATORIO_CREATE = "ORATORIO_CREATE";
+        public static final String ORATORIO_MANAGE = "ORATORIO_MANAGE";
+        public static final String ORATORIO_ATTENDANCE_GET = "ORATORIO_ATTENDANCE_GET";
+        public static final String ORATORIO_ATTENDANCE_MANAGE = "ORATORIO_ATTENDANCE_MANAGE";
+        public static final String ORATORIO_COORD_MANAGE = "ORATORIO_COORD_MANAGE";
+
+        public static final String ORATORIANO_GET = "ORATORIANO_GET";
+        public static final String ORATORIANO_REGISTER = "ORATORIANO_REGISTER";
+        public static final String ORATORIANO_MANAGE = "ORATORIANO_MANAGE";
+        public static final String ORATORIANO_FORM_GET = "ORATORIANO_FORM_GET";
+        public static final String ORATORIANO_FORM_MANAGE = "ORATORIANO_FORM_MANAGE";
+        public static final String ORATORIANO_FORM_PDF_GENERATE = "ORATORIANO_FORM_PDF_GENERATE";
+        public static final String ORATORIANO_FORM_ATTACHMENT_GET = "ORATORIANO_FORM_ATTACHMENT_GET";
 
         public static final String ROLE_GET = "ROLE_GET";
         public static final String PERMISSION_GET = "PERMISSION_GET";

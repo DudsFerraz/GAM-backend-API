@@ -9,9 +9,12 @@ import br.org.gam.api.shared.activitylog.events.EventCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.EventChangedActivity;
 import br.org.gam.api.shared.activitylog.events.MemberStatusChangedActivity;
 import br.org.gam.api.shared.activitylog.events.CoordinatorChangedActivity;
+import br.org.gam.api.shared.activitylog.events.OratorioCoordinatorChangedActivity;
+import br.org.gam.api.shared.activitylog.events.ModuleActivity;
 import br.org.gam.api.shared.activitylog.events.MemberRegisteredActivity;
 import br.org.gam.api.shared.activitylog.events.MembershipSolicitationActivity;
 import br.org.gam.api.rbac.role.application.RoleEntityLoader;
+import br.org.gam.api.rbac.role.domain.SystemRole;
 import br.org.gam.api.shared.activitylog.events.MissaCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.OratorioCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.PresenceRegisteredActivity;
@@ -58,14 +61,32 @@ public class ActivityEvents {
                 additionallyRemovedRoleId, reason);
     }
 
+    public void memberDeactivated(UUID memberId, UUID accountId, String previousStatus, String newStatus,
+                                  String roleAdded, String roleRemoved, UUID additionallyRemovedRoleId,
+                                  UUID secondAdditionallyRemovedRoleId, String reason) {
+        memberStatusChanged(
+                ActivityAction.MEMBER_DEACTIVATED, memberId, accountId, previousStatus, newStatus,
+                roleAdded, roleRemoved, additionallyRemovedRoleId, secondAdditionallyRemovedRoleId, reason);
+    }
+
     private void memberStatusChanged(ActivityAction action, UUID memberId, UUID accountId, String previousStatus,
                                      String newStatus, String roleAdded, String roleRemoved,
                                      UUID additionallyRemovedRoleId, String reason) {
+        memberStatusChanged(
+                action, memberId, accountId, previousStatus, newStatus, roleAdded, roleRemoved,
+                additionallyRemovedRoleId, null, reason
+        );
+    }
+
+    private void memberStatusChanged(ActivityAction action, UUID memberId, UUID accountId, String previousStatus,
+                                     String newStatus, String roleAdded, String roleRemoved,
+                                     UUID additionallyRemovedRoleId, UUID secondAdditionallyRemovedRoleId,
+                                     String reason) {
         UUID roleAddedId = roleEntityLoader.requiredByName(roleAdded).getId();
         UUID roleRemovedId = roleEntityLoader.requiredByName(roleRemoved).getId();
         applicationEventPublisher.publishEvent(new MemberStatusChangedActivity(
                 action, memberId, accountId, previousStatus, newStatus, roleAdded, roleRemoved,
-                roleAddedId, roleRemovedId, additionallyRemovedRoleId, reason));
+                roleAddedId, roleRemovedId, additionallyRemovedRoleId, secondAdditionallyRemovedRoleId, reason));
     }
 
     public void memberRegistered(UUID memberId, UUID accountId, UUID roleAddedId, UUID roleRemovedId, String reason) {
@@ -82,6 +103,28 @@ public class ActivityEvents {
     public void coordinatorRevoked(UUID memberId, UUID accountId, UUID coordRoleId, String reason) {
         applicationEventPublisher.publishEvent(new CoordinatorChangedActivity(
                 ActivityAction.COORDINATOR_REVOKED, memberId, accountId, coordRoleId, reason));
+    }
+
+    public void oratorioCoordinatorGranted(UUID memberId, UUID accountId, UUID roleId, String reason) {
+        applicationEventPublisher.publishEvent(new OratorioCoordinatorChangedActivity(
+                ActivityAction.ORATORIO_COORDINATOR_GRANTED,
+                memberId,
+                accountId,
+                roleId,
+                SystemRole.ORATORIO_COORD.getCode(),
+                reason
+        ));
+    }
+
+    public void oratorioCoordinatorRevoked(UUID memberId, UUID accountId, UUID roleId, String reason) {
+        applicationEventPublisher.publishEvent(new OratorioCoordinatorChangedActivity(
+                ActivityAction.ORATORIO_COORDINATOR_REVOKED,
+                memberId,
+                accountId,
+                roleId,
+                SystemRole.ORATORIO_COORD.getCode(),
+                reason
+        ));
     }
 
     public void membershipSolicitationSubmitted(UUID solicitationId, UUID applicantAccountId) {
@@ -144,6 +187,24 @@ public class ActivityEvents {
 
     public void oratorioCreated(UUID oratorioId, UUID eventId) {
         applicationEventPublisher.publishEvent(new OratorioCreatedActivity(oratorioId, eventId));
+    }
+
+    public void moduleActivity(
+            ActivityAction action,
+            ActivityTargetType targetType,
+            UUID targetId,
+            String reason,
+            String summary,
+            Map<String, Object> metadata
+    ) {
+        applicationEventPublisher.publishEvent(new ModuleActivity(
+                action,
+                targetType,
+                targetId,
+                reason,
+                summary,
+                Map.copyOf(metadata)
+        ));
     }
 
     public void presenceRegistered(UUID presenceId, UUID memberId, UUID eventId, String observations) {

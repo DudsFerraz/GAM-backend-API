@@ -6,6 +6,7 @@ import br.org.gam.api.oratoriano.persistence.OratorianoEntity;
 import br.org.gam.api.shared.auditing.FullAuditableEntity;
 import jakarta.persistence.*;
 import java.util.HashSet;
+import java.time.LocalDate;
 import java.util.Set;
 import java.util.UUID;
 import lombok.EqualsAndHashCode;
@@ -33,6 +34,21 @@ public class OratorioEntity extends FullAuditableEntity {
 
     @Column(name = "cancellation_reason", columnDefinition = "TEXT")
     private String cancellationReason;
+
+    @Column(name = "local_date", nullable = false, updatable = false)
+    private LocalDate localDate;
+
+    @Column(name = "lanche_description", columnDefinition = "TEXT")
+    private String lancheDescription;
+
+    @Column(name = "gincana_description", columnDefinition = "TEXT")
+    private String gincanaDescription;
+
+    @Column(name = "boa_tarde_criancas_plan", columnDefinition = "TEXT")
+    private String boaTardeCriancasPlan;
+
+    @Column(name = "boa_tarde_jovens_plan", columnDefinition = "TEXT")
+    private String boaTardeJovensPlan;
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(

@@ -44,12 +44,28 @@ public enum SystemRole {
                     PRESENCE_REMOVE,
                     ROLE_GET,
                     PERMISSION_GET
-            )
+            ),
+            true
+    ),
+    ORATORIO_COORD(
+            "ORATORIO_COORD",
+            "Oratorio operational responsibility for an active Member",
+            EnumSet.noneOf(PermissionEnum.class),
+            false
     ),
     MEMBER(
             "MEMBER",
             "Standard authenticated member access",
-            EnumSet.of(MEMBER_GET, ACCOUNT_GET, EVENT_SEARCH, EVENT_GET_PRESENCES, EVENT_GET_MEMBER, GAM_LOCATION_GET)
+            withOratorioRead(
+                    EnumSet.of(
+                            MEMBER_GET,
+                            ACCOUNT_GET,
+                            EVENT_SEARCH,
+                            EVENT_GET_PRESENCES,
+                            EVENT_GET_MEMBER,
+                            GAM_LOCATION_GET
+                    )
+            )
     ),
     VISITOR(
             "VISITOR",
@@ -65,6 +81,43 @@ public enum SystemRole {
         this.code = code;
         this.description = description;
         this.permissions = Set.copyOf(permissions);
+    }
+
+    SystemRole(String code, String description, EnumSet<PermissionEnum> permissions, boolean manageCoordinators) {
+        this(
+                code,
+                description,
+                withOratorioOperations(permissions, manageCoordinators)
+        );
+    }
+
+    private static EnumSet<PermissionEnum> withOratorioRead(EnumSet<PermissionEnum> permissions) {
+        permissions.add(ORATORIO_GET);
+        return permissions;
+    }
+
+    private static EnumSet<PermissionEnum> withOratorioOperations(
+            EnumSet<PermissionEnum> permissions,
+            boolean manageCoordinators
+    ) {
+        permissions.addAll(EnumSet.of(
+                ORATORIO_GET,
+                ORATORIO_CREATE,
+                ORATORIO_MANAGE,
+                ORATORIO_ATTENDANCE_GET,
+                ORATORIO_ATTENDANCE_MANAGE,
+                ORATORIANO_GET,
+                ORATORIANO_REGISTER,
+                ORATORIANO_MANAGE,
+                ORATORIANO_FORM_GET,
+                ORATORIANO_FORM_MANAGE,
+                ORATORIANO_FORM_PDF_GENERATE,
+                ORATORIANO_FORM_ATTACHMENT_GET
+        ));
+        if (manageCoordinators) {
+            permissions.add(ORATORIO_COORD_MANAGE);
+        }
+        return permissions;
     }
 
     public boolean includes(PermissionEnum permission) {

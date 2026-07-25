@@ -7,6 +7,8 @@ import br.org.gam.api.shared.activitylog.events.EventCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.EventChangedActivity;
 import br.org.gam.api.shared.activitylog.events.MemberStatusChangedActivity;
 import br.org.gam.api.shared.activitylog.events.CoordinatorChangedActivity;
+import br.org.gam.api.shared.activitylog.events.OratorioCoordinatorChangedActivity;
+import br.org.gam.api.shared.activitylog.events.ModuleActivity;
 import br.org.gam.api.shared.activitylog.events.MemberRegisteredActivity;
 import br.org.gam.api.shared.activitylog.events.MembershipSolicitationActivity;
 import java.util.HashMap;
@@ -46,6 +48,9 @@ public class ActivityLogEventListener {
         if (activity.additionallyRemovedRoleId() != null) {
             metadata.put("additionallyRemovedRoleId", activity.additionallyRemovedRoleId());
         }
+        if (activity.secondAdditionallyRemovedRoleId() != null) {
+            metadata.put("secondAdditionallyRemovedRoleId", activity.secondAdditionallyRemovedRoleId());
+        }
         activityLogger.log(
                 activity.action(),
                 ActivityTargetType.MEMBER,
@@ -71,6 +76,39 @@ public class ActivityLogEventListener {
                         "coordRoleId", activity.coordRoleId(),
                         "roleChange", transition
                 )
+        );
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    public void handle(OratorioCoordinatorChangedActivity activity) {
+        String transition = activity.action() == ActivityAction.ORATORIO_COORDINATOR_GRANTED
+                ? "granted"
+                : "revoked";
+        activityLogger.log(
+                activity.action(),
+                ActivityTargetType.MEMBER,
+                activity.memberId(),
+                activity.reason(),
+                "Oratorio Coordinator designation " + transition,
+                Map.of(
+                        "memberId", activity.memberId(),
+                        "accountId", activity.accountId(),
+                        "roleId", activity.roleId(),
+                        "roleCode", activity.roleCode(),
+                        "transition", transition
+                )
+        );
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    public void handle(ModuleActivity activity) {
+        activityLogger.log(
+                activity.action(),
+                activity.targetType(),
+                activity.targetId(),
+                activity.reason(),
+                activity.summary(),
+                activity.metadata()
         );
     }
 

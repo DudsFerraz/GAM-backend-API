@@ -92,6 +92,30 @@ public class MemberController {
         return ResponseEntity.noContent().build();
     }
 
+    @PreAuthorize("hasAuthority('" + PermissionEnum.Code.ORATORIO_COORD_MANAGE + "')")
+    @Operation(operationId = "grantOratorioCoordinator", summary = "Grant Oratorio Coordinator designation")
+    @ApiResponse(responseCode = "204", description = "Oratorio Coordinator designation granted")
+    @PatchMapping("/{memberId}/oratorio-coordinator/grant")
+    public ResponseEntity<Void> grantOratorioCoordinator(
+            @PathVariable UUID memberId,
+            @RequestBody @Valid CoordinatorTransitionDTO dto
+    ) {
+        activation.grantOratorioCoordinator(memberId, dto.reason());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PreAuthorize("hasAuthority('" + PermissionEnum.Code.ORATORIO_COORD_MANAGE + "')")
+    @Operation(operationId = "revokeOratorioCoordinator", summary = "Revoke Oratorio Coordinator designation")
+    @ApiResponse(responseCode = "204", description = "Oratorio Coordinator designation revoked")
+    @PatchMapping("/{memberId}/oratorio-coordinator/revoke")
+    public ResponseEntity<Void> revokeOratorioCoordinator(
+            @PathVariable UUID memberId,
+            @RequestBody @Valid CoordinatorTransitionDTO dto
+    ) {
+        activation.revokeOratorioCoordinator(memberId, dto.reason());
+        return ResponseEntity.noContent().build();
+    }
+
     @PreAuthorize("hasAuthority('" + PermissionEnum.Code.MEMBER_ACTIVATION + "')")
     @Operation(operationId = "activateMember")
     @PatchMapping("/{id}/activate")

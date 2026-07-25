@@ -10,6 +10,14 @@ import org.springframework.data.repository.query.Param;
 
 public interface GamLocationRepository extends BaseRepository<GamLocationEntity, UUID> {
 
+    Optional<GamLocationEntity> findByIdentityName(String identityName);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select location from GamLocationEntity location where location.identityName = :identityName")
+    Optional<GamLocationEntity> findActiveByIdentityNameForUpdate(
+            @Param("identityName") String identityName
+    );
+
     @Query("""
             select location from GamLocationEntity location
             where location.deletedAt is null

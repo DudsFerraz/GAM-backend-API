@@ -69,7 +69,11 @@ public class Activation {
         if (coordinator) {
             activityEvents.memberDeactivated(memberId, accountId, "ACTIVE", "INACTIVE",
                     SystemRole.VISITOR.getCode(), SystemRole.MEMBER.getCode(),
-                    roles.additionallyRemovedRoleId(), auditReason);
+                    roles.additionallyRemovedRoleId(), roles.oratorioCoordinatorRemovedRoleId(), auditReason);
+        } else if (roles.oratorioCoordinatorRemovedRoleId() != null) {
+            activityEvents.memberDeactivated(memberId, accountId, "ACTIVE", "INACTIVE",
+                    SystemRole.VISITOR.getCode(), SystemRole.MEMBER.getCode(),
+                    roles.oratorioCoordinatorRemovedRoleId(), auditReason);
         } else {
             activityEvents.memberDeactivated(memberId, accountId, "ACTIVE", "INACTIVE",
                     SystemRole.VISITOR.getCode(), SystemRole.MEMBER.getCode(), auditReason);
@@ -95,6 +99,32 @@ public class Activation {
         coordinatorSafetyPolicy.assertCanRemoveCoordinator(accountId);
         UUID coordRoleId = roleProjection.revokeCoordinator(accountId);
         activityEvents.coordinatorRevoked(memberId, accountId, coordRoleId, auditReason);
+    }
+
+    @Transactional
+    public void grantOratorioCoordinator(UUID memberId, String reason) {
+        String auditReason = RequiredReason.normalize(
+                reason,
+                "Oratorio Coordinator transition requires an audit reason."
+        );
+        MemberEntity member = lockedActiveMemberEntity(memberId);
+        UUID accountId = member.getAccount().getId();
+        roleProjection.assertActiveWithoutOratorioCoordinator(accountId);
+        UUID roleId = roleProjection.grantOratorioCoordinator(accountId);
+        activityEvents.oratorioCoordinatorGranted(memberId, accountId, roleId, auditReason);
+    }
+
+    @Transactional
+    public void revokeOratorioCoordinator(UUID memberId, String reason) {
+        String auditReason = RequiredReason.normalize(
+                reason,
+                "Oratorio Coordinator transition requires an audit reason."
+        );
+        MemberEntity member = lockedActiveMemberEntity(memberId);
+        UUID accountId = member.getAccount().getId();
+        roleProjection.assertActiveOratorioCoordinator(accountId);
+        UUID roleId = roleProjection.revokeOratorioCoordinator(accountId);
+        activityEvents.oratorioCoordinatorRevoked(memberId, accountId, roleId, auditReason);
     }
 
     private Member lockedMember(UUID memberId, MemberStatus requiredStatus) {

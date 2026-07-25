@@ -12,6 +12,8 @@ import io.swagger.v3.oas.models.media.ArraySchema;
 import io.swagger.v3.oas.models.media.BooleanSchema;
 import io.swagger.v3.oas.models.media.IntegerSchema;
 import io.swagger.v3.oas.models.media.MapSchema;
+import io.swagger.v3.oas.models.media.MediaType;
+import io.swagger.v3.oas.models.media.Content;
 import io.swagger.v3.oas.models.media.NumberSchema;
 import io.swagger.v3.oas.models.media.ObjectSchema;
 import io.swagger.v3.oas.models.media.Schema;
@@ -51,14 +53,30 @@ public class OpenApiConfig {
             "createMember",
             "submitMembershipSolicitation",
             "assignAccountRole",
-            "registerAccount"
+            "registerAccount",
+            "createOratorio",
+            "registerOratoriano",
+            "createOratorianoFormDraft",
+            "createOratorianoFormPrintSnapshot"
     );
 
     private static final Set<String> NO_CONTENT_OPERATIONS = Set.of(
             "activateMember",
             "deactivateMember",
             "dropAccountRole",
-            "removeGamLocation"
+            "removeGamLocation",
+            "assignOratorioTeamMember",
+            "removeOratorioTeamMember",
+            "lockOratorio",
+            "finalizeOratorio",
+            "reopenOratorio",
+            "cancelOratorio",
+            "deleteOratorio",
+            "deleteOratoriano",
+            "restoreOratoriano",
+            "deleteOratorianoFormDraft",
+            "completeOratorianoForm",
+            "revokeOratorianoForm"
     );
 
     private static final Set<String> PAGED_OPERATIONS = Set.of(
@@ -68,7 +86,9 @@ public class OpenApiConfig {
             "listGamLocations",
             "searchMembers",
             "getMemberPresences",
-            "searchMembershipSolicitations"
+            "searchMembershipSolicitations",
+            "searchOratorianos",
+            "getOratorianoFormHistory"
     );
 
     @Value("${spring.application.version}")
@@ -88,7 +108,10 @@ public class OpenApiConfig {
                     new Tag().name("Presences"),
                     new Tag().name("GamLocations"),
                     new Tag().name("RBAC"),
-                    new Tag().name("Accounts")
+                    new Tag().name("Accounts"),
+                    new Tag().name("Oratorios"),
+                    new Tag().name("Oratorianos"),
+                    new Tag().name("Oratoriano Forms")
             ));
             Components components = openApi.getComponents() == null ? new Components() : openApi.getComponents();
             openApi.setComponents(components);
@@ -104,6 +127,7 @@ public class OpenApiConfig {
                     operation.setSecurity(List.of());
                 }
                 documentSuccessStatus(operation);
+                documentModuleMediaTypes(operation);
                 documentPagination(operation);
                 documentBrowserAuthenticationInputs(operation);
                 documentBrowserAuthenticationCookieResponses(operation);
@@ -149,11 +173,40 @@ public class OpenApiConfig {
             operation.setSummary(humanize(operation.getOperationId()));
         }
         if (operation.getDescription() == null || operation.getDescription().isBlank()) {
-            operation.setDescription("Performs the documented GAM operation: " + operation.getSummary() + ".");
+            operation.setDescription(operationDescription(operation));
         }
     }
 
+    private String operationDescription(io.swagger.v3.oas.models.Operation operation) {
+        return switch (operation.getOperationId()) {
+            case "createOratorio" ->
+                    "Creates the Oratorio occurrence for the supplied local date. "
+                            + "Only one active occurrence may use a date; duplicates return "
+                            + "ORATORIO_DATE_ALREADY_EXISTS.";
+            case "markOratorioMemberPresent" ->
+                    "Idempotently marks the Member present. Repeating an existing check returns "
+                            + "the existing attendance without creating a duplicate.";
+            case "markOratorianoPresent" ->
+                    "Idempotently marks the Oratoriano present. Repeating an existing check returns "
+                            + "the existing attendance without creating a duplicate.";
+            case "completeOratorianoForm" ->
+                    "Completes a valid draft only after its complete signed attachment and print snapshot "
+                            + "correspondence have been verified. Set overwriteNewerProfileValues to true "
+                            + "to explicitly authorize replacement of profile values recorded after signedOn.";
+            default -> "Performs the documented GAM operation: " + operation.getSummary() + ".";
+        };
+    }
+
     private String consumerTag(String path) {
+        if (path.startsWith("/oratorianos/") && path.contains("/forms")) {
+            return "Oratoriano Forms";
+        }
+        if (path.startsWith("/oratorianos")) {
+            return "Oratorianos";
+        }
+        if (path.startsWith("/oratorios")) {
+            return "Oratorios";
+        }
         if (path.contains("/presences")) {
             return "Presences";
         }
@@ -242,7 +295,24 @@ public class OpenApiConfig {
         }
         operation.addParametersItem(pageParameter());
         operation.addParametersItem(sizeParameter());
-        operation.addParametersItem(sortParameter(operation.getOperationId()));
+        if (!"getOratorianoFormHistory".equals(operation.getOperationId())) {
+            operation.addParametersItem(sortParameter(operation.getOperationId()));
+        }
+    }
+
+    private void documentModuleMediaTypes(io.swagger.v3.oas.models.Operation operation) {
+        if (!"renderOratorianoFormPdf".equals(operation.getOperationId())) {
+            return;
+        }
+        ApiResponse response = operation.getResponses().get("200");
+        if (response == null) {
+            return;
+        }
+        Schema<?> binary = new StringSchema().format("binary");
+        response.setContent(new Content().addMediaType(
+                "application/pdf",
+                new MediaType().schema(binary)
+        ));
     }
 
     private void documentBrowserAuthenticationInputs(io.swagger.v3.oas.models.Operation operation) {
@@ -286,15 +356,22 @@ public class OpenApiConfig {
     }
 
     private void documentLocationResponseHeader(io.swagger.v3.oas.models.Operation operation) {
-        if (!"createGamLocation".equals(operation.getOperationId())) {
+        String resource = switch (operation.getOperationId()) {
+            case "createGamLocation" -> "GamLocation";
+            case "createOratorio" -> "Oratorio";
+            case "registerOratoriano" -> "Oratoriano";
+            case "createOratorianoFormDraft" -> "Oratoriano form draft";
+            default -> null;
+        };
+        if (resource == null) {
             return;
         }
 
         ApiResponse createdResponse = operation.getResponses().get("201");
         if (createdResponse != null) {
             createdResponse.addHeaderObject("Location", new Header()
-                    .description("URI of the created GamLocation resource.")
-                    .schema(new StringSchema()));
+                    .description("Public API URI of the created " + resource + " resource.")
+                    .schema(new StringSchema().format("uri")));
         }
     }
 
@@ -330,6 +407,7 @@ public class OpenApiConfig {
                     List.of("memberFirstName,asc", "memberSurname,asc");
             case "getMemberPresences" ->
                     List.of("eventBeginDate,desc");
+            case "searchOratorianos" -> null;
             default -> List.of("name,asc");
         });
         String description = "Repeat this parameter as field,direction. Allowed fields: "
@@ -343,6 +421,10 @@ public class OpenApiConfig {
         } else if ("getMemberPresences".equals(operationId)) {
             description += " The default is eventBeginDate descending, Event UUID descending, "
                     + "then Presence UUID ascending. Presence UUID ascending is appended to every requested sort.";
+        } else if ("searchOratorianos".equals(operationId)) {
+            description += " The default is normalized name ascending, then Oratoriano UUID ascending. "
+                    + "The oratorioYearAttendances descending sort also appends normalized name and UUID "
+                    + "tie-breakers.";
         }
         return new Parameter()
                 .in("query")
@@ -364,6 +446,7 @@ public class OpenApiConfig {
             case "listGamLocations" -> List.of("name", "city", "state", "countryCode");
             case "searchMembers" -> List.of("firstName", "surname", "birthDate", "status");
             case "searchMembershipSolicitations" -> List.of("status", "createdAt", "updatedAt");
+            case "searchOratorianos" -> List.of("oratorioYearAttendances");
             default -> List.of();
         };
     }
@@ -390,6 +473,30 @@ public class OpenApiConfig {
     }
 
     private ConflictDocumentation conflictDocumentation(String operationId) {
+        if ("createOratorio".equals(operationId)) {
+            return new ConflictDocumentation(
+                    "ORATORIO_DATE_ALREADY_EXISTS",
+                    "An active Oratorio occurrence already uses the supplied local date.",
+                    Map.of(
+                            "resource", "Oratorio",
+                            "identifier", "2026-07-25"
+                    )
+            );
+        }
+        if ("completeOratorianoForm".equals(operationId)) {
+            return new ConflictDocumentation(
+                    "ORATORIANO_FORM_PROFILE_OVERWRITE_CHOICE_REQUIRED",
+                    "Possible codes: ORATORIANO_FORM_PROFILE_OVERWRITE_CHOICE_REQUIRED, "
+                            + "ORATORIANO_FORM_PROFILE_SOURCE_IS_NEWER. Completion requires an explicit "
+                            + "authorized overwrite choice when values recorded after the form was signed "
+                            + "would be replaced, and rejects a source form that is older than the current "
+                            + "form-backed profile source.",
+                    Map.of(
+                            "resource", "OratorianoForm",
+                            "identifier", "019f6343-321a-7c90-a096-a551e8f88eb4"
+                    )
+            );
+        }
         if (Set.of(
                 "replaceGenericEvent",
                 "lockGenericEvent",

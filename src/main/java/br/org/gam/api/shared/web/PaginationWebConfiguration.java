@@ -20,6 +20,7 @@ public class PaginationWebConfiguration implements WebMvcConfigurer {
             "/accounts", Set.of("email", "displayName", "createdAt"),
             "/members", Set.of("firstName", "surname", "birthDate", "status"),
             "/events", Set.of("title", "beginDate", "endDate", "type", "status"),
+            "/oratorianos", Set.of("oratorioYearAttendances"),
             "/membership-solicitations", Set.of("status", "createdAt", "updatedAt"),
             "/presences", Set.of("createdAt", "updatedAt")
     );

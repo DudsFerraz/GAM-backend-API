@@ -33,11 +33,19 @@ public class MemberRoleProjection {
     }
 
     public void assertActiveNonCoordinator(UUID accountId) {
-        assertProjection(accountId, EnumSet.of(SystemRole.MEMBER));
+        assertProjectionOneOf(
+                accountId,
+                EnumSet.of(SystemRole.MEMBER),
+                EnumSet.of(SystemRole.MEMBER, SystemRole.ORATORIO_COORD)
+        );
     }
 
     public void assertActiveCoordinator(UUID accountId) {
-        assertProjection(accountId, EnumSet.of(SystemRole.MEMBER, SystemRole.COORD));
+        assertProjectionOneOf(
+                accountId,
+                EnumSet.of(SystemRole.MEMBER, SystemRole.COORD),
+                EnumSet.of(SystemRole.MEMBER, SystemRole.COORD, SystemRole.ORATORIO_COORD)
+        );
     }
 
     public void assertInactive(UUID accountId) {
@@ -45,7 +53,25 @@ public class MemberRoleProjection {
     }
 
     public boolean isActiveCoordinator(UUID accountId) {
-        return lifecycleRoles(accountId).equals(EnumSet.of(SystemRole.MEMBER, SystemRole.COORD));
+        EnumSet<SystemRole> roles = lifecycleRoles(accountId);
+        return roles.equals(EnumSet.of(SystemRole.MEMBER, SystemRole.COORD))
+                || roles.equals(EnumSet.of(SystemRole.MEMBER, SystemRole.COORD, SystemRole.ORATORIO_COORD));
+    }
+
+    public void assertActiveWithoutOratorioCoordinator(UUID accountId) {
+        assertProjectionOneOf(
+                accountId,
+                EnumSet.of(SystemRole.MEMBER),
+                EnumSet.of(SystemRole.MEMBER, SystemRole.COORD)
+        );
+    }
+
+    public void assertActiveOratorioCoordinator(UUID accountId) {
+        assertProjectionOneOf(
+                accountId,
+                EnumSet.of(SystemRole.MEMBER, SystemRole.ORATORIO_COORD),
+                EnumSet.of(SystemRole.MEMBER, SystemRole.COORD, SystemRole.ORATORIO_COORD)
+        );
     }
 
     public RoleChange synchronizeActive(UUID accountId) {
@@ -61,7 +87,8 @@ public class MemberRoleProjection {
         UUID visitorRoleId = add(account, SystemRole.VISITOR);
         UUID memberRoleId = remove(account, SystemRole.MEMBER);
         UUID coordRoleId = remove(account, SystemRole.COORD);
-        return new RoleChange(visitorRoleId, memberRoleId, coordRoleId);
+        UUID oratorioCoordRoleId = remove(account, SystemRole.ORATORIO_COORD);
+        return new RoleChange(visitorRoleId, memberRoleId, coordRoleId, oratorioCoordRoleId);
     }
 
     public UUID grantCoordinator(UUID accountId) {
@@ -72,6 +99,14 @@ public class MemberRoleProjection {
         return remove(accountEntityLoader.requiredById(accountId), SystemRole.COORD);
     }
 
+    public UUID grantOratorioCoordinator(UUID accountId) {
+        return add(accountEntityLoader.requiredById(accountId), SystemRole.ORATORIO_COORD);
+    }
+
+    public UUID revokeOratorioCoordinator(UUID accountId) {
+        return remove(accountEntityLoader.requiredById(accountId), SystemRole.ORATORIO_COORD);
+    }
+
     private void assertProjection(UUID accountId, Set<SystemRole> expected) {
         if (!lifecycleRoles(accountId).equals(expected)) {
             throw ConflictException.resource(
@@ -80,12 +115,28 @@ public class MemberRoleProjection {
         }
     }
 
+    @SafeVarargs
+    private void assertProjectionOneOf(UUID accountId, Set<SystemRole>... expectedOptions) {
+        EnumSet<SystemRole> actual = lifecycleRoles(accountId);
+        for (Set<SystemRole> expected : expectedOptions) {
+            if (actual.equals(expected)) {
+                return;
+            }
+        }
+        throw ConflictException.resource(
+                "Member", accountId, "The Account has an inconsistent Member lifecycle Role projection."
+        );
+    }
+
     private EnumSet<SystemRole> lifecycleRoles(UUID accountId) {
         return accountRoleRepo.findAllByAccount_Id(accountId).stream()
                 .map(AccountRoleEntity::getRole)
                 .filter(role -> role != null && role.isSystemManaged())
                 .map(role -> SystemRole.fromCode(role.getName()).orElse(null))
-                .filter(role -> role == SystemRole.MEMBER || role == SystemRole.VISITOR || role == SystemRole.COORD)
+                .filter(role -> role == SystemRole.MEMBER
+                        || role == SystemRole.VISITOR
+                        || role == SystemRole.COORD
+                        || role == SystemRole.ORATORIO_COORD)
                 .collect(Collectors.toCollection(() -> EnumSet.noneOf(SystemRole.class)));
     }
 
@@ -112,9 +163,18 @@ public class MemberRoleProjection {
                 .orElse(null);
     }
 
-    public record RoleChange(UUID roleAddedId, UUID roleRemovedId, UUID additionallyRemovedRoleId) {
+    public record RoleChange(
+            UUID roleAddedId,
+            UUID roleRemovedId,
+            UUID additionallyRemovedRoleId,
+            UUID oratorioCoordinatorRemovedRoleId
+    ) {
         public RoleChange(UUID roleAddedId, UUID roleRemovedId) {
-            this(roleAddedId, roleRemovedId, null);
+            this(roleAddedId, roleRemovedId, null, null);
+        }
+
+        public RoleChange(UUID roleAddedId, UUID roleRemovedId, UUID additionallyRemovedRoleId) {
+            this(roleAddedId, roleRemovedId, additionallyRemovedRoleId, null);
         }
     }
 }
