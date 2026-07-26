@@ -100,7 +100,7 @@ created a path. Do not accumulate `consulted` artifacts.
    configured thread. Wait for its result before continuing.
 6. For completion or escalation, stop without constructing an assignment.
 
-Set `MAX_TD_CORRECTION_CYCLES = 6`. Maintain the counter as defined in
+Set `MAX_TD_CORRECTION_CYCLES = 10`. Maintain the counter as defined in
 `$gam-agent-workflow` reference `agent-t-agent-d-loop.md`; stop at the maximum
 and never increase it silently.
 
