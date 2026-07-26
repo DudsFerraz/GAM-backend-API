@@ -139,6 +139,16 @@ class SpecificationFilterFunctionalTest {
     }
 
     @Test
+    @DisplayName("REQ-MEMBER-010 - phone LIKE with narrow no-break space -> literal digit substring")
+    void phoneLikeWithNarrowNoBreakSpaceShouldReturnDigitSubstring() {
+        Object parsed = SearchValueParsers.phoneNumberLike(
+                JsonNodeFactory.instance.textNode("19\u202F9988")
+        );
+
+        assertThat(parsed).isEqualTo("199988");
+    }
+
+    @Test
     @DisplayName("EP - LIKE with non-string value -> validation error")
     void likeWithNonStringValueShouldReturnValidationError() {
         assertThatThrownBy(() -> ComparationMethods.LIKE.create("name", 10))

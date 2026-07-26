@@ -676,6 +676,27 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
     }
 
     @Test
+    @DisplayName("REQ-MEMBER-010 - phone LIKE with narrow no-break space -> finds canonical digit sequence")
+    void memberPhoneSearchShouldAcceptNarrowNoBreakSpaceFormatting() {
+        AuthSession coordinator = newSession("COORD");
+        UUID targetAccountId = newAccount(
+                "member-phone-nb-space-" + UUID.randomUUID() + "@example.com",
+                "Member Phone Non-Breaking Space Target"
+        );
+        UUID targetMemberId = registerMember(coordinator, targetAccountId);
+        forceMemberState(targetMemberId, targetAccountId, "ACTIVE", "MEMBER");
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(coordinator)
+                .body(searchPayload(filter("phoneNumber", "19\u202F9988", "LIKE")))
+                .post("/members/search?size=100")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(200);
+        assertThat(resourceIds(response.jsonPath().getList("items"))).contains(targetMemberId);
+    }
+
+    @Test
     @DisplayName("REQ-MEMBER-010 and REQ-SEARCH-007 - name LIKE trims and collapses Unicode whitespace")
     void memberNameSearchShouldNormalizeUnicodeWhitespace() {
         AuthSession coordinator = newSession("COORD");

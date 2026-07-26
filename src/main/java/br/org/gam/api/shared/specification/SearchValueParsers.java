@@ -111,7 +111,7 @@ public final class SearchValueParsers {
     }
 
     public static Object phoneNumberLike(JsonNode value) {
-        String normalized = text(value);
+        String normalized = UnicodeWhitespace.collapse(text(value));
         if (!normalized.matches("[0-9\\s+().-]+")) {
             throw new InvalidSearchFilterException("Invalid filter value.");
         }
