@@ -400,7 +400,14 @@ public class OpenApiConfig {
 
     private Parameter sortParameter(String operationId) {
         ArraySchema schema = new ArraySchema();
-        schema.setItems(new StringSchema());
+        StringSchema itemSchema = new StringSchema();
+        if ("searchOratorianos".equals(operationId)) {
+            itemSchema.setEnum(List.of(
+                    "oratorioYearAttendances,asc",
+                    "oratorioYearAttendances,desc"
+            ));
+        }
+        schema.setItems(itemSchema);
         schema.setDefault(switch (operationId) {
             case "searchEvents" -> List.of("beginDate,asc", "id,asc");
             case "getEventPresences" ->
@@ -423,7 +430,7 @@ public class OpenApiConfig {
                     + "then Presence UUID ascending. Presence UUID ascending is appended to every requested sort.";
         } else if ("searchOratorianos".equals(operationId)) {
             description += " The default is normalized name ascending, then Oratoriano UUID ascending. "
-                    + "The oratorioYearAttendances descending sort also appends normalized name and UUID "
+                    + "The oratorioYearAttendances sort in either direction also appends normalized name and UUID "
                     + "tie-breakers.";
         }
         return new Parameter()

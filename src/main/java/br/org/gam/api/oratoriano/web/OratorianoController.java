@@ -12,9 +12,12 @@ import br.org.gam.api.shared.specification.SearchDTO;
 import br.org.gam.api.shared.web.PagedResponse;
 import br.org.gam.api.shared.web.PublicApiUri;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -91,11 +94,20 @@ public class OratorianoController {
     }
 
     @Operation(operationId = "getOratorianoAttendanceSummary", summary = "Read derived attendance counts")
-    @GetMapping("/{oratorianoId}/attendance-summary")
+    @GetMapping(
+            value = "/{oratorianoId}/attendance-summary",
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
     @PreAuthorize("hasAuthority('" + PermissionEnum.Code.ORATORIANO_GET + "')")
     public ResponseEntity<AttendanceSummaryRDTO> attendanceSummary(
             @PathVariable UUID oratorianoId,
             @RequestParam(required = false) Integer year,
+            @Parameter(schema = @io.swagger.v3.oas.annotations.media.Schema(
+                    type = "integer",
+                    format = "int32",
+                    minimum = "1",
+                    maximum = "12"
+            ))
             @RequestParam(required = false) Integer month
     ) {
         return ResponseEntity.ok(records.attendanceSummary(oratorianoId, year, month));
@@ -106,7 +118,7 @@ public class OratorianoController {
     @PreAuthorize("hasAuthority('" + PermissionEnum.Code.ORATORIANO_GET + "')")
     public ResponseEntity<PagedResponse<OratorianoRDTO>> search(
             @RequestBody @Valid SearchDTO search,
-            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) List<String> sort,
             @RequestParam(required = false) Integer attendanceYear,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size

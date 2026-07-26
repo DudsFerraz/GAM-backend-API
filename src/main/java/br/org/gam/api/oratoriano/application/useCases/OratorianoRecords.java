@@ -262,7 +262,7 @@ public class OratorianoRecords {
     @Transactional(readOnly = true)
     public PagedResponse<OratorianoRDTO> search(
             SearchDTO search,
-            String sort,
+            List<String> sorts,
             Integer attendanceYear,
             int page,
             int size
@@ -299,19 +299,31 @@ public class OratorianoRecords {
                     .toList();
         }
 
-        if (sort != null && !sort.isBlank()) {
-            if (!"oratorioYearAttendances,desc".equals(sort)) {
+        List<String> submittedSorts = sorts == null
+                ? List.of()
+                : sorts.stream().filter(sort -> sort != null && !sort.isBlank()).toList();
+        List<String> requestedSorts = submittedSorts.stream().allMatch(sort -> !sort.contains(","))
+                ? pairSortTokens(submittedSorts)
+                : submittedSorts;
+        if (!requestedSorts.isEmpty()) {
+            if (requestedSorts.stream().anyMatch(sort ->
+                    !"oratorioYearAttendances,asc".equals(sort)
+                            && !"oratorioYearAttendances,desc".equals(sort))) {
                 throw InvalidCommandException.reason("Unsupported Oratoriano sort.");
             }
+            boolean descending = requestedSorts.getFirst().endsWith(",desc");
             int selectedYear = attendanceYear == null
                     ? LocalDate.now(clock.withZone(SAO_PAULO)).getYear()
                     : attendanceYear;
             Map<UUID, Long> attendanceCounts = yearlyAttendanceCounts(selectedYear);
+            Comparator<OratorianoEntity> attendanceComparator =
+                    Comparator.comparingLong(item ->
+                            attendanceCounts.getOrDefault(item.getId(), 0L));
+            if (descending) {
+                attendanceComparator = attendanceComparator.reversed();
+            }
             matches = matches.stream()
-                    .sorted(Comparator
-                            .comparingLong((OratorianoEntity item) ->
-                                    attendanceCounts.getOrDefault(item.getId(), 0L))
-                            .reversed()
+                    .sorted(attendanceComparator
                             .thenComparing(OratorianoEntity::getNameKey)
                             .thenComparing(OratorianoEntity::getId))
                     .toList();
@@ -369,9 +381,9 @@ public class OratorianoRecords {
                 dates.size(),
                 dates.stream().map(date -> date.getYear() + "-" + date.getMonthValue()).distinct().count(),
                 dates.stream().map(LocalDate::getYear).distinct().count(),
-                yearAttendances,
-                yearDistinctMonths,
-                monthAttendances
+                year == null ? null : yearAttendances,
+                year == null ? null : yearDistinctMonths,
+                month == null ? null : monthAttendances
         );
     }
 
@@ -422,8 +434,24 @@ public class OratorianoRecords {
         return comparisonKey(name.getFullName());
     }
 
+    private static List<String> pairSortTokens(List<String> tokens) {
+        if (tokens.size() % 2 != 0) {
+            return tokens;
+        }
+        List<String> sorts = new ArrayList<>(tokens.size() / 2);
+        for (int index = 0; index < tokens.size(); index += 2) {
+            sorts.add(tokens.get(index) + "," + tokens.get(index + 1));
+        }
+        return List.copyOf(sorts);
+    }
+
     public static String comparisonKey(String fullName) {
-        return Normalizer.normalize(fullName, Normalizer.Form.NFD)
+        String normalizedSeparators = Normalizer.normalize(fullName, Normalizer.Form.NFC)
+                .replaceAll("[\\u2018\\u2019\\u201A\\u201B\\u2032\\u00B4\\u0060]", "'")
+                .replaceAll("[\\u2010\\u2011\\u2012\\u2013\\u2014\\u2015\\u2212]", "-");
+        String normalizedWhitespace = normalizedSeparators.strip()
+                .replaceAll("\\p{javaWhitespace}+", " ");
+        return Normalizer.normalize(normalizedWhitespace, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}+", "")
                 .toLowerCase(Locale.ROOT);
     }

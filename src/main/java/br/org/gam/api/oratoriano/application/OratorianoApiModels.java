@@ -1,5 +1,6 @@
 package br.org.gam.api.oratoriano.application;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import java.time.LocalDate;
@@ -37,13 +38,20 @@ public final class OratorianoApiModels {
     ) {
     }
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record AttendanceSummaryRDTO(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             long oratorioAttendances,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             long oratorioDistinctMonthsAttendances,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             long oratorioDistinctYearsAttendances,
-            long oratorioYearAttendances,
-            long oratorioYearDistinctMonthsAttendances,
-            long oratorioMonthAttendances
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            Long oratorioYearAttendances,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            Long oratorioYearDistinctMonthsAttendances,
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+            Long oratorioMonthAttendances
     ) {
     }
 

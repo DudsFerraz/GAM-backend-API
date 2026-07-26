@@ -274,6 +274,50 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
         assertThat(activityCountForTarget(visibleId)).isZero();
     }
 
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("humanEquivalentSearchCases")
+    @DisplayName("REQ-ORATORIANO-002 - comparison input normalizes whitespace, field boundaries, accents, and typographic separators")
+    void ordinarySearchShouldNormalizeTheCompleteHumanEquivalentComparisonInput(
+            String scenario,
+            String firstName,
+            String surname,
+            String submittedFullName
+    ) {
+        AuthSession caller = sudoSession();
+        UUID expectedId = createOratoriano(caller, firstName, surname);
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .body(searchPayload(filter("name", submittedFullName, "EQUALS")))
+                .post(ORATORIANOS + "/search")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(scenario + ": " + response.asString()).isEqualTo(200);
+        assertThat(resourceIds(response.path("items"))).as(scenario).containsExactly(expectedId);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("meaningfullyDifferentSearchCases")
+    @DisplayName("REQ-ORATORIANO-002 - comparison normalization preserves meaningful punctuation")
+    void ordinarySearchShouldNotEraseMeaningfulPunctuation(
+            String scenario,
+            String firstName,
+            String surname,
+            String submittedFullName
+    ) {
+        AuthSession caller = sudoSession();
+        createOratoriano(caller, firstName, surname);
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .body(searchPayload(filter("name", submittedFullName, "EQUALS")))
+                .post(ORATORIANOS + "/search")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(scenario + ": " + response.asString()).isEqualTo(200);
+        assertThat(resourceIds(response.path("items"))).as(scenario).isEmpty();
+    }
+
     @Test
     @DisplayName("REQ-ORATORIANO-008 - UUID equality filter -> only the identified active Oratoriano")
     void ordinarySearchShouldSupportUuidLookup() {
@@ -391,6 +435,65 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
     }
 
     @Test
+    @DisplayName("REQ-ORATORIANO-012 and REQ-OPENAPI-004 - unrequested attendance summary dimensions are omitted")
+    void attendanceSummaryShouldOmitUnrequestedYearAndMonthFields() {
+        AuthSession caller = sudoSession();
+        UUID oratorianoId = createOratoriano(caller, "Renata", "Nunes");
+
+        ExtractableResponse<Response> allTime = authenticatedJsonRequest(caller)
+                .get(ORATORIANOS + "/{id}/attendance-summary", oratorianoId)
+                .then()
+                .extract();
+        ExtractableResponse<Response> selectedYear = authenticatedJsonRequest(caller)
+                .queryParam("year", 2026)
+                .get(ORATORIANOS + "/{id}/attendance-summary", oratorianoId)
+                .then()
+                .extract();
+
+        assertThat(allTime.statusCode()).as(allTime.asString()).isEqualTo(200);
+        assertThat(allTime.jsonPath().getMap("$")).containsOnlyKeys(
+                "oratorioAttendances",
+                "oratorioDistinctMonthsAttendances",
+                "oratorioDistinctYearsAttendances"
+        );
+        assertThat(selectedYear.statusCode()).as(selectedYear.asString()).isEqualTo(200);
+        assertThat(selectedYear.jsonPath().getMap("$")).containsOnlyKeys(
+                "oratorioAttendances",
+                "oratorioDistinctMonthsAttendances",
+                "oratorioDistinctYearsAttendances",
+                "oratorioYearAttendances",
+                "oratorioYearDistinctMonthsAttendances"
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidAttendanceSummaryDimensionCases")
+    @DisplayName("REQ-ORATORIANO-012 - invalid requested attendance dimensions fail without a partial summary")
+    void invalidAttendanceSummaryDimensionsShouldBeRejected(
+            String scenario,
+            Integer year,
+            Integer month
+    ) {
+        AuthSession caller = sudoSession();
+        UUID oratorianoId = createOratoriano(caller, "Invalid", "Summary");
+        var request = authenticatedJsonRequest(caller);
+        if (year != null) {
+            request.queryParam("year", year);
+        }
+        if (month != null) {
+            request.queryParam("month", month);
+        }
+
+        ExtractableResponse<Response> response = request
+                .get(ORATORIANOS + "/{id}/attendance-summary", oratorianoId)
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(scenario + ": " + response.asString()).isEqualTo(400);
+        assertThat(response.<String>path("code")).as(scenario).isEqualTo("INVALID_COMMAND");
+    }
+
+    @Test
     @DisplayName("REQ-ORATORIANO-012 - attendance history returns active facts newest occurrence first without sensitive data")
     void attendanceHistoryShouldReturnOnlyActiveFactsNewestFirst() {
         setCurrentInstant(Instant.parse("2026-07-25T21:00:00Z"));
@@ -460,6 +563,115 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
                 .containsSubsequence(twoAttendances, oneAttendance, alphabeticalTie, noAttendance);
         assertThat(response.asString())
                 .doesNotContain("rank", "score", "mostFrequent", "threshold", "ranking");
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-008, REQ-ORATORIANO-012 and REQ-OPENAPI-007 - allowed yearly-attendance ascending sort follows its requested direction")
+    void yearlyAttendanceSortShouldHonorTheDocumentedAscendingDirection() {
+        setCurrentInstant(Instant.parse("2026-07-25T21:00:00Z"));
+        AuthSession caller = sudoSession();
+        UUID noAttendance = createOratoriano(caller, "Ana", "Silva");
+        UUID oneAttendance = createOratoriano(caller, "Bruno", "Lima");
+        UUID occurrence = createOratorio(caller, LocalDate.of(2026, 5, 9));
+        markPresent(caller, occurrence, oneAttendance);
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .queryParam("sort", "oratorioYearAttendances,asc")
+                .queryParam("attendanceYear", 2026)
+                .body(searchPayload())
+                .post(ORATORIANOS + "/search")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(200);
+        assertThat(resourceIds(response.path("items")))
+                .containsExactly(noAttendance, oneAttendance);
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-008 and REQ-OPENAPI-007 - repeatable sort validates every value against the endpoint allowlist")
+    void repeatableSortShouldValidateEveryValueAgainstTheOratorianoAllowlist() {
+        AuthSession caller = sudoSession();
+        createOratoriano(caller, "Ana", "Silva");
+
+        ExtractableResponse<Response> repeatedAllowed = authenticatedJsonRequest(caller)
+                .queryParam(
+                        "sort",
+                        List.of(
+                                "oratorioYearAttendances,desc",
+                                "oratorioYearAttendances,desc"
+                        )
+                )
+                .body(searchPayload())
+                .post(ORATORIANOS + "/search")
+                .then()
+                .extract();
+        ExtractableResponse<Response> oneDisallowed = authenticatedJsonRequest(caller)
+                .queryParam(
+                        "sort",
+                        List.of(
+                                "oratorioYearAttendances,desc",
+                                "name,asc"
+                        )
+                )
+                .body(searchPayload())
+                .post(ORATORIANOS + "/search")
+                .then()
+                .extract();
+
+        assertThat(repeatedAllowed.statusCode())
+                .as(repeatedAllowed.asString())
+                .isEqualTo(200);
+        assertThat(oneDisallowed.statusCode())
+                .as(oneDisallowed.asString())
+                .isEqualTo(400);
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-008 and REQ-OPENAPI-007 - repeated sort values cannot repair split field and direction tokens")
+    void repeatedSortValuesShouldEachRequireFieldAndDirectionSyntax() {
+        AuthSession caller = sudoSession();
+        createOratoriano(caller, "Ana", "Silva");
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .body(searchPayload())
+                .post(ORATORIANOS + "/search?sort=oratorioYearAttendances&sort=asc")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(400);
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-008 and REQ-OPENAPI-007 - supplied blank sort value is rejected rather than treated as omitted")
+    void blankSortValueShouldBeRejected() {
+        AuthSession caller = sudoSession();
+        createOratoriano(caller, "Ana", "Silva");
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .body(searchPayload())
+                .post(ORATORIANOS + "/search?sort=")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(400);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidOratorianoSortCases")
+    @DisplayName("REQ-ORATORIANO-008 and REQ-OPENAPI-007 - malformed or unknown sort directions are rejected")
+    void invalidOratorianoSortShouldBeRejected(String scenario, String sort) {
+        AuthSession caller = sudoSession();
+        createOratoriano(caller, "Ana", "Silva");
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .queryParam("sort", sort)
+                .body(searchPayload())
+                .post(ORATORIANOS + "/search")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(scenario + ": " + response.asString()).isEqualTo(400);
     }
 
     @Test
@@ -549,6 +761,71 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
         return Stream.of(
                 Arguments.of("case and diacritic variants", "João", "Silva", "JOAO", "SILVA"),
                 Arguments.of("flattened first-name/surname boundary", "Ana Maria", "Souza", "Ana", "Maria Souza")
+        );
+    }
+
+    private static Stream<Arguments> humanEquivalentSearchCases() {
+        return Stream.of(
+                Arguments.of(
+                        "flattened boundary with accepted whitespace variants",
+                        "Ana Maria",
+                        "Souza",
+                        "  ANA \t MARIA   SOUZA  "
+                ),
+                Arguments.of(
+                        "typographic apostrophe and accent variant",
+                        "Lia",
+                        "D'Ávila",
+                        "lia d’avila"
+                ),
+                Arguments.of(
+                        "typographic dash variant",
+                        "Ana-Luiza",
+                        "Silva",
+                        "ANA–LUIZA SILVA"
+                )
+        );
+    }
+
+    private static Stream<Arguments> meaningfullyDifferentSearchCases() {
+        return Stream.of(
+                Arguments.of(
+                        "hyphen cannot be erased into whitespace",
+                        "Ana-Luiza",
+                        "Silva",
+                        "Ana Luiza Silva"
+                ),
+                Arguments.of(
+                        "apostrophe cannot be erased",
+                        "Lia",
+                        "D'Ávila",
+                        "Lia Davila"
+                )
+        );
+    }
+
+    private static Stream<Arguments> invalidAttendanceSummaryDimensionCases() {
+        return Stream.of(
+                Arguments.of("month without year", null, 1),
+                Arguments.of("month below January", 2026, 0),
+                Arguments.of("month above December", 2026, 13)
+        );
+    }
+
+    private static Stream<Arguments> invalidOratorianoSortCases() {
+        return Stream.of(
+                Arguments.of(
+                        "unknown direction",
+                        "oratorioYearAttendances,sideways"
+                ),
+                Arguments.of(
+                        "missing direction",
+                        "oratorioYearAttendances"
+                ),
+                Arguments.of(
+                        "missing field",
+                        ",asc"
+                )
         );
     }
 

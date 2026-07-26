@@ -14,6 +14,8 @@ import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 @ApiTest
 @FunctionalTest
 @IntegrationTest
@@ -133,6 +135,56 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
     }
 
     @Test
+    @DisplayName("REQ-ORATORIANO-012 and REQ-OPENAPI-004 - attendance summary schema distinguishes always-present and requested-only counts")
+    void attendanceSummarySchemaShouldExposeAccurateConsumerVisibleOptionality() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> operation = operation(
+                object(contract, "paths"),
+                route("get", "/oratorianos/{oratorianoId}/attendance-summary")
+        );
+        Map<String, Object> response = object(object(operation, "responses"), "200");
+        Map<String, Object> mediaType = object(object(response, "content"), "application/json");
+        Map<String, Object> responseSchema = object(mediaType, "schema");
+        String reference = String.valueOf(responseSchema.get("$ref"));
+        String schemaName = reference.substring(reference.lastIndexOf('/') + 1);
+        Map<String, Object> summarySchema = object(
+                object(object(contract, "components"), "schemas"),
+                schemaName
+        );
+        Map<String, Object> properties = object(summarySchema, "properties");
+        List<String> required = summarySchema.get("required") instanceof List<?> values
+                ? values.stream().map(String::valueOf).toList()
+                : List.of();
+
+        assertThat(properties).containsOnlyKeys(
+                "oratorioAttendances",
+                "oratorioDistinctMonthsAttendances",
+                "oratorioDistinctYearsAttendances",
+                "oratorioYearAttendances",
+                "oratorioYearDistinctMonthsAttendances",
+                "oratorioMonthAttendances"
+        );
+        assertThat(required).containsExactlyInAnyOrder(
+                "oratorioAttendances",
+                "oratorioDistinctMonthsAttendances",
+                "oratorioDistinctYearsAttendances"
+        );
+        for (String requestedOnly : List.of(
+                "oratorioYearAttendances",
+                "oratorioYearDistinctMonthsAttendances",
+                "oratorioMonthAttendances"
+        )) {
+            Map<String, Object> property = object(properties, requestedOnly);
+            assertThat(property.get("nullable"))
+                    .as("%s must be optional but non-null", requestedOnly)
+                    .isNotEqualTo(true);
+            assertThat(property.get("type"))
+                    .as("%s must not admit explicit null", requestedOnly)
+                    .isNotInstanceOf(List.class);
+        }
+    }
+
+    @Test
     @DisplayName("REQ-OPENAPI-003 and module route catalogs - Oratorio operations -> exact tags, success statuses, media types, and paging parameters")
     void acceptedOratorioModuleOperationsShouldExposeExactHttpContracts() {
         Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
@@ -226,6 +278,20 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
         assertions.assertThat(searchSortSchema)
                 .as("Oratoriano search repeatable sort schema")
                 .containsEntry("type", "array");
+        assertions.assertThat(searchSort)
+                .as("Oratoriano search repeatable query serialization")
+                .containsEntry("style", "form")
+                .containsEntry("explode", true);
+        Map<String, Object> searchSortItems = object(searchSortSchema, "items");
+        assertions.assertThat(searchSortItems)
+                .as("each repeated Oratoriano sort value")
+                .containsEntry("type", "string");
+        assertions.assertThat(strings(searchSortItems, "enum"))
+                .as("consumer-visible Oratoriano sort item grammar and allowed values")
+                .containsExactlyInAnyOrder(
+                        "oratorioYearAttendances,asc",
+                        "oratorioYearAttendances,desc"
+                );
         assertions.assertThat(searchSortSchema.get("default"))
                 .as("omitting sort selects the deterministic ordinary-profile default")
                 .isNull();
@@ -235,6 +301,20 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
                 .contains("oratorioYearAttendances")
                 .containsIgnoringCase("name")
                 .containsIgnoringCase("UUID");
+
+        Map<String, Object> attendanceSummary = operation(
+                paths,
+                route("get", "/oratorianos/{oratorianoId}/attendance-summary")
+        );
+        Map<String, Object> attendanceMonth = objects(attendanceSummary, "parameters").stream()
+                .filter(parameter -> "month".equals(parameter.get("name")))
+                .findFirst()
+                .orElseThrow();
+        assertions.assertThat(object(attendanceMonth, "schema"))
+                .as("attendance-summary month boundary")
+                .containsEntry("type", "integer")
+                .containsEntry("minimum", 1)
+                .containsEntry("maximum", 12);
 
         for (Route creation : List.of(
                 route("post", "/oratorios"),
