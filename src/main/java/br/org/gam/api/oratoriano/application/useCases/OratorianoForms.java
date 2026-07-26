@@ -147,6 +147,7 @@ public class OratorianoForms {
 
     @Transactional
     public FormRDTO replaceDraft(UUID oratorianoId, UUID formId, FormDraftDTO dto) {
+        requireActiveOratorianoForUpdate(oratorianoId);
         FormRow row = requiredForUpdate(oratorianoId, formId);
         assertDraft(row);
         Map<String, Object> data = draftData(dto);
@@ -290,6 +291,7 @@ public class OratorianoForms {
             UUID formId,
             List<MultipartFile> files
     ) {
+        requireActiveOratorianoForUpdate(oratorianoId);
         FormRow row = requiredForUpdate(oratorianoId, formId);
         assertDraft(row);
         List<NewAttachment> replacements = attachmentUploads(files);
@@ -387,6 +389,7 @@ public class OratorianoForms {
 
     @Transactional
     public PrintSnapshotRDTO createPrintSnapshot(UUID oratorianoId, UUID formId) {
+        requireActiveOratorianoForUpdate(oratorianoId);
         FormRow row = requiredForUpdate(oratorianoId, formId);
         assertDraft(row);
         UUID id = UUIDGenerator.generateUUIDV7();
@@ -505,10 +508,8 @@ public class OratorianoForms {
                 formId
         );
         jdbcTemplate.update(
-                "UPDATE oratoriano_additional_forms SET deleted_at = ?, deleted_by = ?, updated_at = ?, updated_by = ? "
+                "UPDATE oratoriano_additional_forms SET deleted_at = ?, deleted_by = ? "
                         + "WHERE id = ? AND deleted_at IS NULL",
-                now,
-                actor,
                 now,
                 actor,
                 formId
@@ -595,6 +596,7 @@ public class OratorianoForms {
     @Transactional
     public void revoke(UUID oratorianoId, UUID formId, String rawReason) {
         String reason = RequiredReason.normalize(rawReason, "Form revocation requires an audit reason.");
+        requireActiveOratorianoForUpdate(oratorianoId);
         FormRow row = requiredForUpdate(oratorianoId, formId);
         if (row.status() != FormStatus.COMPLETED) {
             throw ConflictException.resource(
@@ -627,6 +629,11 @@ public class OratorianoForms {
 
     private FormRDTO getRow(UUID oratorianoId, UUID formId) {
         return required(oratorianoId, formId).toRDTO();
+    }
+
+    private OratorianoEntity requireActiveOratorianoForUpdate(UUID oratorianoId) {
+        return oratorianoRepository.findActiveByIdForUpdate(oratorianoId)
+                .orElseThrow(() -> NotFoundException.resource("Oratoriano", oratorianoId));
     }
 
     private FormRow required(UUID oratorianoId, UUID formId) {
@@ -1444,6 +1451,7 @@ public class OratorianoForms {
         lines.add("Information use understood / Uso das informações compreendido - Initial / Rubrica: ______");
         lines.add("Form reviewed / Formulário revisado - Initial / Rubrica: ______");
         lines.add("Image and voice authorization / Autorização de imagem e voz - Initial / Rubrica: ______");
+        lines.add("Signature date / Data da assinatura: ____________________");
         lines.add("Full signature / Assinatura completa: ____________________________________");
         return lines;
     }

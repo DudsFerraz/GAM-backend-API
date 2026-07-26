@@ -312,6 +312,22 @@ class OratorianoAdditionalFormsApiIT extends OratorioModuleApiTestSupport {
     }
 
     @Test
+    @DisplayName("REQ-ORATORIANO-FORM-010 and REQ-ORATORIANO-FORM-011 - identified blank PDF exposes a writable handwritten signedOn control")
+    void identifiedBlankPdfShouldExposeAHandwrittenSignatureDateControl() throws IOException {
+        AuthSession caller = sudoSession();
+        UUID oratorianoId = createOratoriano(caller, "Marina", "Sousa");
+        UUID formId = draftId(createDraft(caller, oratorianoId, "PAPER_TRANSCRIPTION"));
+
+        SnapshotPdf snapshot = createSnapshotAndRender(caller, oratorianoId, formId);
+        String text = pdfText(snapshot.bytes());
+
+        assertThat(text).containsPattern(
+                "(?is)(signed.?on|signature date|data da assinatura|data de assinatura)"
+                        + ".{0,40}_{4,}"
+        );
+    }
+
+    @Test
     @DisplayName("REQ-ORATORIANO-FORM-012 - print-snapshot mode derives from immutable origin")
     void printSnapshotModeShouldDeriveFromOrigin() {
         AuthSession caller = sudoSession();
@@ -361,6 +377,303 @@ class OratorianoAdditionalFormsApiIT extends OratorioModuleApiTestSupport {
         assertThat(authenticatedJsonRequest(caller)
                 .get(formPath(oratorianoId, formId) + "/print-snapshots/{snapshotId}/pdf", snapshotId)
                 .statusCode()).isEqualTo(404);
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-FORM-002 and REQ-PERSISTENCE-003 - draft cascade deletion preserves latest non-deletion update audit")
+    void draftDeletionShouldPreserveUpdateAuditForTheDraftAndOwnedArtifacts() {
+        setCurrentInstant(Instant.parse("2026-07-25T14:00:00Z"));
+        AuthSession creator = sudoSession();
+        AuthSession deleter = sudoSession();
+        UUID oratorianoId = createOratoriano(creator, "Audit", "Preservation");
+        UUID formId = draftId(createDraft(
+                creator,
+                oratorianoId,
+                "PAPER_TRANSCRIPTION"
+        ));
+        UUID snapshotId = UUID.fromString(authenticatedJsonRequest(creator)
+                .post(formPath(oratorianoId, formId) + "/print-snapshots")
+                .then()
+                .statusCode(201)
+                .extract()
+                .path("id"));
+        UUID attachmentId = UUID.fromString(replaceAttachments(
+                creator,
+                oratorianoId,
+                formId,
+                List.of(new TestAttachment(
+                        "signed-form.pdf",
+                        "application/pdf",
+                        pdfBytes(128)
+                ))
+        ).path("[0].id"));
+        Map<String, Object> formAudit = updateAudit("oratoriano_additional_forms", formId);
+        Map<String, Object> snapshotAudit =
+                updateAudit("oratoriano_form_print_snapshots", snapshotId);
+        Map<String, Object> attachmentAudit =
+                updateAudit("oratoriano_form_attachments", attachmentId);
+        setCurrentInstant(Instant.parse("2026-07-25T15:00:00Z"));
+
+        ExtractableResponse<Response> deletion = authenticatedJsonRequest(deleter)
+                .body(reasonPayload("Deleting the incorrect draft"))
+                .delete(formPath(oratorianoId, formId))
+                .then()
+                .extract();
+
+        assertThat(deletion.statusCode()).as(deletion.asString()).isEqualTo(204);
+        assertThat(updateAudit("oratoriano_additional_forms", formId))
+                .containsAllEntriesOf(formAudit);
+        assertThat(updateAudit("oratoriano_form_print_snapshots", snapshotId))
+                .containsAllEntriesOf(snapshotAudit);
+        assertThat(updateAudit("oratoriano_form_attachments", attachmentId))
+                .containsAllEntriesOf(attachmentAudit);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("artifactMutationRaceCases")
+    @DisplayName("ADR-0017, REQ-ORATORIANO-009, REQ-ORATORIANO-FORM-002 and REQ-PERSISTENCE-008 - artifact mutation cannot overtake Oratoriano deletion")
+    void draftArtifactMutationShouldNotSurviveConcurrentOratorianoDeletion(
+            String scenario,
+            String mutation
+    ) throws Exception {
+        AuthSession caller = sudoSession();
+        UUID oratorianoId = createOratoriano(caller, "Concurrent", "Artifact");
+        UUID formId = draftId(createDraft(caller, oratorianoId, "PAPER_TRANSCRIPTION"));
+        long advisoryLock = 76_017_003L;
+        String trigger = "test_block_oratoriano_artifact_cascade";
+        String function = "test_block_oratoriano_artifact_cascade";
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        jdbcTemplate.execute(
+                "CREATE OR REPLACE FUNCTION " + function + "() RETURNS trigger "
+                        + "LANGUAGE plpgsql AS $$ BEGIN "
+                        + "PERFORM pg_advisory_xact_lock(" + advisoryLock + "); "
+                        + "RETURN NULL; END $$"
+        );
+        jdbcTemplate.execute(
+                "CREATE TRIGGER " + trigger
+                        + " BEFORE UPDATE ON oratoriano_form_print_snapshots "
+                        + "FOR EACH STATEMENT EXECUTE FUNCTION " + function + "()"
+        );
+
+        try (Connection blocker = jdbcTemplate.getDataSource().getConnection();
+             PreparedStatement lock = blocker.prepareStatement("SELECT pg_advisory_lock(?)");
+             PreparedStatement unlock = blocker.prepareStatement("SELECT pg_advisory_unlock(?)")) {
+            lock.setLong(1, advisoryLock);
+            try (var ignored = lock.executeQuery()) {
+                assertThat(ignored.next()).isTrue();
+            }
+
+            Future<ExtractableResponse<Response>> deletion = executor.submit(() ->
+                    authenticatedJsonRequest(caller)
+                            .body(reasonPayload("Deleting an erroneous Oratoriano"))
+                            .delete("/oratorianos/{oratorianoId}", oratorianoId)
+                            .then()
+                            .extract()
+            );
+            awaitWaitingQuery("UPDATE oratoriano_form_print_snapshots", 1);
+
+            Future<ExtractableResponse<Response>> artifactMutation = executor.submit(() ->
+                    "attachment".equals(mutation)
+                            ? replaceAttachments(
+                                    caller,
+                                    oratorianoId,
+                                    formId,
+                                    List.of(new TestAttachment(
+                                            "signed-form.pdf",
+                                            "application/pdf",
+                                            pdfBytes(128)
+                                    ))
+                            )
+                            : authenticatedJsonRequest(caller)
+                                    .post(formPath(oratorianoId, formId) + "/print-snapshots")
+                                    .then()
+                                    .extract()
+            );
+            boolean artifactCommittedBeforeDeletion =
+                    awaitFutureCompletion(artifactMutation, 2, TimeUnit.SECONDS);
+
+            unlock.setLong(1, advisoryLock);
+            try (var ignored = unlock.executeQuery()) {
+                assertThat(ignored.next()).isTrue();
+                assertThat(ignored.getBoolean(1)).isTrue();
+            }
+            ExtractableResponse<Response> deletionResponse =
+                    deletion.get(15, TimeUnit.SECONDS);
+            ExtractableResponse<Response> mutationResponse =
+                    artifactMutation.get(15, TimeUnit.SECONDS);
+
+            assertThat(deletionResponse.statusCode())
+                    .as(deletionResponse.asString())
+                    .isEqualTo(204);
+            assertThat(activeArtifactCount(
+                    "oratoriano_form_attachments",
+                    formId
+            )).as(scenario + " must leave no active signed attachment").isZero();
+            assertThat(activeArtifactCount(
+                    "oratoriano_form_print_snapshots",
+                    formId
+            )).as(scenario + " must leave no active print snapshot").isZero();
+            assertThat(artifactCommittedBeforeDeletion)
+                    .as(scenario + " must wait behind the Oratoriano deletion boundary")
+                    .isFalse();
+            assertThat(mutationResponse.statusCode())
+                    .as(mutationResponse.asString())
+                    .isEqualTo(404);
+        } finally {
+            executor.shutdownNow();
+            jdbcTemplate.execute(
+                    "DROP TRIGGER IF EXISTS " + trigger
+                            + " ON oratoriano_form_print_snapshots"
+            );
+            jdbcTemplate.execute("DROP FUNCTION IF EXISTS " + function + "()");
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("artifactMutationRaceCases")
+    @DisplayName("ADR-0017 and REQ-ORATORIANO-FORM-002 - in-flight artifact mutation commits before Oratoriano deletion cascades it")
+    void inFlightDraftArtifactMutationShouldCommitBeforeOratorianoDeletionCascadesIt(
+            String scenario,
+            String mutation
+    ) throws Exception {
+        AuthSession caller = sudoSession();
+        UUID oratorianoId = createOratoriano(caller, "Mutation First", "Artifact");
+        UUID formId = draftId(createDraft(caller, oratorianoId, "PAPER_TRANSCRIPTION"));
+        long advisoryLock = 76_017_005L;
+        String table = "attachment".equals(mutation)
+                ? "oratoriano_form_attachments"
+                : "oratoriano_form_print_snapshots";
+        String trigger = "test_block_inflight_artifact_insert";
+        String function = "test_block_inflight_artifact_insert";
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        jdbcTemplate.execute(
+                "CREATE OR REPLACE FUNCTION " + function + "() RETURNS trigger "
+                        + "LANGUAGE plpgsql AS $$ BEGIN "
+                        + "PERFORM pg_advisory_xact_lock(" + advisoryLock + "); "
+                        + "RETURN NEW; END $$"
+        );
+        jdbcTemplate.execute(
+                "CREATE TRIGGER " + trigger + " BEFORE INSERT ON " + table
+                        + " FOR EACH ROW EXECUTE FUNCTION " + function + "()"
+        );
+
+        try (Connection blocker = jdbcTemplate.getDataSource().getConnection();
+             PreparedStatement lock = blocker.prepareStatement("SELECT pg_advisory_lock(?)");
+             PreparedStatement unlock = blocker.prepareStatement("SELECT pg_advisory_unlock(?)")) {
+            lock.setLong(1, advisoryLock);
+            try (var ignored = lock.executeQuery()) {
+                assertThat(ignored.next()).isTrue();
+            }
+
+            Future<ExtractableResponse<Response>> artifactMutation = executor.submit(() ->
+                    "attachment".equals(mutation)
+                            ? replaceAttachments(
+                                    caller,
+                                    oratorianoId,
+                                    formId,
+                                    List.of(new TestAttachment(
+                                            "signed-form.pdf",
+                                            "application/pdf",
+                                            pdfBytes(128)
+                                    ))
+                            )
+                            : authenticatedJsonRequest(caller)
+                                    .post(formPath(oratorianoId, formId) + "/print-snapshots")
+                                    .then()
+                                    .extract()
+            );
+            awaitWaitingQuery("INSERT INTO " + table, 1);
+
+            Future<ExtractableResponse<Response>> deletion = executor.submit(() ->
+                    authenticatedJsonRequest(caller)
+                            .body(reasonPayload("Deleting an erroneous Oratoriano"))
+                            .delete("/oratorianos/{oratorianoId}", oratorianoId)
+                            .then()
+                            .extract()
+            );
+            awaitWaitingQuery("oratorianos", 1);
+
+            unlock.setLong(1, advisoryLock);
+            try (var ignored = unlock.executeQuery()) {
+                assertThat(ignored.next()).isTrue();
+                assertThat(ignored.getBoolean(1)).isTrue();
+            }
+            ExtractableResponse<Response> mutationResponse =
+                    artifactMutation.get(15, TimeUnit.SECONDS);
+            ExtractableResponse<Response> deletionResponse =
+                    deletion.get(15, TimeUnit.SECONDS);
+
+            assertThat(mutationResponse.statusCode())
+                    .as(mutationResponse.asString())
+                    .isEqualTo("attachment".equals(mutation) ? 200 : 201);
+            assertThat(deletionResponse.statusCode())
+                    .as(deletionResponse.asString())
+                    .isEqualTo(204);
+            assertThat(activeArtifactCount(
+                    "oratoriano_form_attachments",
+                    formId
+            )).as(scenario + " must leave no active signed attachment").isZero();
+            assertThat(activeArtifactCount(
+                    "oratoriano_form_print_snapshots",
+                    formId
+            )).as(scenario + " must leave no active print snapshot").isZero();
+        } finally {
+            executor.shutdownNow();
+            jdbcTemplate.execute("DROP TRIGGER IF EXISTS " + trigger + " ON " + table);
+            jdbcTemplate.execute("DROP FUNCTION IF EXISTS " + function + "()");
+        }
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-009 and REQ-PERSISTENCE-003 - Oratoriano deletion cascade preserves draft and artifact update audit")
+    void oratorianoDeletionShouldPreserveDraftAndArtifactUpdateAudit() {
+        setCurrentInstant(Instant.parse("2026-07-25T14:00:00Z"));
+        AuthSession creator = sudoSession();
+        AuthSession deleter = sudoSession();
+        UUID oratorianoId = createOratoriano(creator, "Cascade", "Audit");
+        UUID formId = draftId(createDraft(
+                creator,
+                oratorianoId,
+                "PAPER_TRANSCRIPTION"
+        ));
+        UUID snapshotId = UUID.fromString(authenticatedJsonRequest(creator)
+                .post(formPath(oratorianoId, formId) + "/print-snapshots")
+                .then()
+                .statusCode(201)
+                .extract()
+                .path("id"));
+        UUID attachmentId = UUID.fromString(replaceAttachments(
+                creator,
+                oratorianoId,
+                formId,
+                List.of(new TestAttachment(
+                        "signed-form.pdf",
+                        "application/pdf",
+                        pdfBytes(128)
+                ))
+        ).path("[0].id"));
+        Map<String, Object> formAudit = updateAudit("oratoriano_additional_forms", formId);
+        Map<String, Object> snapshotAudit =
+                updateAudit("oratoriano_form_print_snapshots", snapshotId);
+        Map<String, Object> attachmentAudit =
+                updateAudit("oratoriano_form_attachments", attachmentId);
+        setCurrentInstant(Instant.parse("2026-07-25T15:00:00Z"));
+
+        ExtractableResponse<Response> deletion = authenticatedJsonRequest(deleter)
+                .body(reasonPayload("Deleting the incorrect Oratoriano identity"))
+                .delete("/oratorianos/{oratorianoId}", oratorianoId)
+                .then()
+                .extract();
+
+        assertThat(deletion.statusCode()).as(deletion.asString()).isEqualTo(204);
+        assertThat(updateAudit("oratoriano_additional_forms", formId))
+                .containsAllEntriesOf(formAudit);
+        assertThat(updateAudit("oratoriano_form_print_snapshots", snapshotId))
+                .containsAllEntriesOf(snapshotAudit);
+        assertThat(updateAudit("oratoriano_form_attachments", attachmentId))
+                .containsAllEntriesOf(attachmentAudit);
     }
 
     @Test
@@ -2238,6 +2551,63 @@ class OratorianoAdditionalFormsApiIT extends OratorioModuleApiTestSupport {
             offset += normalizedToken.length();
         }
         return count;
+    }
+
+    private static Stream<Arguments> artifactMutationRaceCases() {
+        return Stream.of(
+                Arguments.of("signed attachment replacement", "attachment"),
+                Arguments.of("print-snapshot creation", "snapshot")
+        );
+    }
+
+    private Map<String, Object> updateAudit(String table, UUID id) {
+        return jdbcTemplate.queryForMap(
+                "SELECT updated_at, updated_by FROM " + table + " WHERE id = ?",
+                id
+        );
+    }
+
+    private long activeArtifactCount(String table, UUID formId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + table
+                        + " WHERE form_id = ? AND deleted_at IS NULL",
+                Long.class,
+                formId
+        );
+    }
+
+    private void awaitWaitingQuery(String queryFragment, int expectedCount)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            Long count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM pg_stat_activity "
+                            + "WHERE datname = current_database() "
+                            + "AND wait_event_type = 'Lock' AND query ILIKE ?",
+                    Long.class,
+                    "%" + queryFragment + "%"
+            );
+            if (count != null && count >= expectedCount) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        throw new AssertionError("Timed out waiting for blocked query: " + queryFragment);
+    }
+
+    private boolean awaitFutureCompletion(
+            Future<?> future,
+            long timeout,
+            TimeUnit unit
+    ) throws InterruptedException {
+        long deadline = System.nanoTime() + unit.toNanos(timeout);
+        while (System.nanoTime() < deadline) {
+            if (future.isDone()) {
+                return true;
+            }
+            Thread.sleep(25);
+        }
+        return future.isDone();
     }
 
     private void awaitMutationLockWaiters(int expectedCount) throws InterruptedException {
