@@ -1,5 +1,3 @@
-have both codex and claude signatures
-
 0- **Attendance intention:** A member indicates their intention to attend an event. This does not count as confirmed attendance; a coordinator must confirm the member’s presence. This feature is useful to the whole group easily understand who and in what position is attending an event.
 ---
 For example, Missa:
@@ -15,8 +13,6 @@ These are all presence intentions, but not confirmed, since the event has not be
 
 0.2- Cronjobs
 
-0.3- There should exist some seeded locations: DBSM, DBA, DBCA. DBSM should be used as default for oratorio.
-
 0.4- OpenAI agents SDK
 
 1- Entender de verdade toda a security chain
@@ -27,8 +23,6 @@ These are all presence intentions, but not confirmed, since the event has not be
 https://github.com/Dammyjay93/interface-design
 
 ---
-
-Points that I already established that NEEDS rework
 
 5- licenses and legal terms about data and other.
 

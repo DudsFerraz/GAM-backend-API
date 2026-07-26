@@ -1,6 +1,0 @@
-Above are all genuine questions about, not necessarily fix/changes recommendations
-
-1- in .agents\skills\gam-agent-workflow\SKILL.md
-Is diagnosing-bugs citation really needed? Does it cause a positive effect? If it was just ommited it would not be better? I would think that naturally the LLM would not consider invoking diagnosing-bugs, since in the skill description it is stated that " Use only when the developer explicitly asks for $diagnosing-bugs, diagnosis mode, deep bug diagnosis, or this specific diagnostic workflow"
-
-2- 

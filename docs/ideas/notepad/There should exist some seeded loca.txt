@@ -1,0 +1,35 @@
+There should exist some seeded locations: DBSM, DBA, DBCA. DBSM should be used as default for oratorio.
+
+doubts:
+
+1- What are the identities columns in src\main\java\br\org\gam\api\gamLocation\persistence\GamLocationEntity.java?
+
+2- There are no "number" and "bairro" column, should this info be included in "street"? creating new columns may be considered.
+
+3- Could be an optional "displayName" be interesting? For example DBA, DBSM, and DBCA. Yet another example is in a missionary action in another city, when the official name could be not very easy to interpret, while "AM 2026 location" is better for members understanding.
+
+locations to seed:
+
+1- DBSM
+name = "Dom Bosco São Mário"
+street = "Av. Santa Rosa, Areião, 653"
+city = "Piracicaba"
+state = "SP"
+postalCode = 13414038
+countryCode = (Brasil countryCode)
+
+2- DBA
+name = "Dom Bosco Assunção"
+street = "R. Boa Morte, Centro, 1835"
+city = "Piracicaba"
+state = "SP"
+postalCode = 13400140
+countryCode = (Brasil countryCode)
+
+3- DBCA
+name = "Dom Bosco Cidade Alta"
+street = "R. Alfredo Guedes, Cidade Alta, 1199"
+city = "Piracicaba"
+state = "SP"
+postalCode = 13419080
+countryCode = (Brasil countryCode)
