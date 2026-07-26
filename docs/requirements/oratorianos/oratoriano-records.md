@@ -131,7 +131,7 @@ Year and month boundaries shall use `America/Sao_Paulo`. Only active confirmed O
 
 `POST /oratorianos/search` shall require `ORATORIANO_GET` and return only non-deleted Oratorianos by default.
 
-Ordinary search shall support UUID and human-equivalent name lookup and return the ordinary profile plus requested derived attendance counts.
+Ordinary search shall support UUID and human-equivalent name lookup through the public filter catalog in `REQ-ORATORIANO-013` and return the ordinary profile plus requested derived attendance counts.
 
 Clients may optionally sort by `oratorioYearAttendances(year)`. Ordering shall append normalized name and UUID tie-breakers. The response shall not contain a rank, score, “most frequent” flag, threshold classification, or persisted ranking.
 
@@ -192,6 +192,21 @@ Attendance history shall default to newest occurrence first and return compact O
 
 Structured search shall follow the project paging and filter contract. `attendanceYear` shall select the year used by `sort=oratorioYearAttendances,desc`; when omitted for that sort, the current `America/Sao_Paulo` year shall apply. The selected derived count may be returned, but no ranking representation shall be introduced.
 
+---
+
+### REQ-ORATORIANO-013: Structured search filter catalog
+
+Oratoriano search shall use the shared request grammar, composition, value-shape, complexity-limit, invalid-filter, and empty-result rules in `REQ-SEARCH-001` through `REQ-SEARCH-012`, with only this public filter catalog:
+
+| Public field | Allowed comparisons | Product meaning and value contract |
+| --- | --- | --- |
+| `id` | `EQUALS`, `IN` | The Oratoriano UUID. Values follow `REQ-SEARCH-006`. |
+| `name` | `EQUALS`, `LIKE` | The Oratoriano's current complete name, formed from first name and surname under `REQ-ORATORIANO-002`. |
+
+For `name`, both the stored complete name and the submitted value shall be compared through the same human-equivalence search key: trim and collapse whitespace sequences to one space, compare case-insensitively and diacritic-insensitively, and preserve punctuation as meaningful. `EQUALS` shall require equality of the complete search key. `LIKE` shall perform literal substring matching within the complete search key, so a first name, surname, or complete name may match.
+
+The search catalog shall expose neither birth date, phone, identity-document data, health or family data, additional-form data, attendance internals, nor persistence field paths. Any field other than the two listed above is unknown and shall fail with the safe `INVALID_SEARCH_FILTER` response in `REQ-SEARCH-010`.
+
 ## Acceptance scenarios
 
 ```gherkin
@@ -222,6 +237,17 @@ Scenario: Attendance ordering is not a ranking
   When an authorized caller sorts search by yearly attendance
   Then results are ordered by the derived count with deterministic ties
   And no rank, score, threshold, or ranking flag is returned
+
+Scenario: Search by a human-equivalent complete name
+  Given João da Silva is an active Oratoriano
+  When an authorized caller searches name LIKE "  JOAO   DA SILVA "
+  Then João da Silva is returned
+
+Scenario: Search a meaningful portion of the complete name
+  Given Ana-Luiza Silva is an active Oratoriano
+  When an authorized caller searches name LIKE "Luiza Silva"
+  Then Ana-Luiza Silva is returned
+  And punctuation remains meaningful when it occurs in the submitted search text
 
 Scenario: Attendance does not block deletion
   Given an erroneous Oratoriano has preserved attendance but no completed, superseded, or revoked form
@@ -274,6 +300,7 @@ Releasing an Oratoriano name after deletion may be reconsidered together with a 
 
 * [GamName](../common/gam-name.md)
 * [GamPhoneNumber](../common/gam-phone-number.md)
+* [Search and Filter Framework](../platform/search-and-filter-framework.md)
 * [Oratorio Attendance Tracker](../oratorio/oratorio-attendance-tracker.md)
 * [Oratoriano Additional Forms](oratoriano-additional-forms.md)
 * [RBAC Catalog](../rbac/rbac-catalog.md)

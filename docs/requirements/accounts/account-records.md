@@ -95,24 +95,43 @@ Invalid examples:
 ---
 
 ### REQ-ACCOUNT-005: Account search filter contract
-Account search shall accept only the following public filter fields and comparison methods:
+Account search shall accept only the following public filter fields and
+comparison methods:
 
-| Public field | Allowed comparison methods |
-| --- | --- |
-| `id` | `EQUALS`, `IN` |
-| `email` | `EQUALS`, `LIKE` |
-| `displayName` | `EQUALS`, `LIKE` |
-| `role` | `EQUALS`, `IN` |
-| `createdAt` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` |
-| `updatedAt` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` |
+| Public field | Allowed comparison methods | Product meaning and value contract |
+| --- | --- | --- |
+| `id` | `EQUALS`, `IN` | Account UUID under `REQ-SEARCH-006` |
+| `email` | `EQUALS`, `LIKE` | Canonical Account `GamEmail`; equality and partial-search rules below |
+| `displayName` | `EQUALS`, `LIKE` | Stored trimmed Account display label containing 1 to 50 characters; equality is case-sensitive and `LIKE` follows `REQ-SEARCH-007` |
+| `role` | `EQUALS`, `IN` | Exact case-sensitive name of any active/current Role assigned to the Account |
+| `createdAt` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` | Account creation instant under `REQ-SEARCH-006` |
+| `updatedAt` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` | Latest non-deletion Account update instant under `REQ-SEARCH-006` |
 
-Errors for unsupported comparison methods or invalid filter values shall reference the public field name. Unknown filter fields shall return the generic message `Unknown filter field.` and shall not expose the submitted field name or internal persistence paths.
+`email EQUALS` shall require a complete syntactically valid `GamEmail`, apply
+`REQ-GAM-EMAIL-002`, and compare canonical normalized equality.
+
+`email LIKE` shall trim and lowercase a literal substring. The value shall
+contain at least three characters. A value containing `@` shall contain at
+least two characters before it. A value containing `.` but no `@`, such as
+`gmail.com`, shall be invalid so partial Account search does not become
+domain-wide email discovery.
+
+The `role` filter shall match when any active/current Account-to-Role
+assignment has the submitted exact Role name. Deleted, stale, and historical
+assignments shall not participate.
+
+The shared request grammar, `AND` composition, value-shape rules, visible
+baseline, complexity limits, and invalid-filter behavior shall follow
+`REQ-SEARCH-001` through `REQ-SEARCH-012`. In particular, unknown fields shall
+return `Unknown filter field.` without exposing the submitted name or internal
+persistence paths.
 
 Rationale:
 Account search needs a strict product contract. Public filter names must remain stable and must not require clients to know internal JPA paths or join structures.
 
 Valid examples:
 - Filtering by `email EQUALS "user@example.com"`.
+- Filtering by `email LIKE "user"` or `email LIKE "us@example"`.
 - Filtering by `role IN ["COORD", "MEMBER"]`.
 - Filtering by `createdAt GREATER_THAN_OR_EQUAL "2026-01-01T00:00:00Z"`.
 
@@ -120,6 +139,7 @@ Invalid examples:
 - Filtering by the legacy or implementation-specific public field `roleName`.
 - Filtering by internal paths such as `accountRoles.role.name`.
 - Using `LIKE` with `createdAt`.
+- Filtering by the domain-only email fragment `gmail.com`.
 
 ---
 
@@ -302,6 +322,9 @@ Scenario: Authenticated Account loads current context
 ## Related requirements
 
 * [Browser Session and Frontend Integration](../authentication/browser-session-and-frontend-integration.md)
+* [Search and Filter Framework](../platform/search-and-filter-framework.md)
+* [GamEmail](../common/gam-email.md)
+* [UUID Identity](../common/uuid.md)
 
 ## Related videos
 

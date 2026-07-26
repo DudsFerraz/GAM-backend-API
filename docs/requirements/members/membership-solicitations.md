@@ -182,22 +182,42 @@ Invalid examples:
 ---
 
 ### REQ-MEMBER-SOL-007: Solicitation search contract
-`POST /membership-solicitations/search` shall accept only these public filter fields and comparison methods:
+`POST /membership-solicitations/search` shall accept only these public filter
+fields and comparison methods:
 
-| Public field | Allowed comparison methods |
-| --- | --- |
-| `id` | `EQUALS`, `IN` |
-| `accountId` | `EQUALS` |
-| `email` | `EQUALS`, `LIKE` |
-| `name` | `LIKE` across submitted `firstName` and `surname` |
-| `status` | `EQUALS`, `IN` |
-| `submittedAt` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` |
-| `decidedAt` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` |
-| `reviewedByAccountId` | `EQUALS` |
+| Public field | Allowed comparison methods | Product meaning and value contract |
+| --- | --- | --- |
+| `id` | `EQUALS`, `IN` | Solicitation UUID under `REQ-SEARCH-006` |
+| `accountId` | `EQUALS` | UUID of the submitting Account |
+| `email` | `EQUALS`, `LIKE` | Canonical email of the submitting Account; equality and partial-search rules below |
+| `name` | `LIKE` | Immutable submitted canonical full-name snapshot; full-name partial matching below |
+| `status` | `EQUALS`, `IN` | Exact uppercase accepted solicitation status under `REQ-SEARCH-006` |
+| `submittedAt` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` | Submission instant under `REQ-SEARCH-006` |
+| `decidedAt` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` | Nullable decision instant under `REQ-SEARCH-006`; a pending solicitation with no decision instant does not match |
+| `reviewedByAccountId` | `EQUALS` | Nullable reviewing Account UUID; a pending solicitation with no reviewer does not match |
+
+`name LIKE` shall search the immutable submitted full-name rendering
+`firstName`, one space, then `surname`. The submitted value shall be trimmed and
+every whitespace sequence shall be collapsed to one space before applying the
+case-insensitive literal substring rule from `REQ-SEARCH-007`. The search shall
+preserve diacritics and meaningful punctuation. Consequently, `Ana`, `Silva`,
+and `Ana Silva` may all match a submitted canonical full name of `Ana Silva`.
+
+`email EQUALS` shall require a complete syntactically valid `GamEmail`, apply
+`REQ-GAM-EMAIL-002`, and compare canonical normalized equality.
+
+`email LIKE` shall trim and lowercase a literal substring, require at least
+three characters, require at least two characters before any `@`, and reject a
+value containing `.` but no `@`.
 
 Empty filters shall return a paginated page of all solicitations visible to the caller. Applicant visibility from `REQ-MEMBER-SOL-005` shall be enforced in addition to caller-supplied filters.
 
-Unsupported methods and invalid filter values shall identify the public field. Unknown fields shall return the generic message `Unknown filter field.` and shall not expose submitted field names or persistence paths.
+The shared request grammar, `AND` composition, value-shape rules, visible
+baseline, complexity limits, and invalid-filter behavior shall follow
+`REQ-SEARCH-001` through `REQ-SEARCH-012`. Unsupported methods and invalid
+values for known fields shall identify the canonical public field through the
+shared safe details. Unknown fields shall return `Unknown filter field.`
+without exposing submitted names or persistence paths.
 
 Rationale:
 The search API needs a stable public vocabulary while preserving ownership-based privacy.
@@ -205,6 +225,8 @@ The search API needs a stable public vocabulary while preserving ownership-based
 Valid examples:
 - A Coordinator searches `status EQUALS "PENDING"`.
 - An applicant uses empty filters and receives only its own history.
+- A Coordinator searches `name LIKE "Ana Silva"` and matches the corresponding
+  submitted full-name snapshot.
 
 Invalid examples:
 - An applicant filters by another Account and receives that Account's solicitations.
@@ -454,6 +476,7 @@ Scenario: Approval rejects an inconsistent lifecycle Role projection
 * [GamPhoneNumber](../common/gam-phone-number.md)
 * [UUID Identity](../common/uuid.md)
 * [Account Role Management](../rbac/account-role-management.md)
+* [Search and Filter Framework](../platform/search-and-filter-framework.md)
 
 ## Related videos
 

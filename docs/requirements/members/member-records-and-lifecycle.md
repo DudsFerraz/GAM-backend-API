@@ -248,31 +248,68 @@ Invalid examples:
 ---
 
 ### REQ-MEMBER-010: Member search contract
-`POST /members/search` shall accept only these public filter fields and comparison methods:
+`POST /members/search` shall accept only these public filter fields and
+comparison methods:
 
-| Public field | Allowed comparison methods |
-| --- | --- |
-| `id` | `EQUALS`, `IN` |
-| `name` | `LIKE` across `firstName` and `surname` |
-| `birthDate` | `EQUALS`, `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` |
-| `phoneNumber` | `EQUALS`, `LIKE` |
-| `status` | `EQUALS`, `IN` |
-| `accountId` | `EQUALS` |
-| `email` | `EQUALS`, `LIKE` |
-| `role` | `EQUALS`, `IN` |
-| `createdAt` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` |
-| `updatedAt` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` |
+| Public field | Allowed comparison methods | Product meaning and value contract |
+| --- | --- | --- |
+| `id` | `EQUALS`, `IN` | Member UUID under `REQ-SEARCH-006` |
+| `name` | `LIKE` | Current canonical full-name rendering under `REQ-GAM-NAME-007`; full-name partial matching below |
+| `birthDate` | `EQUALS`, `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` | Valid ISO calendar date under `REQ-SEARCH-006` |
+| `phoneNumber` | `EQUALS`, `LIKE` | Current canonical `GamPhoneNumber`; equality and partial-search rules below |
+| `status` | `EQUALS`, `IN` | Exact uppercase accepted Member status under `REQ-SEARCH-006` |
+| `accountId` | `EQUALS` | UUID of the Account immutably linked to the Member |
+| `email` | `EQUALS`, `LIKE` | Canonical email of the linked active Account; equality and partial-search rules below |
+| `role` | `EQUALS`, `IN` | Exact case-sensitive name of any active/current Role assigned to the linked Account |
+| `createdAt` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` | Member creation instant under `REQ-SEARCH-006` |
+| `updatedAt` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` | Latest non-deletion Member update instant under `REQ-SEARCH-006` |
+
+`name LIKE` shall search the full-name rendering `firstName`, one space, then
+`surname`. The submitted value shall be trimmed and every whitespace sequence
+shall be collapsed to one space before applying the case-insensitive literal
+substring rule from `REQ-SEARCH-007`. The search shall preserve diacritics and
+meaningful punctuation. Consequently, `Ana`, `Silva`, and `Ana Silva` may all
+match the Member whose canonical full name is `Ana Silva`.
+
+`phoneNumber EQUALS` shall require a complete valid `GamPhoneNumber`, including
+Brazil-default and explicit international parsing, and compare canonical E.164
+equality.
+
+`phoneNumber LIKE` shall accept digits and ordinary phone-formatting
+characters: whitespace, `+`, parentheses, hyphens, and dots. Formatting shall
+be removed and at least four digits shall remain. Letters and other characters
+shall be invalid. Matching shall use a literal digit substring of the
+canonical E.164 number with formatting removed.
+
+`email EQUALS` shall require a complete syntactically valid `GamEmail`, apply
+`REQ-GAM-EMAIL-002`, and compare canonical normalized equality.
+
+`email LIKE` shall trim and lowercase a literal substring, require at least
+three characters, require at least two characters before any `@`, and reject a
+value containing `.` but no `@`.
+
+The `role` filter shall use only active/current assignments of the linked
+active Account. Deleted, stale, and historical assignments shall not
+participate.
 
 Empty filters shall return a paginated page of all Members visible to the caller. Search shall apply the status visibility from `REQ-MEMBER-014` in addition to caller-supplied filters.
 
-Unsupported methods and invalid filter values shall identify the public field. Unknown fields shall return the generic message `Unknown filter field.` and shall not expose submitted field names or persistence paths.
+The shared request grammar, `AND` composition, value-shape rules, visible
+baseline, complexity limits, and invalid-filter behavior shall follow
+`REQ-SEARCH-001` through `REQ-SEARCH-012`. Unsupported methods and invalid
+values for known fields shall identify the canonical public field through the
+shared safe details. Unknown fields shall return `Unknown filter field.`
+without exposing submitted names or persistence paths.
 
 Rationale:
 Member search needs a stable public vocabulary and must not permit filters to bypass status visibility.
 
 Valid examples:
-- Searching `name LIKE "Silva"` matches the first name or surname.
+- Searching `name LIKE "Silva"` or `name LIKE "Ana Silva"` matches the
+  canonical full name `Ana Silva`.
 - A caller with non-active visibility searches `status IN ["ACTIVE", "INACTIVE"]`.
+- Searching `phoneNumber LIKE "(19) 9988"` matches the corresponding
+  canonical E.164 digit sequence.
 
 Invalid examples:
 - Filtering by an internal path such as `account.accountRoles.role.name`.
@@ -757,6 +794,7 @@ flowchart TD
 * [RBAC Catalog](../rbac/rbac-catalog.md)
 * [Member Event Presences](../presences/member-event-presences.md)
 * [Oratorio Coordinator Designation](../oratorio/oratorio-coordinator-designation.md)
+* [Search and Filter Framework](../platform/search-and-filter-framework.md)
 
 ## Related videos
 

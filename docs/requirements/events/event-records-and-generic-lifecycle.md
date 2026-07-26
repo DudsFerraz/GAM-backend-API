@@ -168,26 +168,26 @@ An unauthenticated caller shall receive `401 Unauthorized`. An authenticated cal
 
 ### REQ-EVENT-010: Event search filter and sorting contract
 
-Event search shall expose only this public filter catalog:
+Event search shall use the shared request grammar, composition, value-shape, complexity-limit, invalid-filter, and empty-result rules in `REQ-SEARCH-001` through `REQ-SEARCH-012`, with only this public filter catalog:
 
-| Public field | Allowed comparisons |
-| --- | --- |
-| `id` | `EQUALS`, `IN` |
-| `title` | `EQUALS`, `LIKE` |
-| `description` | `LIKE` |
-| `gamLocationId` | `EQUALS`, `IN` |
-| `requiredPermissionId` | `EQUALS`, `IN` |
-| `requiredPermissionCode` | `EQUALS`, `IN` |
-| `type` | `EQUALS`, `IN` |
-| `status` | `EQUALS`, `IN` |
-| `beginDate` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` |
-| `endDate` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` |
+| Public field | Allowed comparisons | Product meaning and value contract |
+| --- | --- | --- |
+| `id` | `EQUALS`, `IN` | The Event UUID. Values follow `REQ-SEARCH-006`. |
+| `title` | `EQUALS`, `LIKE` | The normalized Event title of 1 to 255 characters. `EQUALS` is case-sensitive; `LIKE` follows `REQ-SEARCH-007`. |
+| `description` | `LIKE` | The normalized Event description. The search value must be nonblank and contain at most 10,000 characters after trimming; matching follows `REQ-SEARCH-007`. |
+| `gamLocationId` | `EQUALS`, `IN` | The UUID of the Event's linked GamLocation. Values follow `REQ-SEARCH-006`. |
+| `requiredPermissionId` | `EQUALS`, `IN` | The UUID of the Event's nullable audience Permission. A public Event with no required Permission does not match. Values follow `REQ-SEARCH-006`. |
+| `requiredPermissionCode` | `EQUALS`, `IN` | The exact, case-sensitive code of the Event's active current audience Permission. A public Event with no required Permission does not match. Values follow `REQ-SEARCH-006`. |
+| `type` | `EQUALS`, `IN` | The exact uppercase accepted Event-type value. Values follow `REQ-SEARCH-006`. |
+| `status` | `EQUALS`, `IN` | The exact uppercase effective Event-status value evaluated at the request's single clock instant. Values follow `REQ-SEARCH-006`. |
+| `beginDate` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` | The Event begin instant. Values and inclusive bounds follow `REQ-SEARCH-006`. |
+| `endDate` | `GREATER_THAN_OR_EQUAL`, `LESS_THAN_OR_EQUAL` | The Event end instant. Values and inclusive bounds follow `REQ-SEARCH-006`. |
 
-Multiple filters shall combine with logical `AND`. `LIKE` shall be a case-insensitive substring match after trimming the submitted text; a blank `LIKE` value shall be invalid. UUIDs, instants, enum values, scalar values, and non-empty `IN` collections shall be parsed according to their public field types. The `status` filter shall evaluate effective status using the request's single clock instant.
+The `status` filter shall evaluate every candidate Event at the same request clock instant. `IN` over `status` shall match when that one effective status equals any submitted value.
 
 An empty filter list shall apply no caller-supplied product filter while retaining audience visibility and active-record filtering.
 
-Unknown fields, unsupported comparisons, malformed values, empty `IN` collections, and unsupported sort fields or directions shall return `400 Bad Request` without exposing internal persistence paths. Persistence audit fields such as `createdAt` and `updatedAt` shall not be searchable.
+Unknown fields, unsupported comparisons, invalid values, and invalid `IN` collections shall return the safe shared errors defined by `REQ-SEARCH-010`. Unsupported sort fields or directions shall return `400 Bad Request` without exposing internal persistence paths. Persistence audit fields such as `createdAt` and `updatedAt` shall not be searchable.
 
 The default order shall be `beginDate` ascending and then Event UUID ascending. Clients may sort by `title`, `beginDate`, `endDate`, `type`, or effective `status`; the system shall append Event UUID ascending as a deterministic tie-breaker.
 
@@ -532,6 +532,7 @@ The command transitions in this diagram apply to Generic Events. `SCHEDULED -> C
 ## Related requirements
 
 * [UUID](../common/uuid.md)
+* [Search and Filter Framework](../platform/search-and-filter-framework.md)
 * [GamLocation Records](../gam-locations/gam-location-records.md)
 * [RBAC Catalog](../rbac/rbac-catalog.md)
 * [OpenAPI and Frontend API Documentation](../platform/openapi-and-frontend-api-documentation.md)
