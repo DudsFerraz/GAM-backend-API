@@ -40,6 +40,9 @@ Use empty arrays instead of omitting common fields. Add only the role-specific
 `details` fields defined below. The role remains unchanged after returning the
 result.
 
+`artifacts` and `verification` describe only the completed turn. Agent O owns
+their cumulative workflow representation.
+
 Use `risks` for non-blocking uncertainty. Any blocker or scope deviation
 requires an escalation outcome and `human_intervention_required: true`.
 

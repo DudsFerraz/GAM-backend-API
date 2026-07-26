@@ -38,22 +38,17 @@ call `followup_task` with that target instead of spawning another agent.
 Keep Agent T and Agent D sequential. Wait for the active writer to finish before
 activating the other. Never run T and D write-heavy turns concurrently.
 
-Before each Agent R turn, record a content-aware repository baseline in root
-state covering the staged and unstaged tracked diffs plus every non-ignored
-untracked file path and content hash. Exclude ignored files so verification
-outputs may change. Recompute it before validating Agent R's result. If it
-differs, reject the result as a role-boundary violation, report changed paths,
-and escalate without restoring files automatically.
-
 ## Start gate
 
 Before spawning:
 
 1. Validate the developer-referenced artifacts against `$gam-planning`'s
    readiness criteria without performing planning work.
-2. Confirm required runtime permissions.
-3. Establish a stable `workflow_id`.
-4. Stop and escalate when any gate fails.
+2. Record the accepted planning scope restrictions without reinterpreting them.
+3. Confirm required runtime permissions, including Agent R's non-writing
+   runtime.
+4. Establish a stable `workflow_id`.
+5. Stop and escalate when any gate fails.
 
 ## Maintain explicit root state
 
@@ -64,11 +59,13 @@ repository file:
 {
   "workflow_id": "<id>",
   "authoritative_artifacts": ["<path>"],
+  "scope_restrictions": ["<accepted planning reference>"],
+  "workflow_artifacts": [],
+  "workflow_verification": [],
   "phase": "<orchestration_start|t_initial|d_initial|t_expanded|d_correction|r_review|complete|escalated>",
   "current_owner": "<agent_o|agent_t|agent_d|agent_r|developer>",
   "spawned": {"agent_t": false, "agent_d": false, "agent_r_count": 0},
   "thread_identities": {"agent_t": null, "agent_d": null},
-  "agent_r_repository_baseline": null,
   "td_correction_cycles": 0,
   "last_validated_result": null,
   "last_legal_transition": null,
@@ -80,16 +77,28 @@ repository file:
 Update it after every spawn, result validation, transition, escalation, and
 review pass. Preserve native returned thread identities exactly.
 
+`scope_restrictions` references the accepted planning exclusions that constrain
+every role. Do not infer scope from repository status, directory proximity, or
+unrelated worktree changes.
+
+After validating each Agent T or Agent D result, accumulate its `created` and
+`modified` artifacts in `workflow_artifacts` and append its exact verification
+entries to `workflow_verification`. Reuse the result contract's item shapes,
+keep one artifact entry per path, and preserve `created` when the workflow
+created a path. Do not accumulate `consulted` artifacts.
+
 ## Execute the workflow
 
 1. Construct the initial assignment and spawn Agent T.
 2. After every role turn, validate exactly one result against
    `$gam-agent-workflow` reference `role-result-contract.md`.
-3. Apply the single matching row in `$gam-agent-workflow`'s legal-transition
+3. Update the cumulative workflow state from a validated Agent T or Agent D
+   result.
+4. Apply the single matching row in `$gam-agent-workflow`'s legal-transition
    table.
-4. For a target transition, construct its assignment and spawn or resume the
+5. For a target transition, construct its assignment and spawn or resume the
    configured thread. Wait for its result before continuing.
-5. For completion or escalation, stop without constructing an assignment.
+6. For completion or escalation, stop without constructing an assignment.
 
 Set `MAX_TD_CORRECTION_CYCLES = 6`. Maintain the counter as defined in
 `$gam-agent-workflow` reference `agent-t-agent-d-loop.md`; stop at the maximum

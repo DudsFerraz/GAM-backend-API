@@ -30,9 +30,14 @@ Prioritize:
 
 ### 1. Establish review scope
 
-- Inspect the diff and changed files.
+- Treat the assignment's artifacts as the complete set of workflow-created or
+  modified artifacts under review.
+- Inspect the diffs for those artifacts and consult dependencies as needed.
+- Apply the assignment's authoritative artifacts and scope restrictions.
 - Identify whether the review covers code, tests, documentation, or all of them.
-- Ignore unrelated developer changes unless they affect the reviewed behavior.
+- Do not add unrelated worktree changes to the review scope.
+- Report a scope gap instead of inferring that an unlisted changed artifact
+  belongs to the workflow.
 
 ### 2. Load the authoritative context
 
@@ -93,5 +98,6 @@ verification concerns, then stop.
 
 ## Boundaries
 
+- Do not modify repository state or request permission to do so.
 - Do not implement findings or write missing tests.
 - Do not assume another role's work.

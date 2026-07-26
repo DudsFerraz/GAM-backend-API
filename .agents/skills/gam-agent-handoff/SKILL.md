@@ -12,7 +12,9 @@ Require Agent O to supply:
 - the validated source result or `planning_ready` start condition;
 - the legal transition selected by `$gam-agent-workflow`;
 - `fresh` or `resumed` thread mode;
-- relevant scope restrictions and risks.
+- Agent O's scope restrictions and relevant risks;
+- Agent O's cumulative workflow artifacts and verification when targeting
+  Agent R.
 
 Reject target selection, result reinterpretation, or a blocker carried into an
 assignment.
@@ -48,10 +50,11 @@ Return one fenced `json` object with this shape:
 - Preserve `workflow_id`, result identity, authoritative artifacts, relevant
   risks, and exact verification entries.
 - Reuse the result contract's `artifacts` and `verification` item shapes.
-- Include only relevant `created` or `modified` artifacts; do not copy
-  `consulted` entries.
-- Take `scope_restrictions` from accepted planning or Agent O state, not from a
-  role's scope deviations.
+- Copy `scope_restrictions` from Agent O state unchanged.
+- For Agent T or Agent D, project only relevant `created` or `modified`
+  artifacts and verification from the validated source result.
+- For Agent R, copy Agent O's complete `workflow_artifacts` and
+  `workflow_verification`; do not expand them from repository status.
 - Do not construct an assignment when the result has blockers, scope
   deviations, or `human_intervention_required: true`.
 
