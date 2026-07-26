@@ -34,13 +34,7 @@ build/
 .vscode/
 
 ### Codex ###
-.codex/*
-!.codex/config.toml
-!.codex/agents/
-.codex/agents/*
-!.codex/agents/gam-agent-t.toml
-!.codex/agents/gam-agent-d.toml
-!.codex/agents/gam-agent-r.toml
+.codex/
 
 # Arquivos de log
 *.log
