@@ -1,6 +1,6 @@
 ---
 name: gam-agent-handoff
-description: Construct a structured Agent O assignment envelope for a validated GAM workflow transition to Agent T, Agent D, or Agent R. Use only after $gam-agent-workflow maps a validated role result to exactly one legal transition; do not use it to select a route, spawn a thread, or render a manual handoff.
+description: Construct a structured Agent O assignment for a legal transition to Agent T, Agent D, or Agent R. Use only after $gam-agent-workflow selects the target; do not use for routing or manual handoffs.
 ---
 
 # GAM Agent Handoff
@@ -14,7 +14,9 @@ Require Agent O to supply:
 - `fresh` or `resumed` thread mode;
 - Agent O's scope restrictions and relevant risks;
 - Agent O's cumulative workflow artifacts and verification when targeting
-  Agent R.
+  Agent R;
+- the recorded escalation and developer resolution when the source outcome is
+  `developer_resolution_accepted`.
 
 Reject target selection, result reinterpretation, or a blocker carried into an
 assignment.
@@ -41,7 +43,8 @@ Return one fenced `json` object with this shape:
   "artifacts": [],
   "verification": [],
   "scope_restrictions": [],
-  "risks": []
+  "risks": [],
+  "developer_resolution": null
 }
 ```
 
@@ -55,7 +58,29 @@ Return one fenced `json` object with this shape:
   artifacts and verification from the validated source result.
 - For Agent R, copy Agent O's complete `workflow_artifacts` and
   `workflow_verification`; do not expand them from repository status.
+- For `developer_resolution_accepted`, replace `developer_resolution: null`
+  with:
+
+  ```json
+  {
+    "escalation": {
+      "phase": "<phase that escalated>",
+      "role": "<role that escalated>",
+      "outcome": "<escalation outcome>",
+      "blockers": ["<recorded blocker>"]
+    },
+    "instruction": "<faithful developer instruction>",
+    "resolved_blockers": ["<resolved blocker>"],
+    "authorized_actions": ["<explicitly authorized action>"],
+    "residual_risks": ["<non-blocking risk>"]
+  }
+  ```
+
+  Preserve the source role as `agent_o`; do not disguise the resolution as a
+  role result.
 - Do not construct an assignment when the result has blockers, scope
-  deviations, or `human_intervention_required: true`.
+  deviations, or `human_intervention_required: true`. Resolved escalation
+  blockers belong in `developer_resolution`, not in the assignment's active
+  blocker state.
 
 Return the envelope to Agent O.

@@ -1,6 +1,6 @@
 ---
 name: gam-orchestration
-description: Run the human-started Agent O root workflow that validates accepted GAM planning, sequentially coordinates native Agent T and Agent D custom-agent threads, starts fresh Agent R reviews, validates structured role results, applies only legal transitions, enforces loop limits, and escalates unsafe continuation. Use only when the developer explicitly invokes $gam-orchestration in a fresh Codex app chat for implementation-ready planning artifacts.
+description: Coordinate and resume the developer-started Agent O workflow across Agent T, Agent D, and Agent R. Use only when $gam-orchestration is explicitly invoked with accepted planning artifacts or in the existing Agent O task after an escalation is resolved.
 ---
 
 # GAM Orchestration
@@ -69,6 +69,10 @@ repository file:
   "td_correction_cycles": 0,
   "last_validated_result": null,
   "last_legal_transition": null,
+  "suspended_phase": null,
+  "suspended_owner": null,
+  "escalation": null,
+  "developer_resolutions": [],
   "unresolved_blockers": [],
   "human_intervention_required": false
 }
@@ -98,7 +102,8 @@ created a path. Do not accumulate `consulted` artifacts.
    table.
 5. For a target transition, construct its assignment and spawn or resume the
    configured thread. Wait for its result before continuing.
-6. For completion or escalation, stop without constructing an assignment.
+6. For completion or unresolved escalation, stop without constructing an
+   assignment.
 
 Set `MAX_TD_CORRECTION_CYCLES = 10`. Maintain the counter as defined in
 `$gam-agent-workflow` reference `agent-t-agent-d-loop.md`; stop at the maximum
@@ -109,7 +114,16 @@ and never increase it silently.
 Do not repair an invalid role result. Stop for any escalation outcome,
 validation failure, unavailable permission, cycle limit, or unreliable native
 continuation. Report the current state, latest evidence, blocker, and decision
-needed.
+needed. Record the active phase and owner as `suspended_phase` and
+`suspended_owner` before setting the visible phase to `escalated`.
+
+Escalation pauses the current orchestration; it does not invalidate its state
+or thread identities. When the developer replies in this Agent O task, load
+`$gam-agent-workflow` reference `developer-escalation-resolution.md`. If the
+reply resolves the blocker, accept it without requiring special syntax or a
+fresh `$gam-orchestration` invocation, construct the selected assignment, and
+continue the same workflow. If it does not resolve the blocker, remain
+escalated and ask only for the missing decision.
 
 ## Complete
 

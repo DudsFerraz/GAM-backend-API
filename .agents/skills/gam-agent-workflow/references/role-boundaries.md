@@ -22,6 +22,11 @@ alone starts targets in a manual workflow.
 In native orchestration, Agent T, D, and R load Agent O's structured assignment
 before role-local work.
 
+When an assignment contains `developer_resolution`, the target applies its
+instruction and authorized actions as task authority for that turn, carries its
+residual risks, and remains within the target role's ownership. It does not ask
+the developer to repeat the resolution in the subagent thread.
+
 Supporting skills never establish or change a role. Their descriptions and the
 active role skill define their authorized use.
 

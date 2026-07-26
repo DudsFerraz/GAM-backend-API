@@ -1,6 +1,6 @@
 ---
 name: gam-agent-workflow
-description: Define the standard GAM Agent P, Agent O, Agent T, Agent D, and Agent R state machine. Use to establish sticky role identity, validate structured role results, enforce role boundaries, map outcomes to legal transitions, coordinate the Agent T / Agent D loop, classify Agent R findings, or determine completion and human escalation.
+description: Define and apply the cross-role GAM workflow for Agents P, O, T, D, and R. Use when establishing role authority, validating role results, or selecting legal transitions.
 ---
 
 # GAM Agent Workflow
@@ -15,6 +15,8 @@ This package is authoritative for the cross-role workflow:
 - The legal-transition table below maps outcomes to targets.
 - `references/agent-t-agent-d-loop.md` defines correction-cycle accounting and
   loop completion criteria.
+- `references/developer-escalation-resolution.md` defines how an explicit
+  developer reply resolves an escalation and resumes the same workflow.
 
 Read the owner for every concern used in the current turn.
 
@@ -33,6 +35,8 @@ Read the owner for every concern used in the current turn.
 | r_review | implementation_issue_found | d_correction | resumed Agent D |
 | r_review | no_actionable_findings | complete | none |
 | any role phase | an escalation outcome defined by the result contract | escalated | none |
+| escalated | developer_resolution_accepted | resolution-selected active phase | target selected by the developer-resolution procedure |
 
-Every normal-continuation outcome maps to one target; completion and escalation
-map to none.
+Every normal-continuation outcome maps to one target. Completion and unresolved
+escalation map to none. A validated developer resolution maps to exactly one
+target under `references/developer-escalation-resolution.md`.
