@@ -31,8 +31,8 @@ public class AccountSearchFilterConverter implements SearchFilterConverter<Accou
                     "displayName",
                     Set.of(ComparationMethods.EQUALS, ComparationMethods.LIKE),
                     Map.of(
-                            ComparationMethods.EQUALS, SearchValueParsers::text,
-                            ComparationMethods.LIKE, SearchValueParsers::text
+                            ComparationMethods.EQUALS, SearchValueParsers.boundedText(50),
+                            ComparationMethods.LIKE, SearchValueParsers.boundedText(50)
                     )
             )),
             Map.entry("email", SearchFilterDefinition.path(

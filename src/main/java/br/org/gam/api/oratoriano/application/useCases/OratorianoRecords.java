@@ -5,6 +5,7 @@ import br.org.gam.api.oratoriano.application.OratorianoApiModels.AttendanceSumma
 import br.org.gam.api.oratoriano.application.OratorianoApiModels.OratorianoRDTO;
 import br.org.gam.api.oratoriano.application.OratorianoApiModels.RegisterOratorianoDTO;
 import br.org.gam.api.oratoriano.application.OratorianoApiModels.ReplaceOratorianoDTO;
+import br.org.gam.api.oratoriano.application.search.OratorianoSearchFilterConverter;
 import br.org.gam.api.oratoriano.persistence.OratorianoEntity;
 import br.org.gam.api.oratoriano.persistence.OratorianoRepository;
 import br.org.gam.api.shared.activitylog.ActivityAction;
@@ -17,8 +18,6 @@ import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.shared.phonenumber.GamPhoneNumber;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
 import br.org.gam.api.shared.specification.SearchDTO;
-import br.org.gam.api.shared.specification.ComparationMethods;
-import br.org.gam.api.shared.specification.SpecificationFilterDTO;
 import br.org.gam.api.shared.validation.RequiredReason;
 import br.org.gam.api.shared.web.PagedResponse;
 import java.text.Normalizer;
@@ -50,19 +49,22 @@ public class OratorianoRecords {
     private final AuditorAware<UUID> auditorAware;
     private final ActivityEvents activityEvents;
     private final Clock clock;
+    private final OratorianoSearchFilterConverter searchFilterConverter;
 
     public OratorianoRecords(
             OratorianoRepository repository,
             JdbcTemplate jdbcTemplate,
             AuditorAware<UUID> auditorAware,
             ActivityEvents activityEvents,
-            Clock clock
+            Clock clock,
+            OratorianoSearchFilterConverter searchFilterConverter
     ) {
         this.repository = repository;
         this.jdbcTemplate = jdbcTemplate;
         this.auditorAware = auditorAware;
         this.activityEvents = activityEvents;
         this.clock = clock;
+        this.searchFilterConverter = searchFilterConverter;
     }
 
     @Transactional
@@ -267,37 +269,9 @@ public class OratorianoRecords {
             int page,
             int size
     ) {
-        UUID id = null;
-        String name = null;
-        if (search != null && search.filters() != null) {
-            for (SpecificationFilterDTO filter : search.filters()) {
-                if (filter.comparationMethod() != ComparationMethods.EQUALS) {
-                    throw InvalidCommandException.reason(
-                            "Oratoriano search supports only EQUALS comparisons."
-                    );
-                }
-                if ("id".equals(filter.field())) {
-                    try {
-                        id = UUID.fromString(filter.value().asText());
-                    } catch (RuntimeException exception) {
-                        throw InvalidCommandException.reason("Oratoriano id filter must be a UUID.");
-                    }
-                } else if ("name".equals(filter.field())) {
-                    name = filter.value().asText();
-                } else {
-                    throw InvalidCommandException.reason("Unknown filter field.");
-                }
-            }
-        }
-        List<OratorianoEntity> matches = id == null
-                ? new ArrayList<>(repository.findAll())
-                : repository.findById(id).stream().toList();
-        if (name != null) {
-            String key = comparisonKey(name);
-            matches = matches.stream()
-                    .filter(item -> item.getNameKey().equals(key))
-                    .toList();
-        }
+        List<OratorianoEntity> matches = new ArrayList<>(
+                repository.findAll(searchFilterConverter.convert(search))
+        );
 
         List<String> submittedSorts = sorts == null
                 ? List.of()

@@ -7,6 +7,7 @@ import br.org.gam.api.shared.domain.GamEmail;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.account.persistence.AccountRepository;
 import br.org.gam.api.rbac.accountRole.application.AccountRolesRDTO;
+import br.org.gam.api.shared.specification.InvalidSearchFilterException;
 import br.org.gam.api.shared.specification.SearchDTO;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
@@ -27,6 +28,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.domain.Specification;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -125,6 +127,22 @@ class SearchAccountsTest {
             verify(searchFilterConverter).convert(searchDTO);
             verify(accountRepo).findAll(any(Specification.class), eq(pageable));
             verifyNoInteractions(accountMapper);
+        }
+
+        @Test
+        @DisplayName("REQ-SEARCH-011 - invalid filter conversion -> no resource query or partial mapping")
+        void invalidFilterShouldFailBeforeAnyResourceQuery() {
+            SearchDTO searchDTO = new SearchDTO(List.of());
+            Pageable pageable = PageRequest.of(0, 10);
+            when(searchFilterConverter.convert(searchDTO))
+                    .thenThrow(new InvalidSearchFilterException("Unknown filter field."));
+
+            assertThatThrownBy(() -> searchAccounts.search(searchDTO, pageable))
+                    .isInstanceOf(InvalidSearchFilterException.class)
+                    .hasMessage("Unknown filter field.");
+
+            verify(searchFilterConverter).convert(searchDTO);
+            verifyNoInteractions(accountRepo, accountMapper);
         }
     }
 

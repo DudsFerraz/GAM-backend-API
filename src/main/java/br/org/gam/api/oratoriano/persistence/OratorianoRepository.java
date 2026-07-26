@@ -5,10 +5,12 @@ import java.util.UUID;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.repository.query.Param;
 import jakarta.persistence.LockModeType;
 
-public interface OratorianoRepository extends BaseRepository<OratorianoEntity, UUID> {
+public interface OratorianoRepository extends BaseRepository<OratorianoEntity, UUID>,
+                                              JpaSpecificationExecutor<OratorianoEntity> {
     Optional<OratorianoEntity> findByNameKey(String nameKey);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

@@ -9,7 +9,6 @@ import br.org.gam.api.shared.specification.SearchFilterConverter;
 import br.org.gam.api.shared.specification.SearchFilterDefinition;
 import br.org.gam.api.shared.specification.SearchValueParsers;
 import br.org.gam.api.shared.specification.SpecificationFactory;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.data.jpa.domain.Specification;
@@ -40,9 +39,12 @@ public class MembershipSolicitationSearchFilterConverter
             )),
             Map.entry("name", new SearchFilterDefinition<>(
                     "name", Set.of(ComparationMethods.LIKE),
-                    Map.of(ComparationMethods.LIKE, SearchValueParsers::text),
-                    (method, value) -> SpecificationFactory.likeAny(
-                            List.of("name.firstName", "name.surname"), (String) value)
+                    Map.of(ComparationMethods.LIKE, SearchValueParsers::normalizedFullNameLike),
+                    (method, value) -> SpecificationFactory.likeFullName(
+                            "name.firstName",
+                            "name.surname",
+                            (String) value
+                    )
             )),
             Map.entry("status", SearchFilterDefinition.path(
                     "status", "status", Set.of(ComparationMethods.EQUALS, ComparationMethods.IN),

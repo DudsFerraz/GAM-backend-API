@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -297,6 +298,57 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
     }
 
     @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"EQUALS", "LIKE"})
+    @DisplayName("REQ-ORATORIANO-002/013 - name EQUALS and LIKE trim and collapse Unicode whitespace")
+    void ordinarySearchShouldNormalizeUnicodeWhitespaceForEveryNameComparison(String comparisonMethod) {
+        AuthSession caller = sudoSession();
+        UUID expectedId = createOratoriano(caller, "Ana", "Silva");
+        List<String> submittedNames = List.of(
+                "\u2003ANA\u2003\u2003SILVA\u2003",
+                "\u2002ANA\u2003\u205FSILVA\u2002"
+        );
+
+        for (String submittedName : submittedNames) {
+            ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                    .body(searchPayload(filter("name", submittedName, comparisonMethod)))
+                    .post(ORATORIANOS + "/search")
+                    .then()
+                    .extract();
+
+            assertThat(response.statusCode())
+                    .as(comparisonMethod + ": " + response.asString())
+                    .isEqualTo(200);
+            assertThat(resourceIds(response.path("items")))
+                    .as(comparisonMethod)
+                    .containsExactly(expectedId);
+        }
+    }
+
+    @ParameterizedTest(name = "{0} with {1}")
+    @MethodSource("nonBreakingWhitespaceSearchCases")
+    @DisplayName("REQ-ORATORIANO-002/013 - name EQUALS and LIKE collapse non-breaking Unicode whitespace")
+    void ordinarySearchShouldNormalizeNonBreakingUnicodeWhitespaceForEveryNameComparison(
+            String scenario,
+            String comparisonMethod,
+            String whitespace
+    ) {
+        AuthSession caller = sudoSession();
+        UUID expectedId = createOratoriano(caller, "Ana", "Silva");
+        String submittedName = whitespace + "ANA" + whitespace + whitespace + "SILVA" + whitespace;
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .body(searchPayload(filter("name", submittedName, comparisonMethod)))
+                .post(ORATORIANOS + "/search")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode())
+                .as(scenario + " with " + comparisonMethod + ": " + response.asString())
+                .isEqualTo(200);
+        assertThat(resourceIds(response.path("items"))).containsExactly(expectedId);
+    }
+
+    @ParameterizedTest(name = "{0}")
     @MethodSource("meaningfullyDifferentSearchCases")
     @DisplayName("REQ-ORATORIANO-002 - comparison normalization preserves meaningful punctuation")
     void ordinarySearchShouldNotEraseMeaningfulPunctuation(
@@ -319,20 +371,28 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
     }
 
     @Test
-    @DisplayName("REQ-ORATORIANO-008 - UUID equality filter -> only the identified active Oratoriano")
-    void ordinarySearchShouldSupportUuidLookup() {
+    @DisplayName("REQ-ORATORIANO-013 - id EQUALS/IN and name LIKE -> exact documented search catalog")
+    void ordinarySearchShouldSupportEveryDocumentedFieldAndMethod() {
         AuthSession caller = sudoSession();
         UUID expectedId = createOratoriano(caller, "Alice", "Moraes");
         createOratoriano(caller, "Bruno", "Lima");
 
-        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
-                .body(searchPayload(filter("id", expectedId.toString(), "EQUALS")))
-                .post(ORATORIANOS + "/search")
-                .then()
-                .extract();
+        List<Map<String, Object>> filters = List.of(
+                filter("id", expectedId.toString(), "EQUALS"),
+                filter("id", List.of(UUID.randomUUID().toString(), expectedId.toString()), "IN"),
+                filter("name", "  ALICE   MORAES  ", "LIKE")
+        );
 
-        assertThat(response.statusCode()).as(response.asString()).isEqualTo(200);
-        assertThat(resourceIds(response.path("items"))).containsExactly(expectedId);
+        for (Map<String, Object> searchFilter : filters) {
+            ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                    .body(searchPayload(searchFilter))
+                    .post(ORATORIANOS + "/search")
+                    .then()
+                    .extract();
+
+            assertThat(response.statusCode()).as(response.asString()).isEqualTo(200);
+            assertThat(resourceIds(response.path("items"))).containsExactly(expectedId);
+        }
     }
 
     @ParameterizedTest(name = "{0}")
@@ -762,6 +822,20 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
                 Arguments.of("case and diacritic variants", "João", "Silva", "JOAO", "SILVA"),
                 Arguments.of("flattened first-name/surname boundary", "Ana Maria", "Souza", "Ana", "Maria Souza")
         );
+    }
+
+    private static Stream<Arguments> nonBreakingWhitespaceSearchCases() {
+        return Stream.of(
+                Arguments.of("NO-BREAK SPACE U+00A0", "\u00A0"),
+                Arguments.of("FIGURE SPACE U+2007", "\u2007"),
+                Arguments.of("NARROW NO-BREAK SPACE U+202F", "\u202F")
+        ).flatMap(arguments -> {
+            Object[] values = arguments.get();
+            return Stream.of(
+                    Arguments.of(values[0], "EQUALS", values[1]),
+                    Arguments.of(values[0], "LIKE", values[1])
+            );
+        });
     }
 
     private static Stream<Arguments> humanEquivalentSearchCases() {

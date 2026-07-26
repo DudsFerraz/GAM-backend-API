@@ -8,7 +8,7 @@ import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Map;
 import org.hibernate.id.IdentifierGenerationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,7 +67,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(InvalidSearchFilterException.class)
     public ResponseEntity<ApiErrorDTO> invalidSearchFilterHandler(InvalidSearchFilterException e) {
-        return buildErrorResponse(HttpStatus.BAD_REQUEST, "INVALID_SEARCH_FILTER", e.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                new ApiErrorDTO(
+                        HttpStatus.BAD_REQUEST,
+                        "INVALID_SEARCH_FILTER",
+                        e.getMessage(),
+                        e.getDetails()
+                )
+        );
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
@@ -110,6 +117,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             @NonNull WebRequest request) {
 
         String friendlyMessage = "JSON Request malformed or eligible.";
+        Map<String, Object> details = Map.of();
         Throwable cause = ex.getCause();
 
         try {
@@ -117,11 +125,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 friendlyMessage = String.format("Unrecognizable field on request: '%s'", upx.getPropertyName());
             }
             else if (cause instanceof MismatchedInputException mie) {
-
-                String fieldName = mie.getPath().stream()
-                        .map(JsonMappingException.Reference::getFieldName)
-                        .filter(java.util.Objects::nonNull)
-                        .collect(Collectors.joining("."));
+                String fieldName = jsonPath(mie.getPath());
+                Integer filterIndex = filterIndex(mie.getPath());
+                if (filterIndex != null) {
+                    details = Map.of("filterIndex", filterIndex);
+                }
 
                 String expectedType = mie.getTargetType().getSimpleName();
 
@@ -135,8 +143,39 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             log.warn("Unable to generate user friendly message for HttpMessageNotReadableException", e);
         }
 
-        ApiErrorDTO errorDTO = new ApiErrorDTO(HttpStatus.BAD_REQUEST, "MALFORMED_JSON", friendlyMessage);
+        ApiErrorDTO errorDTO = new ApiErrorDTO(
+                HttpStatus.BAD_REQUEST,
+                "MALFORMED_JSON",
+                friendlyMessage,
+                details
+        );
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorDTO);
+    }
+
+    private String jsonPath(List<JsonMappingException.Reference> references) {
+        StringBuilder path = new StringBuilder();
+        for (JsonMappingException.Reference reference : references) {
+            if (reference.getFieldName() != null) {
+                if (!path.isEmpty()) {
+                    path.append('.');
+                }
+                path.append(reference.getFieldName());
+            } else if (reference.getIndex() >= 0) {
+                path.append('[').append(reference.getIndex()).append(']');
+            }
+        }
+        return path.toString();
+    }
+
+    private Integer filterIndex(List<JsonMappingException.Reference> references) {
+        for (int index = 0; index < references.size() - 1; index++) {
+            JsonMappingException.Reference current = references.get(index);
+            JsonMappingException.Reference next = references.get(index + 1);
+            if ("filters".equals(current.getFieldName()) && next.getIndex() >= 0) {
+                return next.getIndex();
+            }
+        }
+        return null;
     }
 
     // =====================================================================================

@@ -174,7 +174,7 @@ abstract class MemberApiTestSupport extends BaseApiIntegrationTest {
         return Map.of(
                 "field", field,
                 "value", value,
-                "comparationMethod", comparisonMethod
+                "comparisonMethod", comparisonMethod
         );
     }
 

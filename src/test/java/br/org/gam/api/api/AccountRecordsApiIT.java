@@ -218,10 +218,10 @@ class AccountRecordsApiIT extends BaseApiIntegrationTest {
                     .extract();
 
             assertThat(response.statusCode())
-                    .as("public filter %s %s", filter.get("field"), filter.get("comparationMethod"))
+                    .as("public filter %s %s", filter.get("field"), filter.get("comparisonMethod"))
                     .isEqualTo(200);
             assertThat(accountIds(response.jsonPath().getList("items")))
-                    .as("public filter %s %s", filter.get("field"), filter.get("comparationMethod"))
+                    .as("public filter %s %s", filter.get("field"), filter.get("comparisonMethod"))
                     .contains(targetId);
         }
     }
@@ -669,7 +669,7 @@ class AccountRecordsApiIT extends BaseApiIntegrationTest {
         return Map.of(
                 "field", field,
                 "value", value,
-                "comparationMethod", comparisonMethod
+                "comparisonMethod", comparisonMethod
         );
     }
 

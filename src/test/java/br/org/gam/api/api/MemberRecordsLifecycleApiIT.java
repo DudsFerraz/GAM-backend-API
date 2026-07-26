@@ -667,12 +667,62 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
                     .extract();
 
             assertThat(response.statusCode())
-                    .as("public filter %s %s", searchFilter.get("field"), searchFilter.get("comparationMethod"))
+                    .as("public filter %s %s", searchFilter.get("field"), searchFilter.get("comparisonMethod"))
                     .isEqualTo(200);
             assertThat(resourceIds(response.jsonPath().getList("items")))
-                    .as("public filter %s %s", searchFilter.get("field"), searchFilter.get("comparationMethod"))
+                    .as("public filter %s %s", searchFilter.get("field"), searchFilter.get("comparisonMethod"))
                     .contains(targetMemberId);
         }
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-010 and REQ-SEARCH-007 - name LIKE trims and collapses Unicode whitespace")
+    void memberNameSearchShouldNormalizeUnicodeWhitespace() {
+        AuthSession coordinator = newSession("COORD");
+        UUID targetAccountId = newAccount(
+                "member-unicode-space-" + UUID.randomUUID() + "@example.com",
+                "Member Unicode Space Target"
+        );
+        UUID targetMemberId = registerMember(coordinator, targetAccountId);
+        forceMemberState(targetMemberId, targetAccountId, "ACTIVE", "MEMBER");
+        List<String> submittedNames = List.of(
+                "\u2003Ana\u2003\u2003Silva\u2003",
+                "\u2002Ana\u2003\u205FSilva\u2002"
+        );
+
+        for (String submittedName : submittedNames) {
+            ExtractableResponse<Response> response = authenticatedJsonRequest(coordinator)
+                    .body(searchPayload(filter("name", submittedName, "LIKE")))
+                    .post("/members/search?size=100")
+                    .then()
+                    .extract();
+
+            assertThat(response.statusCode()).as(response.asString()).isEqualTo(200);
+            assertThat(resourceIds(response.jsonPath().getList("items"))).containsExactly(targetMemberId);
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("nonBreakingWhitespaceNameCases")
+    @DisplayName("REQ-MEMBER-010 and REQ-SEARCH-007 - name LIKE collapses non-breaking Unicode whitespace")
+    void memberNameSearchShouldNormalizeNonBreakingUnicodeWhitespace(String scenario, String whitespace) {
+        AuthSession coordinator = newSession("COORD");
+        UUID targetAccountId = newAccount(
+                "member-nb-space-" + UUID.randomUUID() + "@example.com",
+                "Member Non-Breaking Space Target"
+        );
+        UUID targetMemberId = registerMember(coordinator, targetAccountId);
+        forceMemberState(targetMemberId, targetAccountId, "ACTIVE", "MEMBER");
+        String submittedName = whitespace + "Ana" + whitespace + whitespace + "Silva" + whitespace;
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(coordinator)
+                .body(searchPayload(filter("name", submittedName, "LIKE")))
+                .post("/members/search?size=100")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(scenario + ": " + response.asString()).isEqualTo(200);
+        assertThat(resourceIds(response.jsonPath().getList("items"))).containsExactly(targetMemberId);
     }
 
     @Test
@@ -727,6 +777,14 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
         return Stream.of(
                 Arguments.of("BVA - one character", "  x  ", "x"),
                 Arguments.of("BVA - 2,000 characters", "  " + "r".repeat(2_000) + "  ", "r".repeat(2_000))
+        );
+    }
+
+    private static Stream<Arguments> nonBreakingWhitespaceNameCases() {
+        return Stream.of(
+                Arguments.of("NO-BREAK SPACE U+00A0", "\u00A0"),
+                Arguments.of("FIGURE SPACE U+2007", "\u2007"),
+                Arguments.of("NARROW NO-BREAK SPACE U+202F", "\u202F")
         );
     }
 

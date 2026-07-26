@@ -14,19 +14,23 @@ public record SearchFilterDefinition<E>(
         BiFunction<ComparationMethods, Object, Specification<E>> specificationFactory
 ) {
 
-    public Specification<E> toSpecification(SpecificationFilterDTO dto) {
-        ComparationMethods method = dto.comparationMethod();
-
+    public Specification<E> toSpecification(
+            SpecificationFilterDTO dto,
+            ComparationMethods method,
+            int filterIndex
+    ) {
         if (!allowedMethods.contains(method)) {
             throw new InvalidSearchFilterException(
-                    "Unsupported comparison method " + method + " for field " + publicField + "."
+                    "Unsupported comparison method " + method + " for field " + publicField + ".",
+                    ResourceSearchFilterConverter.knownDetails(filterIndex, publicField, method)
             );
         }
 
         Function<JsonNode, Object> parser = parsers.get(method);
         if (parser == null) {
             throw new InvalidSearchFilterException(
-                    "Unsupported comparison method " + method + " for field " + publicField + "."
+                    "Unsupported comparison method " + method + " for field " + publicField + ".",
+                    ResourceSearchFilterConverter.knownDetails(filterIndex, publicField, method)
             );
         }
 
@@ -34,7 +38,11 @@ public record SearchFilterDefinition<E>(
             Object value = parser.apply(dto.value());
             return specificationFactory.apply(method, value);
         } catch (RuntimeException e) {
-            throw new InvalidSearchFilterException("Invalid filter value for " + publicField + ".", e);
+            throw new InvalidSearchFilterException(
+                    "Invalid filter value for " + publicField + ".",
+                    ResourceSearchFilterConverter.knownDetails(filterIndex, publicField, method),
+                    e
+            );
         }
     }
 

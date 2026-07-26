@@ -10,6 +10,7 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.media.ArraySchema;
 import io.swagger.v3.oas.models.media.BooleanSchema;
+import io.swagger.v3.oas.models.media.ComposedSchema;
 import io.swagger.v3.oas.models.media.IntegerSchema;
 import io.swagger.v3.oas.models.media.MapSchema;
 import io.swagger.v3.oas.models.media.MediaType;
@@ -18,6 +19,7 @@ import io.swagger.v3.oas.models.media.NumberSchema;
 import io.swagger.v3.oas.models.media.ObjectSchema;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.media.StringSchema;
+import io.swagger.v3.oas.models.examples.Example;
 import io.swagger.v3.oas.models.headers.Header;
 import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.responses.ApiResponse;
@@ -46,6 +48,10 @@ import org.springframework.context.annotation.Configuration;
         bearerFormat = "JWT"
 )
 public class OpenApiConfig {
+
+    private static final String NON_WHITESPACE_PATTERN =
+            "[\\s\\S]*[^\\u0009-\\u000D\\u0020\\u0085\\u00A0\\u1680\\u2000-\\u200A"
+                    + "\\u2028\\u2029\\u202F\\u205F\\u3000][\\s\\S]*";
 
     private static final Set<String> CREATED_OPERATIONS = Set.of(
             "createEvent",
@@ -119,6 +125,7 @@ public class OpenApiConfig {
             requireGamLocationResponseFields(components);
             requireCsrfBootstrapResponseFields(components);
             requireCurrentAccountContextResponseFields(components);
+            configureSharedSearchSchemas(components);
             components.getSchemas().remove("Pageable");
 
             openApi.getPaths().forEach((path, pathItem) -> pathItem.readOperations().forEach(operation -> {
@@ -167,6 +174,47 @@ public class OpenApiConfig {
         }
     }
 
+    private void configureSharedSearchSchemas(Components components) {
+        Schema<?> filter = components.getSchemas().get("SpecificationFilterDTO");
+        if (filter == null || filter.getProperties() == null) {
+            return;
+        }
+
+        StringSchema field = new StringSchema();
+        field.setMinLength(1);
+        field.setPattern(NON_WHITESPACE_PATTERN);
+        filter.getProperties().put("field", field);
+
+        StringSchema comparisonMethod = new StringSchema();
+        comparisonMethod.setMinLength(1);
+        comparisonMethod.setPattern(NON_WHITESPACE_PATTERN);
+        comparisonMethod.setEnum(List.of(
+                "EQUALS",
+                "LIKE",
+                "IN",
+                "GREATER_THAN_OR_EQUAL",
+                "LESS_THAN_OR_EQUAL"
+        ));
+        filter.getProperties().put("comparisonMethod", comparisonMethod);
+
+        StringSchema scalar = new StringSchema();
+        scalar.setMinLength(1);
+        scalar.setPattern(NON_WHITESPACE_PATTERN);
+
+        StringSchema inItem = new StringSchema();
+        inItem.setMinLength(1);
+        inItem.setPattern(NON_WHITESPACE_PATTERN);
+        ArraySchema inValues = new ArraySchema();
+        inValues.setMinItems(1);
+        inValues.setMaxItems(100);
+        inValues.setItems(inItem);
+
+        filter.getProperties().put(
+                "value",
+                new ComposedSchema().oneOf(List.of(scalar, inValues))
+        );
+    }
+
     private void addOperationMetadata(String path, io.swagger.v3.oas.models.Operation operation) {
         operation.setTags(List.of(consumerTag(path)));
         if (operation.getSummary() == null || operation.getSummary().isBlank()) {
@@ -193,8 +241,109 @@ public class OpenApiConfig {
                     "Completes a valid draft only after its complete signed attachment and print snapshot "
                             + "correspondence have been verified. Set overwriteNewerProfileValues to true "
                             + "to explicitly authorize replacement of profile values recorded after signedOn.";
+            case "searchAccounts" ->
+                    structuredSearchDescription(
+                            "id allows EQUALS and IN; value is a canonical UUID string.",
+                            "email allows EQUALS and LIKE; value for EQUALS is a complete canonical email, while "
+                                    + "LIKE lowercases a literal substring of minimum 3 characters, requires two "
+                                    + "before @, and rejects a dot without @.",
+                            "displayName allows EQUALS and LIKE; value is trimmed text of 1 to 50 characters, "
+                                    + "with case-sensitive EQUALS and case-insensitive literal substring LIKE.",
+                            "role allows EQUALS and IN; value is an exact case-sensitive Role name from an "
+                                    + "active/current assignment.",
+                            "createdAt allows GREATER_THAN_OR_EQUAL and LESS_THAN_OR_EQUAL; "
+                                    + "value is a canonical RFC 3339 UTC timestamp ending in Z.",
+                            "updatedAt allows GREATER_THAN_OR_EQUAL and LESS_THAN_OR_EQUAL; "
+                                    + "value is a canonical RFC 3339 UTC timestamp ending in Z."
+                    );
+            case "searchEvents" ->
+                    structuredSearchDescription(
+                            "id allows EQUALS and IN; value is a canonical UUID string.",
+                            "title allows EQUALS and LIKE; value is trimmed text of 1 to 255 characters, "
+                                    + "with case-sensitive EQUALS and case-insensitive literal substring LIKE.",
+                            "description allows LIKE; value is nonblank text after trimming with a maximum of "
+                                    + "10,000 characters and case-insensitive literal substring matching.",
+                            "gamLocationId allows EQUALS and IN; value is a canonical UUID string.",
+                            "requiredPermissionId allows EQUALS and IN; value is a canonical UUID for the nullable "
+                                    + "audience Permission; a public Event with no Permission does not match.",
+                            "requiredPermissionCode allows EQUALS and IN; value is an exact case-sensitive code "
+                                    + "of the active/current nullable audience Permission; a public Event with no "
+                                    + "Permission does not match.",
+                            "type allows EQUALS and IN; value is an exact uppercase accepted enum: "
+                                    + "GENERIC, ORATORIO, or MISSA.",
+                            "status allows EQUALS and IN; value is the exact uppercase effective status evaluated "
+                                    + "at a single request instant: SCHEDULED, COMPLETED, LOCKED, FINALIZED, "
+                                    + "or CANCELLED.",
+                            "beginDate allows GREATER_THAN_OR_EQUAL and LESS_THAN_OR_EQUAL; "
+                                    + "value is a canonical RFC 3339 UTC timestamp ending in Z.",
+                            "endDate allows GREATER_THAN_OR_EQUAL and LESS_THAN_OR_EQUAL; "
+                                    + "value is a canonical RFC 3339 UTC timestamp ending in Z."
+                    );
+            case "searchMembers" ->
+                    structuredSearchDescription(
+                            "id allows EQUALS and IN; value is a canonical UUID string.",
+                            "name allows LIKE; value is a full-name string trimmed at boundaries to collapse every "
+                                    + "Unicode whitespace sequence to one space; LIKE is a case-insensitive literal "
+                                    + "substring while preserving diacritics and meaningful punctuation.",
+                            "birthDate allows EQUALS, GREATER_THAN_OR_EQUAL, and LESS_THAN_OR_EQUAL; "
+                                    + "value is an ISO 8601 yyyy-MM-dd calendar date.",
+                            "phoneNumber allows EQUALS and LIKE; value for EQUALS is a complete canonical E.164 "
+                                    + "phone number, while LIKE removes ordinary phone formatting and requires "
+                                    + "a minimum of 4 digits for literal digit-substring matching.",
+                            "status allows EQUALS and IN; value is an exact uppercase accepted enum: "
+                                    + "ACTIVE or INACTIVE.",
+                            "accountId allows EQUALS; value is a canonical UUID string.",
+                            "email allows EQUALS and LIKE; value for EQUALS is a complete canonical email, while "
+                                    + "LIKE lowercases a literal substring of minimum 3 characters, requires two "
+                                    + "before @, and rejects a dot without @.",
+                            "role allows EQUALS and IN; value is an exact case-sensitive Role name from an "
+                                    + "active/current assignment.",
+                            "createdAt allows GREATER_THAN_OR_EQUAL and LESS_THAN_OR_EQUAL; "
+                                    + "value is a canonical RFC 3339 UTC timestamp ending in Z.",
+                            "updatedAt allows GREATER_THAN_OR_EQUAL and LESS_THAN_OR_EQUAL; "
+                                    + "value is a canonical RFC 3339 UTC timestamp ending in Z."
+                    );
+            case "searchMembershipSolicitations" ->
+                    structuredSearchDescription(
+                            "id allows EQUALS and IN; value is a canonical UUID string.",
+                            "accountId allows EQUALS; value is a canonical UUID string.",
+                            "email allows EQUALS and LIKE; value for EQUALS is a complete canonical email, while "
+                                    + "LIKE lowercases a literal substring of minimum 3 characters, requires two "
+                                    + "before @, and rejects a dot without @.",
+                            "name allows LIKE; value is the immutable submitted full-name snapshot that collapses "
+                                    + "every Unicode whitespace sequence to one space; LIKE is a case-insensitive "
+                                    + "literal substring while preserving diacritics and meaningful punctuation.",
+                            "status allows EQUALS and IN; value is an exact uppercase accepted enum: "
+                                    + "PENDING, APPROVED, or REJECTED.",
+                            "submittedAt allows GREATER_THAN_OR_EQUAL and LESS_THAN_OR_EQUAL; "
+                                    + "value is a canonical RFC 3339 UTC timestamp ending in Z.",
+                            "decidedAt allows GREATER_THAN_OR_EQUAL and LESS_THAN_OR_EQUAL; "
+                                    + "the stored field is nullable; the submitted value is a non-null canonical "
+                                    + "RFC 3339 UTC timestamp ending in Z; pending with no decision does not match.",
+                            "reviewedByAccountId allows EQUALS; the stored field is nullable; the submitted value is "
+                                    + "a non-null canonical UUID; pending with no reviewer does not match."
+                    );
+            case "searchOratorianos" ->
+                    structuredSearchDescription(
+                            "id allows EQUALS and IN; value is a canonical UUID string.",
+                            "name allows EQUALS and LIKE; value is the human-equivalent complete full-name key with "
+                                    + "collapse of Unicode whitespace to one space, compared case-insensitively and "
+                                    + "diacritic-insensitively while punctuation remains meaningful; EQUALS requires "
+                                    + "the complete key and LIKE performs literal substring matching."
+                    );
             default -> "Performs the documented GAM operation: " + operation.getSummary() + ".";
         };
+    }
+
+    private String structuredSearchDescription(String... fieldContracts) {
+        return "Uses the strict shared filters array. Each filter requires field, value, and comparisonMethod. "
+                + "Accepted comparisonMethod values are EQUALS, LIKE, IN, GREATER_THAN_OR_EQUAL, and "
+                + "LESS_THAN_OR_EQUAL, subject to each field contract. EQUALS uses one scalar value of the "
+                + "field's documented type and parsing rules. LIKE uses one nonblank string. IN uses a JSON "
+                + "array of 1 to 100 scalar values under the same equality parsing and normalization rules. "
+                + "GREATER_THAN_OR_EQUAL and LESS_THAN_OR_EQUAL each use one scalar value of the field's "
+                + "documented ordered type and parsing rules. "
+                + String.join(" ", fieldContracts);
     }
 
     private String consumerTag(String path) {
@@ -459,7 +608,11 @@ public class OpenApiConfig {
     }
 
     private void documentErrorResponses(io.swagger.v3.oas.models.Operation operation) {
-        operation.getResponses().putIfAbsent("400", errorResponse(400, "INVALID_REQUEST", "Invalid request"));
+        if (isStructuredSearch(operation.getOperationId())) {
+            operation.getResponses().put("400", structuredSearchBadRequestResponse());
+        } else {
+            operation.getResponses().putIfAbsent("400", errorResponse(400, "INVALID_REQUEST", "Invalid request"));
+        }
         operation.getResponses().putIfAbsent("401", errorResponse(401, "UNAUTHORIZED", "Authentication is required."));
         operation.getResponses().putIfAbsent("403", errorResponse(403, "FORBIDDEN", "The authenticated account is not allowed to perform this operation."));
         operation.getResponses().putIfAbsent("404", errorResponse(404, "NOT_FOUND", "The requested resource was not found."));
@@ -477,6 +630,63 @@ public class OpenApiConfig {
             operation.getResponses().remove("404");
             operation.getResponses().remove("409");
         }
+    }
+
+    private boolean isStructuredSearch(String operationId) {
+        return Set.of(
+                "searchAccounts",
+                "searchEvents",
+                "searchMembers",
+                "searchMembershipSolicitations",
+                "searchOratorianos"
+        ).contains(operationId);
+    }
+
+    private ApiResponse structuredSearchBadRequestResponse() {
+        MediaType mediaType = new MediaType()
+                .schema(new Schema<>().$ref("#/components/schemas/ApiErrorDTO"));
+        mediaType.addExamples(
+                "malformedJson",
+                new Example().summary("Malformed JSON structure")
+                        .value(errorExample(400, "MALFORMED_JSON", "JSON request is malformed."))
+        );
+        mediaType.addExamples(
+                "validationError",
+                new Example().summary("Missing, null, or blank required member")
+                        .value(errorExample(400, "VALIDATION_ERROR", "Validation failed."))
+        );
+        mediaType.addExamples(
+                "invalidSearchFilter",
+                new Example().summary("Invalid filter semantics")
+                        .value(errorExample(
+                                400,
+                                "INVALID_SEARCH_FILTER",
+                                "Invalid search filter.",
+                                Map.of("filterIndex", 0)
+                        ))
+        );
+        return new ApiResponse()
+                .description("Possible codes: MALFORMED_JSON, VALIDATION_ERROR, INVALID_SEARCH_FILTER.")
+                .content(new Content().addMediaType("application/json", mediaType));
+    }
+
+    private Map<String, Object> errorExample(int status, String code, String message) {
+        return errorExample(status, code, message, Map.of());
+    }
+
+    private Map<String, Object> errorExample(
+            int status,
+            String code,
+            String message,
+            Map<String, Object> details
+    ) {
+        return Map.of(
+                "timestamp", "2026-07-15T12:00:00Z",
+                "status", status,
+                "code", code,
+                "message", message,
+                "details", details
+        );
     }
 
     private ConflictDocumentation conflictDocumentation(String operationId) {
@@ -651,6 +861,35 @@ public class OpenApiConfig {
                 response.getContent().values().forEach(mediaType -> addExample(openApi, mediaType));
             }
         });
+        addStructuredSearchRequestExample(operation);
+    }
+
+    private void addStructuredSearchRequestExample(io.swagger.v3.oas.models.Operation operation) {
+        Map<String, Object> filter = switch (operation.getOperationId()) {
+            case "searchAccounts" -> searchFilterExample("displayName", "Synthetic Member", "EQUALS");
+            case "searchEvents" -> searchFilterExample("title", "Synthetic event", "LIKE");
+            case "searchMembers" -> searchFilterExample("status", "ACTIVE", "EQUALS");
+            case "searchMembershipSolicitations" -> searchFilterExample("status", "PENDING", "EQUALS");
+            case "searchOratorianos" -> searchFilterExample("name", "Ana Silva", "LIKE");
+            default -> null;
+        };
+        if (filter == null || operation.getRequestBody() == null
+                || operation.getRequestBody().getContent() == null) {
+            return;
+        }
+
+        MediaType json = operation.getRequestBody().getContent().get("application/json");
+        if (json != null) {
+            json.setExample(Map.of("filters", List.of(filter)));
+        }
+    }
+
+    private Map<String, Object> searchFilterExample(String field, String value, String comparisonMethod) {
+        return Map.of(
+                "field", field,
+                "value", value,
+                "comparisonMethod", comparisonMethod
+        );
     }
 
     private void addExample(OpenAPI openApi, io.swagger.v3.oas.models.media.MediaType mediaType) {

@@ -438,12 +438,57 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
                     .extract();
 
             assertThat(response.statusCode())
-                    .as("public filter %s %s", searchFilter.get("field"), searchFilter.get("comparationMethod"))
+                    .as("public filter %s %s", searchFilter.get("field"), searchFilter.get("comparisonMethod"))
                     .isEqualTo(200);
             assertThat(resourceIds(response.jsonPath().getList("items")))
-                    .as("public filter %s %s", searchFilter.get("field"), searchFilter.get("comparationMethod"))
+                    .as("public filter %s %s", searchFilter.get("field"), searchFilter.get("comparisonMethod"))
                     .contains(solicitationId);
         }
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-SOL-007 and REQ-SEARCH-007 - name LIKE trims and collapses Unicode whitespace")
+    void solicitationNameSearchShouldNormalizeUnicodeWhitespace() {
+        AuthSession coordinator = newSession("COORD");
+        AuthSession applicant = newSession("VISITOR");
+        UUID solicitationId = submitSolicitation(applicant);
+        List<String> submittedNames = List.of(
+                "\u2003Ana\u2003\u2003Silva\u2003",
+                "\u2002Ana\u2003\u205FSilva\u2002"
+        );
+
+        for (String submittedName : submittedNames) {
+            ExtractableResponse<Response> response = authenticatedJsonRequest(coordinator)
+                    .body(searchPayload(filter("name", submittedName, "LIKE")))
+                    .post("/membership-solicitations/search?size=100")
+                    .then()
+                    .extract();
+
+            assertThat(response.statusCode()).as(response.asString()).isEqualTo(200);
+            assertThat(resourceIds(response.jsonPath().getList("items"))).containsExactly(solicitationId);
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("nonBreakingWhitespaceNameCases")
+    @DisplayName("REQ-MEMBER-SOL-007 and REQ-SEARCH-007 - name LIKE collapses non-breaking Unicode whitespace")
+    void solicitationNameSearchShouldNormalizeNonBreakingUnicodeWhitespace(
+            String scenario,
+            String whitespace
+    ) {
+        AuthSession coordinator = newSession("COORD");
+        AuthSession applicant = newSession("VISITOR");
+        UUID solicitationId = submitSolicitation(applicant);
+        String submittedName = whitespace + "Ana" + whitespace + whitespace + "Silva" + whitespace;
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(coordinator)
+                .body(searchPayload(filter("name", submittedName, "LIKE")))
+                .post("/membership-solicitations/search?size=100")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(scenario + ": " + response.asString()).isEqualTo(200);
+        assertThat(resourceIds(response.jsonPath().getList("items"))).containsExactly(solicitationId);
     }
 
     @Test
@@ -1007,6 +1052,14 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
                         CANONICAL_PHONE,
                         "j".repeat(2_001)
                 )
+        );
+    }
+
+    private static Stream<Arguments> nonBreakingWhitespaceNameCases() {
+        return Stream.of(
+                Arguments.of("NO-BREAK SPACE U+00A0", "\u00A0"),
+                Arguments.of("FIGURE SPACE U+2007", "\u2007"),
+                Arguments.of("NARROW NO-BREAK SPACE U+202F", "\u202F")
         );
     }
 

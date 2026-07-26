@@ -350,6 +350,123 @@ class EventRecordsLifecycleApiIT extends MemberApiTestSupport {
     }
 
     @Test
+    @DisplayName("REQ-EVENT-010 - exact public filter catalog and every allowed comparison -> find the Event")
+    void documentedEventSearchFiltersShouldFindTheTarget() {
+        AuthSession caller = newSessionWithPermissions(
+                "GAM_LOCATION_CREATE", "EVENT_CREATE", "EVENT_SEARCH", "EVENT_GET_MEMBER"
+        );
+        String title = "Event search target " + UUID.randomUUID();
+        UUID permissionId = permissionId("EVENT_GET_MEMBER");
+        Instant begin = Instant.now().minusSeconds(7_200);
+        Instant end = Instant.now().minusSeconds(3_600);
+        UUID eventId = createEvent(caller, title, permissionId, begin, end);
+        UUID locationId = jdbcTemplate.queryForObject(
+                "SELECT gam_location_id FROM events WHERE id = ?",
+                UUID.class,
+                eventId
+        );
+        Instant storedBegin = jdbcTemplate.queryForObject(
+                "SELECT begin_date FROM events WHERE id = ?",
+                Timestamp.class,
+                eventId
+        ).toInstant();
+        Instant storedEnd = jdbcTemplate.queryForObject(
+                "SELECT end_date FROM events WHERE id = ?",
+                Timestamp.class,
+                eventId
+        ).toInstant();
+
+        List<Map<String, Object>> filters = List.of(
+                filter("id", eventId.toString(), "EQUALS"),
+                filter("id", List.of(UUID.randomUUID().toString(), eventId.toString()), "IN"),
+                filter("title", title, "EQUALS"),
+                filter("title", "SEARCH TARGET", "LIKE"),
+                filter("description", "integration fixture", "LIKE"),
+                filter("gamLocationId", locationId.toString(), "EQUALS"),
+                filter("gamLocationId", List.of(locationId.toString()), "IN"),
+                filter("requiredPermissionId", permissionId.toString(), "EQUALS"),
+                filter("requiredPermissionId", List.of(permissionId.toString()), "IN"),
+                filter("requiredPermissionCode", "EVENT_GET_MEMBER", "EQUALS"),
+                filter("requiredPermissionCode", List.of("EVENT_GET_MEMBER", "EVENT_GET_COORD"), "IN"),
+                filter("type", "GENERIC", "EQUALS"),
+                filter("type", List.of("ORATORIO", "GENERIC"), "IN"),
+                filter("status", "COMPLETED", "EQUALS"),
+                filter("status", List.of("SCHEDULED", "COMPLETED"), "IN"),
+                filter("beginDate", storedBegin.toString(), "GREATER_THAN_OR_EQUAL"),
+                filter("beginDate", storedBegin.toString(), "LESS_THAN_OR_EQUAL"),
+                filter("endDate", storedEnd.toString(), "GREATER_THAN_OR_EQUAL"),
+                filter("endDate", storedEnd.toString(), "LESS_THAN_OR_EQUAL")
+        );
+
+        for (Map<String, Object> searchFilter : filters) {
+            ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                    .body(searchPayload(searchFilter))
+                    .post(EVENTS + "/search?size=100")
+                    .then()
+                    .extract();
+
+            assertThat(response.statusCode())
+                    .as("%s %s: %s",
+                            searchFilter.get("field"),
+                            searchFilter.get("comparisonMethod"),
+                            response.asString())
+                    .isEqualTo(200);
+            assertThat(response.<List<String>>path("items.id"))
+                    .as("%s %s", searchFilter.get("field"), searchFilter.get("comparisonMethod"))
+                    .contains(eventId.toString());
+        }
+    }
+
+    @Test
+    @DisplayName("REQ-EVENT-010 and REQ-SEARCH-008/010 - unsupported methods and non-public fields -> safe errors")
+    void invalidEventSearchCatalogEntriesShouldReturnSafeErrors() {
+        AuthSession caller = newSessionWithPermissions("EVENT_SEARCH");
+        List<Map<String, Object>> unsupported = List.of(
+                filter("id", UUID.randomUUID().toString(), "LIKE"),
+                filter("title", List.of("Title"), "IN"),
+                filter("description", "Description", "EQUALS"),
+                filter("gamLocationId", UUID.randomUUID().toString(), "LESS_THAN_OR_EQUAL"),
+                filter("requiredPermissionId", UUID.randomUUID().toString(), "LIKE"),
+                filter("requiredPermissionCode", "EVENT_GET_MEMBER", "LIKE"),
+                filter("type", "GENERIC", "GREATER_THAN_OR_EQUAL"),
+                filter("status", "SCHEDULED", "LIKE"),
+                filter("beginDate", "2026-01-01T00:00:00Z", "EQUALS"),
+                filter("endDate", "2026-01-01T00:00:00Z", "IN")
+        );
+
+        for (Map<String, Object> searchFilter : unsupported) {
+            ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                    .body(searchPayload(searchFilter))
+                    .post(EVENTS + "/search")
+                    .then()
+                    .extract();
+            assertThat(response.statusCode()).as(response.asString()).isEqualTo(400);
+            assertThat(response.<String>path("code")).isEqualTo("INVALID_SEARCH_FILTER");
+            assertThat(response.<Map<String, Object>>path("details"))
+                    .containsEntry("filterIndex", 0)
+                    .containsEntry("field", searchFilter.get("field"))
+                    .containsEntry("comparisonMethod", searchFilter.get("comparisonMethod"));
+        }
+
+        String persistenceField = "createdAt";
+        ExtractableResponse<Response> unknown = authenticatedJsonRequest(caller)
+                .body(searchPayload(filter(
+                        persistenceField,
+                        "2026-01-01T00:00:00Z",
+                        "GREATER_THAN_OR_EQUAL"
+                )))
+                .post(EVENTS + "/search")
+                .then()
+                .extract();
+        assertThat(unknown.statusCode()).as(unknown.asString()).isEqualTo(400);
+        assertThat(unknown.<String>path("code")).isEqualTo("INVALID_SEARCH_FILTER");
+        assertThat(unknown.<String>path("message")).isEqualTo("Unknown filter field.");
+        assertThat(unknown.<Map<String, Object>>path("details"))
+                .containsExactly(Map.entry("filterIndex", 0));
+        assertThat(unknown.asString()).doesNotContain(persistenceField);
+    }
+
+    @Test
     @DisplayName("REQ-EVENT-006 and REQ-EVENT-010 - requested status sort uses effective rather than stored status")
     void statusSortShouldUseEffectiveStatus() {
         AuthSession caller = newSessionWithPermissions(

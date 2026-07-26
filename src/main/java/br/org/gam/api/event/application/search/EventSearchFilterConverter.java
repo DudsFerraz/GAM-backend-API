@@ -35,15 +35,15 @@ public class EventSearchFilterConverter implements SearchFilterConverter<EventEn
                     "title",
                     Set.of(ComparationMethods.EQUALS, ComparationMethods.LIKE),
                     Map.of(
-                            ComparationMethods.EQUALS, SearchValueParsers::text,
-                            ComparationMethods.LIKE, SearchValueParsers::text
+                            ComparationMethods.EQUALS, SearchValueParsers.boundedText(255),
+                            ComparationMethods.LIKE, SearchValueParsers.boundedText(255)
                     )
             )),
             Map.entry("description", SearchFilterDefinition.path(
                     "description",
                     "description",
                     Set.of(ComparationMethods.LIKE),
-                    Map.of(ComparationMethods.LIKE, SearchValueParsers::text)
+                    Map.of(ComparationMethods.LIKE, SearchValueParsers.boundedText(10_000))
             )),
             Map.entry("gamLocationId", SearchFilterDefinition.path(
                     "gamLocationId",

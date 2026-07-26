@@ -7,6 +7,7 @@ import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Root;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.data.jpa.domain.Specification;
 
 public final class SpecificationFactory {
@@ -39,18 +40,54 @@ public final class SpecificationFactory {
     public static <T> Specification<T> like(String field, String value) {
         return (root, query, cb) -> {
             query.distinct(true);
-            return cb.like(cb.lower(getPath(root, field).as(String.class)), "%" + value.toLowerCase() + "%");
+            Expression<String> expression = cb.lower(getPath(root, field).as(String.class));
+            String pattern = "%" + escapeLikeLiteral(value.toLowerCase(Locale.ROOT)) + "%";
+            return containsLikeMeta(value)
+                    ? cb.like(expression, pattern, '\\')
+                    : cb.like(expression, pattern);
         };
     }
 
     public static <T> Specification<T> likeAny(List<String> fields, String value) {
         return (root, query, cb) -> {
             query.distinct(true);
-            String pattern = "%" + value.toLowerCase() + "%";
+            String pattern = "%" + escapeLikeLiteral(value.toLowerCase(Locale.ROOT)) + "%";
             return cb.or(fields.stream()
-                    .map(field -> cb.like(cb.lower(getPath(root, field).as(String.class)), pattern))
+                    .map(field -> {
+                        Expression<String> expression = cb.lower(getPath(root, field).as(String.class));
+                        return containsLikeMeta(value)
+                                ? cb.like(expression, pattern, '\\')
+                                : cb.like(expression, pattern);
+                    })
                     .toArray(jakarta.persistence.criteria.Predicate[]::new));
         };
+    }
+
+    public static <T> Specification<T> likeFullName(
+            String firstNameField,
+            String surnameField,
+            String value
+    ) {
+        return (root, query, cb) -> {
+            query.distinct(true);
+            Expression<String> fullName = cb.concat(
+                    cb.concat(getPath(root, firstNameField).as(String.class), " "),
+                    getPath(root, surnameField).as(String.class)
+            );
+            Expression<String> expression = cb.lower(fullName);
+            String pattern = "%" + escapeLikeLiteral(value.toLowerCase(Locale.ROOT)) + "%";
+            return containsLikeMeta(value)
+                    ? cb.like(expression, pattern, '\\')
+                    : cb.like(expression, pattern);
+        };
+    }
+
+    private static String escapeLikeLiteral(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
+    private static boolean containsLikeMeta(String value) {
+        return value.indexOf('%') >= 0 || value.indexOf('_') >= 0 || value.indexOf('\\') >= 0;
     }
 
     public static <T, C extends Comparable<? super C>> Specification<T> isGreaterThanOrEqual(String field, C value) {
