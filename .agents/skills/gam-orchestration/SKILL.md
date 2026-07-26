@@ -30,6 +30,11 @@ review-return transition.
 Do not pass explicit model or reasoning overrides when spawning standard role
 agents. They inherit the project `[agents]` defaults.
 
+Spawn fresh role agents with the exact custom `agent_type` and
+`fork_turns: "none"`; full-history forks cannot select a different custom role.
+Store the target returned when spawning Agent T or D. For resumed transitions,
+call `followup_task` with that target instead of spawning another agent.
+
 Keep Agent T and Agent D sequential. Wait for the active writer to finish before
 activating the other. Never run T and D write-heavy turns concurrently.
 
