@@ -1,8 +1,8 @@
 package br.org.gam.api.member.persistence;
 
 import br.org.gam.api.shared.persistence.BaseRepository;
+import br.org.gam.api.shared.persistence.ReadOnlySpecificationExecutor;
 import java.util.UUID;
-import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -10,7 +10,7 @@ import jakarta.persistence.LockModeType;
 import java.util.Optional;
 
 public interface MemberRepository extends BaseRepository<MemberEntity, UUID>,
-                                           JpaSpecificationExecutor<MemberEntity> {
+                                           ReadOnlySpecificationExecutor<MemberEntity> {
 
     boolean existsByAccountId(UUID accountId);
 

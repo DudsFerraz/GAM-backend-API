@@ -1,12 +1,12 @@
 package br.org.gam.api.presence.persistence;
 
 import br.org.gam.api.shared.persistence.BaseRepository;
+import br.org.gam.api.shared.persistence.ReadOnlySpecificationExecutor;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 public interface PresenceRepository extends BaseRepository<PresenceEntity, UUID>,
-                                             JpaSpecificationExecutor<PresenceEntity> {
+                                             ReadOnlySpecificationExecutor<PresenceEntity> {
     Optional<PresenceEntity> findByMember_IdAndEvent_Id(UUID memberId, UUID eventId);
     boolean existsByMember_IdAndEvent_Id(UUID memberId, UUID eventId);
     long countByEvent_Id(UUID eventId);
