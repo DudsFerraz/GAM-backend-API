@@ -183,19 +183,31 @@ Paged responses shall use a GAM-owned envelope rather than Spring's raw `Page` s
 }
 ```
 
-Filtering shall remain endpoint-specific and shall be documented independently of pagination and sorting. This specification shall not create a new universal filtering language.
+Structured-search filtering shall use the shared grammar from
+`REQ-SEARCH-001` through `REQ-SEARCH-012`. Each owning endpoint Requirement
+Specification shall independently document its public filter-field catalog,
+allowed methods, field value types, normalization, and visibility rules.
+
+The earlier blanket restriction against a shared filtering language is
+superseded by the Search and Filter Framework Requirement Specification. This
+clarification does not change this requirement's pagination or sorting identity
+and shall not create a universal filter-field catalog or unrestricted predicate
+language.
 
 Rationale:
 A small stable envelope and explicit sort allowlists prevent frontend coupling to Spring serialization and persistence property names.
 
 Valid examples:
 - `?page=0&size=20&sort=surname,asc&sort=firstName,asc` uses two documented sort fields.
-- An endpoint documents its structured search body separately from the query pagination controls.
+- An endpoint uses the shared structured-search body while documenting its own
+  public filter fields separately from query pagination controls.
 
 Invalid examples:
 - A response exposes Spring `pageable` internals.
 - `size=5000` is silently reduced to `100`.
 - Any JPA property name is accepted as a public sort field.
+- A public filter field accepted by one resource is assumed to exist for every
+  structured-search endpoint.
 
 ---
 
@@ -375,7 +387,7 @@ Scenario: Detect removal of a contract added after the initial baseline
 * Schemathesis or another schema-driven property-testing framework.
 * AsyncAPI and message-driven interfaces.
 * A handwritten API changelog.
-* A universal filtering language.
+* A universal filter-field catalog or unrestricted client predicate language.
 * Selecting a frontend runtime HTTP client.
 * Runtime TypeScript response validation.
 * Money, file-transfer, or rate-limiting policies before GAM exposes those concerns.
@@ -386,12 +398,14 @@ Scenario: Detect removal of a contract added after the initial baseline
 
 * [ADR-0005: Keep Frontend and Backend in Separate Repositories](../../decisions/0005-keep-frontend-and-backend-in-separate-repositories.md)
 * [ADR-0008: Generate and Govern OpenAPI from Backend Code](../../decisions/0008-generate-and-govern-openapi-from-backend-code.md)
+* [ADR-0020: Use Shared Search Grammar with Resource-Specific Public Fields](../../decisions/0020-use-shared-search-grammar-with-resource-specific-public-fields.md)
 
 ## Related requirements
 
 * [Web Delivery and Frontend Contract](web-delivery-and-frontend-contract.md)
 * [Browser Session and Frontend Integration](../authentication/browser-session-and-frontend-integration.md)
 * [Authentication and Account Registration](../authentication/authentication-and-registration.md)
+* [Search and Filter Framework](search-and-filter-framework.md)
 
 ## Related videos
 
