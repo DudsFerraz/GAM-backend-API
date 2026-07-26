@@ -22,6 +22,7 @@ truth, a transcript, or permission to assume the receiving role.
 
 | Packet | Required sections | Reference |
 |---|---|---|
+| Fresh Agent O | `Context`, `Current Status` | `references/fresh-agent-o.md` |
 | Fresh Agent T | `Context` | `references/fresh-agent-t.md` |
 | Fresh Agent D | `Context`, `Current Status`, `Changes`, `Verification` | `references/fresh-agent-d.md` |
 | Return to Agent T | `Current Status`, `Verification` | `references/return-agent-t.md` |

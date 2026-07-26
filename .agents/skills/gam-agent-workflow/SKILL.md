@@ -22,6 +22,7 @@ Read the owner for every concern used in the current turn.
 
 | Current phase | Validated role outcome | Next phase | Target |
 |---|---|---|---|
+| p_planning | planning_ready | orchestration_start | fresh Agent O |
 | orchestration_start | planning_ready | t_initial | fresh Agent T |
 | t_initial | expected_red_confirmed | d_initial | fresh Agent D |
 | d_initial | initial_implementation_satisfies_tests | t_expanded | resumed Agent T |

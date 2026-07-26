@@ -21,7 +21,7 @@
   "externalDerivedLocalSkills": {
     "gam-human-handoff": {
       "formerExternalSkill": "handoff",
-      "reason": "Rewritten into an explicit-only GAM manual chat handoff renderer with Agent P/T/D/R handoff types, developer copy-and-paste output, and separation from native Agent O orchestration."
+      "reason": "Rewritten into an explicit-only GAM manual chat handoff renderer with Agent O/T/D/R handoff types, developer copy-and-paste output, and separation from native Agent O orchestration."
     },
     "gam-grill": {
       "formerExternalSkill": "grill-with-docs",

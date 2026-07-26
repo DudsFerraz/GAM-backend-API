@@ -78,10 +78,12 @@ When planning is ready:
    diagrams Agent O must validate.
 3. Identify non-blocking residual questions without turning them into role
    assignments.
-4. Stop.
+4. When the developer requests a copy-and-paste handoff, use
+   `$gam-human-handoff` to render the Fresh Agent O packet.
+5. Stop.
 
-The developer deliberately starts a fresh Codex app chat and invokes
-`$gam-orchestration` with those artifacts.
+The developer deliberately starts Agent O in a fresh Codex app chat. The Fresh
+Agent O packet invokes `$gam-orchestration` with the accepted artifacts.
 
 ## Boundaries
 
