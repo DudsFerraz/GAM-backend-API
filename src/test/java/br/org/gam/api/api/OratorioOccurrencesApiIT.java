@@ -399,6 +399,95 @@ class OratorioOccurrencesApiIT extends OratorioModuleApiTestSupport {
     }
 
     @Test
+    @DisplayName("REQ-ORATORIO-006/009 and ADR-0017 - in-flight team removal -> lifecycle waits on Event-first order")
+    void teamRemovalAndFinalizationShouldSerializeOnOneOccurrenceBoundary() throws Exception {
+        AuthSession caller = sudoSession();
+        UUID oratorioId = createOratorio(caller, LocalDate.of(2002, 9, 22));
+        UUID memberId = createActiveMember(caller, "Serialized team removal member");
+        authenticatedJsonRequest(caller)
+                .put(
+                        ORATORIOS + "/{id}/teams/{teamType}/members/{memberId}",
+                        oratorioId,
+                        "LANCHE",
+                        memberId
+                )
+                .then()
+                .statusCode(204);
+        long advisoryLock = 76_017_002L;
+        String trigger = "test_block_oratorio_team_removal";
+        String function = "test_block_oratorio_team_removal";
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        jdbcTemplate.execute(
+                "CREATE OR REPLACE FUNCTION " + function + "() RETURNS trigger "
+                        + "LANGUAGE plpgsql AS $$ BEGIN "
+                        + "IF OLD.oratorio_id = '" + oratorioId + "'::uuid "
+                        + "AND OLD.member_id = '" + memberId + "'::uuid THEN "
+                        + "PERFORM pg_advisory_xact_lock(" + advisoryLock + "); "
+                        + "END IF; RETURN OLD; END $$"
+        );
+        jdbcTemplate.execute(
+                "CREATE TRIGGER " + trigger + " BEFORE DELETE ON oratorio_team_assignments "
+                        + "FOR EACH ROW EXECUTE FUNCTION " + function + "()"
+        );
+
+        try (Connection blocker = jdbcTemplate.getDataSource().getConnection();
+             PreparedStatement lock = blocker.prepareStatement("SELECT pg_advisory_lock(?)");
+             PreparedStatement unlock = blocker.prepareStatement("SELECT pg_advisory_unlock(?)")) {
+            lock.setLong(1, advisoryLock);
+            try (var ignored = lock.executeQuery()) {
+                assertThat(ignored.next()).isTrue();
+            }
+
+            Future<ExtractableResponse<Response>> removal = executor.submit(() ->
+                    authenticatedJsonRequest(caller)
+                            .delete(
+                                    ORATORIOS + "/{id}/teams/{teamType}/members/{memberId}",
+                                    oratorioId,
+                                    "LANCHE",
+                                    memberId
+                            )
+                            .then()
+                            .extract()
+            );
+            awaitWaitingQuery("DELETE FROM oratorio_team_assignments", 1);
+
+            Future<ExtractableResponse<Response>> finalization = executor.submit(() ->
+                    authenticatedJsonRequest(caller)
+                            .patch(ORATORIOS + "/{id}/finalize", oratorioId)
+                            .then()
+                            .extract()
+            );
+            boolean finalizedBeforeRemovalCouldCommit =
+                    awaitEventStatus(oratorioId, "FINALIZED", 2, TimeUnit.SECONDS);
+
+            unlock.setLong(1, advisoryLock);
+            try (var ignored = unlock.executeQuery()) {
+                assertThat(ignored.next()).isTrue();
+                assertThat(ignored.getBoolean(1)).isTrue();
+            }
+            ExtractableResponse<Response> removalResponse = removal.get(10, TimeUnit.SECONDS);
+            ExtractableResponse<Response> finalizationResponse =
+                    finalization.get(10, TimeUnit.SECONDS);
+
+            assertThat(finalizedBeforeRemovalCouldCommit)
+                    .as("Finalization must wait behind the already in-flight team removal")
+                    .isFalse();
+            assertThat(removalResponse.statusCode())
+                    .as(removalResponse.asString())
+                    .isEqualTo(204);
+            assertThat(finalizationResponse.statusCode())
+                    .as(finalizationResponse.asString())
+                    .isEqualTo(204);
+            assertThat(teamAssignmentCount(oratorioId, memberId, "LANCHE")).isZero();
+        } finally {
+            executor.shutdownNow();
+            jdbcTemplate.execute("DROP TRIGGER IF EXISTS " + trigger + " ON oratorio_team_assignments");
+            jdbcTemplate.execute("DROP FUNCTION IF EXISTS " + function + "()");
+        }
+    }
+
+    @Test
     @DisplayName("REQ-ORATORIO-005, REQ-ORATORIO-009 and ADR-0017 - in-flight planning replacement -> lifecycle cannot finalize first")
     void planningAndFinalizationShouldSerializeOnOneOccurrenceBoundary() throws Exception {
         AuthSession caller = sudoSession();
@@ -569,6 +658,175 @@ class OratorioOccurrencesApiIT extends OratorioModuleApiTestSupport {
     }
 
     @Test
+    @DisplayName("REQ-ORATORIO-005/009 and ADR-0017 - planning locks Event first and rechecks finalized lifecycle")
+    void planningShouldAcquireEventBeforeOratorioAndRejectLatestFinalizedState() throws Exception {
+        AuthSession caller = sudoSession();
+        UUID id = createOratorio(caller, LocalDate.of(2003, 1, 18));
+        clearActivities();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        try (Connection lifecycle = jdbcTemplate.getDataSource().getConnection();
+             PreparedStatement finalizeEvent = lifecycle.prepareStatement(
+                     "UPDATE events SET status = CAST('FINALIZED' AS event_status_enum) WHERE id = ?"
+             )) {
+            lifecycle.setAutoCommit(false);
+            finalizeEvent.setObject(1, id);
+            assertThat(finalizeEvent.executeUpdate()).isEqualTo(1);
+
+            Future<ExtractableResponse<Response>> planning = executor.submit(() ->
+                    authenticatedJsonRequest(caller)
+                            .body(planningPayload("Bolo", "Circuito", null, null))
+                            .put(ORATORIOS + "/{id}/planning", id)
+                            .then()
+                            .extract()
+            );
+
+            boolean completedBeforeLifecycleCommit = awaitFutureCompletion(
+                    planning,
+                    1,
+                    TimeUnit.SECONDS
+            );
+            Map<String, Object> planningBeforeCommit = jdbcTemplate.queryForMap(
+                    "SELECT lanche_description, gincana_description FROM oratorios WHERE id = ?",
+                    id
+            );
+
+            lifecycle.commit();
+            ExtractableResponse<Response> response = planning.get(10, TimeUnit.SECONDS);
+
+            assertThat(completedBeforeLifecycleCommit)
+                    .as("Planning must wait at the already-held Event boundary before touching Oratorio")
+                    .isFalse();
+            assertThat(planningBeforeCommit)
+                    .containsEntry("lanche_description", null)
+                    .containsEntry("gincana_description", null);
+            assertThat(response.statusCode()).as(response.asString()).isEqualTo(409);
+            assertThat(response.<String>path("code")).isEqualTo("ORATORIO_LIFECYCLE_CONFLICT");
+            assertThat(jdbcTemplate.queryForMap(
+                    "SELECT lanche_description, gincana_description FROM oratorios WHERE id = ?",
+                    id
+            )).containsEntry("lanche_description", null)
+                    .containsEntry("gincana_description", null);
+            assertThat(activityCountForTarget(id)).isZero();
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIO-006/009 and ADR-0017 - team assignment locks Event first and rechecks deletion")
+    void teamAssignmentShouldAcquireEventBeforeOratorioAndRejectLatestDeletion() throws Exception {
+        AuthSession caller = sudoSession();
+        UUID id = createOratorio(caller, LocalDate.of(2003, 2, 15));
+        UUID memberId = createActiveMember(caller, "Deleted occurrence team target");
+        clearActivities();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        try (Connection deletion = jdbcTemplate.getDataSource().getConnection();
+             PreparedStatement deleteEvent = deletion.prepareStatement(
+                     "UPDATE events SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?"
+             )) {
+            deletion.setAutoCommit(false);
+            deleteEvent.setObject(1, id);
+            assertThat(deleteEvent.executeUpdate()).isEqualTo(1);
+
+            Future<ExtractableResponse<Response>> assignment = executor.submit(() ->
+                    authenticatedJsonRequest(caller)
+                            .put(
+                                    ORATORIOS + "/{id}/teams/{teamType}/members/{memberId}",
+                                    id,
+                                    "GINCANA",
+                                    memberId
+                            )
+                            .then()
+                            .extract()
+            );
+
+            boolean completedBeforeDeletionCommit = awaitFutureCompletion(
+                    assignment,
+                    1,
+                    TimeUnit.SECONDS
+            );
+            long assignmentsBeforeCommit = teamAssignmentCount(id, memberId, "GINCANA");
+
+            deletion.commit();
+            ExtractableResponse<Response> response = assignment.get(10, TimeUnit.SECONDS);
+
+            assertThat(completedBeforeDeletionCommit)
+                    .as("Team assignment must wait at the already-held Event boundary")
+                    .isFalse();
+            assertThat(assignmentsBeforeCommit).isZero();
+            assertThat(response.statusCode()).as(response.asString()).isEqualTo(404);
+            assertThat(response.<String>path("code")).isEqualTo("RESOURCE_NOT_FOUND");
+            assertThat(teamAssignmentCount(id, memberId, "GINCANA")).isZero();
+            assertThat(activityCountForTarget(id)).isZero();
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIO-006/009 and ADR-0017 - team removal locks Event first and rechecks finalized lifecycle")
+    void teamRemovalShouldAcquireEventBeforeOratorioAndRejectLatestFinalizedState() throws Exception {
+        AuthSession caller = sudoSession();
+        UUID id = createOratorio(caller, LocalDate.of(2003, 3, 15));
+        UUID memberId = createActiveMember(caller, "Finalized occurrence team target");
+        authenticatedJsonRequest(caller)
+                .put(
+                        ORATORIOS + "/{id}/teams/{teamType}/members/{memberId}",
+                        id,
+                        "LANCHE",
+                        memberId
+                )
+                .then()
+                .statusCode(204);
+        clearActivities();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        try (Connection lifecycle = jdbcTemplate.getDataSource().getConnection();
+             PreparedStatement finalizeEvent = lifecycle.prepareStatement(
+                     "UPDATE events SET status = CAST('FINALIZED' AS event_status_enum) WHERE id = ?"
+             )) {
+            lifecycle.setAutoCommit(false);
+            finalizeEvent.setObject(1, id);
+            assertThat(finalizeEvent.executeUpdate()).isEqualTo(1);
+
+            Future<ExtractableResponse<Response>> removal = executor.submit(() ->
+                    authenticatedJsonRequest(caller)
+                            .delete(
+                                    ORATORIOS + "/{id}/teams/{teamType}/members/{memberId}",
+                                    id,
+                                    "LANCHE",
+                                    memberId
+                            )
+                            .then()
+                            .extract()
+            );
+
+            boolean completedBeforeLifecycleCommit = awaitFutureCompletion(
+                    removal,
+                    1,
+                    TimeUnit.SECONDS
+            );
+            long assignmentsBeforeCommit = teamAssignmentCount(id, memberId, "LANCHE");
+
+            lifecycle.commit();
+            ExtractableResponse<Response> response = removal.get(10, TimeUnit.SECONDS);
+
+            assertThat(completedBeforeLifecycleCommit)
+                    .as("Team removal must wait at the already-held Event boundary")
+                    .isFalse();
+            assertThat(assignmentsBeforeCommit).isEqualTo(1);
+            assertThat(response.statusCode()).as(response.asString()).isEqualTo(409);
+            assertThat(response.<String>path("code")).isEqualTo("ORATORIO_LIFECYCLE_CONFLICT");
+            assertThat(teamAssignmentCount(id, memberId, "LANCHE")).isEqualTo(1);
+            assertThat(activityCountForTarget(id)).isZero();
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     @DisplayName("REQ-ORATORIO-009, REQ-ORATORIO-010 and ADR-0017 - deletion and finalization share one lock order")
     void deletionAndFinalizationShouldSerializeWithoutDatabaseDeadlock() throws Exception {
         AuthSession caller = sudoSession();
@@ -734,6 +992,18 @@ class OratorioOccurrencesApiIT extends OratorioModuleApiTestSupport {
                         + "AND (e.begin_date AT TIME ZONE 'America/Sao_Paulo')::date = ?",
                 Long.class,
                 date
+        );
+    }
+
+    private long teamAssignmentCount(UUID oratorioId, UUID memberId, String teamType) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM oratorio_team_assignments "
+                        + "WHERE oratorio_id = ? AND member_id = ? "
+                        + "AND team_type = CAST(? AS oratorio_team_type_enum)",
+                Long.class,
+                oratorioId,
+                memberId,
+                teamType
         );
     }
 

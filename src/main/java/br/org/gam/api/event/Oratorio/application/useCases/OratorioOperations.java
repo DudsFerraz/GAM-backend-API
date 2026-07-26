@@ -189,8 +189,10 @@ public class OratorioOperations {
 
     @Transactional
     public OratorioRDTO replacePlanning(UUID id, PlanningDTO dto) {
+        EventEntity event = eventRepository.findActiveByIdForUpdate(id)
+                .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
         OratorioEntity oratorio = requiredForUpdate(id);
-        EventStatus status = effectiveStatus(oratorio.getEvent());
+        EventStatus status = effectiveStatus(event);
         if (status == EventStatus.FINALIZED || status == EventStatus.CANCELLED) {
             throw lifecycleConflict(id, status, "Planning is closed for this occurrence.");
         }
@@ -234,8 +236,10 @@ public class OratorioOperations {
 
     @Transactional
     public void assignTeamMember(UUID id, TeamType teamType, UUID memberId) {
-        OratorioEntity oratorio = requiredForUpdate(id);
-        assertPlanningMutable(oratorio);
+        EventEntity event = eventRepository.findActiveByIdForUpdate(id)
+                .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
+        requiredForUpdate(id);
+        assertPlanningMutable(id, event);
         MemberEntity member = memberLoader.requiredById(memberId);
         if (member.getStatus() != MemberStatus.ACTIVE) {
             throw ConflictException.resource(
@@ -268,8 +272,10 @@ public class OratorioOperations {
 
     @Transactional
     public void removeTeamMember(UUID id, TeamType teamType, UUID memberId) {
-        OratorioEntity oratorio = requiredForUpdate(id);
-        assertPlanningMutable(oratorio);
+        EventEntity event = eventRepository.findActiveByIdForUpdate(id)
+                .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
+        requiredForUpdate(id);
+        assertPlanningMutable(id, event);
         int changed = jdbcTemplate.update(
                 "DELETE FROM oratorio_team_assignments "
                         + "WHERE oratorio_id = ? AND member_id = ? AND team_type = ?::oratorio_team_type_enum",
@@ -660,8 +666,8 @@ public class OratorioOperations {
         /*
          * Every occurrence-scoped mutation enters through the shared Event
          * boundary before the specialized Oratorio row. Planning and team
-         * mutations that hold only the Oratorio row still finish before this
-         * transition re-evaluates lifecycle state under both locks.
+         * mutations follow the same Event-first, then Oratorio lock order
+         * required by ADR-0017.
          */
         EventEntity event = eventRepository.findActiveByIdForUpdate(id)
                 .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
@@ -797,10 +803,10 @@ public class OratorioOperations {
                 .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
     }
 
-    private void assertPlanningMutable(OratorioEntity oratorio) {
-        EventStatus status = effectiveStatus(oratorio.getEvent());
+    private void assertPlanningMutable(UUID id, EventEntity event) {
+        EventStatus status = effectiveStatus(event);
         if (status == EventStatus.FINALIZED || status == EventStatus.CANCELLED) {
-            throw lifecycleConflict(oratorio.getId(), status, "Planning is closed for this occurrence.");
+            throw lifecycleConflict(id, status, "Planning is closed for this occurrence.");
         }
     }
 
