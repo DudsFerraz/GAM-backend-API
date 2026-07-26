@@ -619,6 +619,72 @@ class OratorioOccurrencesApiIT extends OratorioModuleApiTestSupport {
     }
 
     @Test
+    @DisplayName("REQ-ORATORIO-ATT-009 and ADR-0017 - lifecycle transition and deletion use one occurrence lock order")
+    void lifecycleTransitionAndDeletionShouldNotDeadlockAcrossOccurrenceBoundaries() throws Exception {
+        AuthSession caller = sudoSession();
+        UUID id = createOratorio(caller, LocalDate.of(2004, 3, 13));
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try (Connection eventBlocker = jdbcTemplate.getDataSource().getConnection();
+             Connection oratorioBlocker = jdbcTemplate.getDataSource().getConnection();
+             PreparedStatement lockEvent = eventBlocker.prepareStatement(
+                     "SELECT id FROM events WHERE id = ? FOR UPDATE"
+             );
+             PreparedStatement lockOratorio = oratorioBlocker.prepareStatement(
+                     "SELECT id FROM oratorios WHERE id = ? FOR UPDATE"
+             )) {
+            eventBlocker.setAutoCommit(false);
+            oratorioBlocker.setAutoCommit(false);
+            lockEvent.setObject(1, id);
+            lockOratorio.setObject(1, id);
+            try (var eventLock = lockEvent.executeQuery();
+                 var oratorioLock = lockOratorio.executeQuery()) {
+                assertThat(eventLock.next()).isTrue();
+                assertThat(oratorioLock.next()).isTrue();
+            }
+
+            Future<ExtractableResponse<Response>> finalization = executor.submit(() ->
+                    authenticatedJsonRequest(caller)
+                            .patch(ORATORIOS + "/{id}/finalize", id)
+                            .then()
+                            .extract()
+            );
+            awaitAnyWaitingQuery(List.of("FROM events", "FROM oratorios"));
+
+            Future<ExtractableResponse<Response>> deletion = executor.submit(() ->
+                    authenticatedJsonRequest(caller)
+                            .body(reasonPayload("Remove empty historical occurrence"))
+                            .delete(ORATORIOS + "/{id}", id)
+                            .then()
+                            .extract()
+            );
+            awaitOccurrenceBoundaryWaiters(2);
+
+            oratorioBlocker.commit();
+            awaitWaitingQuery("FROM events", 2);
+            eventBlocker.commit();
+
+            ExtractableResponse<Response> finalizationResponse =
+                    finalization.get(15, TimeUnit.SECONDS);
+            ExtractableResponse<Response> deletionResponse =
+                    deletion.get(15, TimeUnit.SECONDS);
+
+            assertThat(finalizationResponse.statusCode())
+                    .as(finalizationResponse.asString())
+                    .isEqualTo(204);
+            assertThat(deletionResponse.statusCode())
+                    .as(deletionResponse.asString())
+                    .isEqualTo(409);
+            assertThat(List.of(
+                    finalizationResponse.statusCode(),
+                    deletionResponse.statusCode()
+            )).allSatisfy(status -> assertThat(status).isLessThan(500));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     @DisplayName("REQ-ORATORIO-009 and REQ-ORATORIO-010 - locked/finalized occurrence must reopen before deletion")
     void lockedAndFinalizedOccurrenceShouldRequireReopenBeforeDeletion() {
         AuthSession caller = sudoSession();
@@ -688,6 +754,25 @@ class OratorioOccurrencesApiIT extends OratorioModuleApiTestSupport {
             Thread.sleep(25);
         }
         throw new AssertionError("Timed out waiting for blocked query: " + queryFragment);
+    }
+
+    private void awaitOccurrenceBoundaryWaiters(int expectedCount)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            Long count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM pg_stat_activity "
+                            + "WHERE datname = current_database() "
+                            + "AND wait_event_type = 'Lock' "
+                            + "AND (query ILIKE '%FROM events%' OR query ILIKE '%FROM oratorios%')",
+                    Long.class
+            );
+            if (count != null && count >= expectedCount) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        throw new AssertionError("Timed out waiting for occurrence boundary waiters: " + expectedCount);
     }
 
     private boolean awaitFutureCompletion(

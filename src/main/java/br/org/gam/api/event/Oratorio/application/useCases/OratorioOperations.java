@@ -321,9 +321,9 @@ public class OratorioOperations {
     @Transactional
     public void delete(UUID id, String rawReason) {
         String reason = RequiredReason.normalize(rawReason, "Oratorio deletion requires an audit reason.");
-        OratorioEntity oratorio = requiredForUpdate(id);
         EventEntity event = eventRepository.findActiveByIdForUpdate(id)
                 .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
+        OratorioEntity oratorio = requiredForUpdate(id);
         EventStatus status = effectiveStatus(event);
         if (status == EventStatus.LOCKED || status == EventStatus.FINALIZED) {
             throw lifecycleConflict(id, status, "The occurrence must be reopened before deletion.");
@@ -658,14 +658,14 @@ public class OratorioOperations {
             EventStatus... allowedSources
     ) {
         /*
-         * Planning and team mutations serialize on the Oratorio row. Lifecycle
-         * transitions must enter through that same boundary before locking the
-         * backing Event, otherwise finalization can overtake an in-flight
-         * planning/team write that is blocked on a dependent row.
+         * Every occurrence-scoped mutation enters through the shared Event
+         * boundary before the specialized Oratorio row. Planning and team
+         * mutations that hold only the Oratorio row still finish before this
+         * transition re-evaluates lifecycle state under both locks.
          */
-        requiredForUpdate(id);
         EventEntity event = eventRepository.findActiveByIdForUpdate(id)
                 .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
+        requiredForUpdate(id);
         EventStatus current = effectiveStatus(event);
         boolean allowed = false;
         for (EventStatus source : allowedSources) {

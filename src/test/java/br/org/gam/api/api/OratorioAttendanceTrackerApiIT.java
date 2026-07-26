@@ -345,6 +345,147 @@ class OratorioAttendanceTrackerApiIT extends OratorioModuleApiTestSupport {
     }
 
     @Test
+    @DisplayName("REQ-ORATORIO-ATT-009 and ADR-0017 - attendance and occurrence deletion acquire Event before Oratorio without deadlock")
+    void attendanceAndOccurrenceDeletionShouldUseTheSharedEventFirstLockOrder() throws Exception {
+        setCurrentInstant(Instant.parse("2026-07-25T16:30:00Z"));
+        AuthSession caller = sudoSession();
+        UUID oratorioId = createOratorio(caller, OCCURRENCE_DATE);
+        UUID oratorianoId = createOratoriano(caller, "Event First", "Attendee");
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try (Connection blocker = jdbcTemplate.getDataSource().getConnection();
+             PreparedStatement lockEvent = blocker.prepareStatement(
+                     "SELECT id FROM events WHERE id = ? FOR UPDATE"
+             )) {
+            blocker.setAutoCommit(false);
+            lockEvent.setObject(1, oratorioId);
+            try (var ignored = lockEvent.executeQuery()) {
+                assertThat(ignored.next()).isTrue();
+            }
+
+            Future<ExtractableResponse<Response>> deletion = executor.submit(() ->
+                    authenticatedJsonRequest(caller)
+                            .body(reasonPayload("Removing an unused occurrence"))
+                            .delete("/oratorios/{id}", oratorioId)
+                            .then()
+                            .extract()
+            );
+            awaitWaitingQuery("events", 1);
+
+            boolean oratorioLockedBeforeEventBoundary;
+            try (Connection probe = jdbcTemplate.getDataSource().getConnection();
+                 PreparedStatement lockOratorio = probe.prepareStatement(
+                         "SELECT id FROM oratorios WHERE id = ? FOR UPDATE NOWAIT"
+                 )) {
+                probe.setAutoCommit(false);
+                lockOratorio.setObject(1, oratorioId);
+                try (var ignored = lockOratorio.executeQuery()) {
+                    assertThat(ignored.next()).isTrue();
+                    oratorioLockedBeforeEventBoundary = false;
+                }
+            } catch (java.sql.SQLException exception) {
+                oratorioLockedBeforeEventBoundary = true;
+            }
+
+            Future<ExtractableResponse<Response>> attendance = executor.submit(
+                    () -> markOratoriano(caller, oratorioId, oratorianoId)
+            );
+            awaitWaitingQuery("events", 2);
+
+            blocker.commit();
+            ExtractableResponse<Response> deletionResponse =
+                    deletion.get(15, TimeUnit.SECONDS);
+            ExtractableResponse<Response> attendanceResponse =
+                    attendance.get(15, TimeUnit.SECONDS);
+
+            assertThat(oratorioLockedBeforeEventBoundary)
+                    .as("Occurrence deletion must not lock Oratorio before the shared Event boundary")
+                    .isFalse();
+            assertThat(deletionResponse.statusCode())
+                    .as(deletionResponse.asString())
+                    .isEqualTo(204);
+            assertThat(attendanceResponse.statusCode())
+                    .as(attendanceResponse.asString())
+                    .isEqualTo(404);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIO-ATT-009 and ADR-0017 - in-flight attendance commits before occurrence deletion re-evaluates active attendance")
+    void inFlightAttendanceShouldCommitBeforeOccurrenceDeletionReevaluatesState() throws Exception {
+        setCurrentInstant(Instant.parse("2026-07-25T16:30:00Z"));
+        AuthSession caller = sudoSession();
+        UUID oratorioId = createOratorio(caller, OCCURRENCE_DATE);
+        UUID oratorianoId = createOratoriano(caller, "Attendance First", "Attendee");
+        long advisoryLock = 76_017_004L;
+        String trigger = "test_block_attendance_before_occurrence_deletion";
+        String function = "test_block_attendance_before_occurrence_deletion";
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        jdbcTemplate.execute(
+                "CREATE OR REPLACE FUNCTION " + function + "() RETURNS trigger "
+                        + "LANGUAGE plpgsql AS $$ BEGIN "
+                        + "PERFORM pg_advisory_xact_lock(" + advisoryLock + "); "
+                        + "RETURN NEW; END $$"
+        );
+        jdbcTemplate.execute(
+                "CREATE TRIGGER " + trigger + " BEFORE INSERT ON oratoriano_attendances "
+                        + "FOR EACH ROW EXECUTE FUNCTION " + function + "()"
+        );
+
+        try (Connection blocker = jdbcTemplate.getDataSource().getConnection();
+             PreparedStatement lock = blocker.prepareStatement("SELECT pg_advisory_lock(?)");
+             PreparedStatement unlock = blocker.prepareStatement("SELECT pg_advisory_unlock(?)")) {
+            lock.setLong(1, advisoryLock);
+            try (var ignored = lock.executeQuery()) {
+                assertThat(ignored.next()).isTrue();
+            }
+
+            Future<ExtractableResponse<Response>> attendance = executor.submit(
+                    () -> markOratoriano(caller, oratorioId, oratorianoId)
+            );
+            awaitWaitingQuery("INSERT INTO oratoriano_attendances", 1);
+
+            Future<ExtractableResponse<Response>> deletion = executor.submit(() ->
+                    authenticatedJsonRequest(caller)
+                            .body(reasonPayload("Removing an unused occurrence"))
+                            .delete("/oratorios/{id}", oratorioId)
+                            .then()
+                            .extract()
+            );
+            awaitWaitingQuery("events", 1);
+
+            unlock.setLong(1, advisoryLock);
+            try (var ignored = unlock.executeQuery()) {
+                assertThat(ignored.next()).isTrue();
+                assertThat(ignored.getBoolean(1)).isTrue();
+            }
+            ExtractableResponse<Response> attendanceResponse =
+                    attendance.get(15, TimeUnit.SECONDS);
+            ExtractableResponse<Response> deletionResponse =
+                    deletion.get(15, TimeUnit.SECONDS);
+
+            assertThat(attendanceResponse.statusCode())
+                    .as(attendanceResponse.asString())
+                    .isEqualTo(201);
+            assertThat(deletionResponse.statusCode())
+                    .as(deletionResponse.asString())
+                    .isEqualTo(409);
+            assertThat(deletionResponse.<String>path("code"))
+                    .isEqualTo("ORATORIO_HAS_ACTIVE_ATTENDANCE");
+            assertThat(oratorianoAttendanceCount(oratorioId, oratorianoId)).isEqualTo(1);
+        } finally {
+            executor.shutdownNow();
+            jdbcTemplate.execute(
+                    "DROP TRIGGER IF EXISTS " + trigger + " ON oratoriano_attendances"
+            );
+            jdbcTemplate.execute("DROP FUNCTION IF EXISTS " + function + "()");
+        }
+    }
+
+    @Test
     @DisplayName("REQ-ORATORIO-ATT-009 and ADR-0017 - in-flight attendance locks Oratoriano deletion")
     void attendanceAndOratorianoDeletionShouldSerializeOnTheOratorianoBoundary() throws Exception {
         setCurrentInstant(Instant.parse("2026-07-25T16:30:00Z"));
