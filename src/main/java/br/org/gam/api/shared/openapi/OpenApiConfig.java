@@ -948,6 +948,9 @@ public class OpenApiConfig {
 
     private String stringExample(Schema<?> schema, String propertyName) {
         String normalizedName = propertyName.toLowerCase();
+        if ("byte".equals(schema.getFormat())) {
+            return "U3ludGhldGljIEdBTSBiaW5hcnkgY29udGVudA==";
+        }
         if ("date-time".equals(schema.getFormat()) || normalizedName.endsWith("at") || "timestamp".equals(normalizedName)) {
             return "2026-07-15T12:00:00Z";
         }

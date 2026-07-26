@@ -248,6 +248,26 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
                 .as("signed attachment upload media type")
                 .containsExactly("multipart/form-data");
 
+        Route attachmentDownload = route(
+                "get",
+                "/oratorianos/{oratorianoId}/forms/{formId}/signed-attachments/{attachmentId}"
+        );
+        Map<String, Object> attachmentDownloadResponse = object(
+                object(operation(paths, attachmentDownload), "responses"),
+                "200"
+        );
+        Map<String, Object> attachmentDownloadMediaType = object(
+                object(attachmentDownloadResponse, "content"),
+                "*/*"
+        );
+        assertions.assertThat(object(attachmentDownloadMediaType, "schema"))
+                .as("signed attachment download byte schema")
+                .containsEntry("type", "string")
+                .containsEntry("format", "byte");
+        assertions.assertThat(attachmentDownloadMediaType.get("example"))
+                .as("signed attachment download Base64 example")
+                .isEqualTo("U3ludGhldGljIEdBTSBiaW5hcnkgY29udGVudA==");
+
         assertParameterNames(
                 paths,
                 route("get", "/oratorianos/{oratorianoId}/forms"),
