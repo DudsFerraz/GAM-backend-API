@@ -35,6 +35,7 @@ build/
 
 ### Codex ###
 .codex/
+.worktreeinclude
 
 # Arquivos de log
 *.log

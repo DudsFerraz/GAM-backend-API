@@ -1,0 +1,4 @@
+# Copy this file to .worktreeinclude to provision local Codex configuration
+# in new Codex-managed worktrees.
+.codex/config.toml
+.codex/agents/*.toml
