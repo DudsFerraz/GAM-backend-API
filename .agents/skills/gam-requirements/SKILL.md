@@ -1,6 +1,6 @@
 ---
 name: gam-requirements
-description: Create and refine GAM Requirement Specifications from client or developer intent. Use when translating resolved behavior into docs/requirements files, adding stable requirement IDs, examples, acceptance scenarios, local ubiquitous-language terms, scope boundaries, ADR links, or open questions.
+description: Create or refine GAM Requirement Specifications from resolved client or developer intent. Use when documenting behavior, scope, examples, terminology, or open questions under docs/requirements/.
 ---
 
 # GAM Requirements

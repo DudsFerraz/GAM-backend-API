@@ -1,6 +1,6 @@
 ---
 name: gam-implementation
-description: Implement GAM production code against documented requirements and failing tests. Use only while acting as Agent D to satisfy Agent T's tests, fix production bugs exposed by expanded coverage, or implement accepted feature and refactor behavior.
+description: Implement GAM production behavior from documented requirements and Agent T's failing tests. Use only while acting as Agent D during initial implementation or correction phases.
 ---
 
 # GAM Implementation

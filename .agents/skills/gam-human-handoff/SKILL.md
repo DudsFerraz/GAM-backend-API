@@ -1,6 +1,6 @@
 ---
 name: gam-human-handoff
-description: Render a compact Markdown handoff for a developer-managed GAM role transition between independent chats. Use only when the developer explicitly invokes $gam-human-handoff for manual copy-and-paste transport; never use it in Agent O orchestration or from an automated Agent T, Agent D, or Agent R thread.
+description: Render a Markdown handoff for developer-managed GAM transitions between independent chats. Use only when $gam-human-handoff is explicitly invoked for manual transport; do not use in Agent O orchestration.
 ---
 
 # GAM Human Handoff

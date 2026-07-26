@@ -38,7 +38,9 @@ Give each skill one clear job and boundary.
 
 Make the frontmatter description the owner of when a skill triggers.
 
-- State what the skill does and the requests that should activate it.
+- Keep the description concise and objective. Its primary purpose is routing:
+  state what the skill does and when Codex should load it.
+- Put execution steps and operational details in `SKILL.md`.
 - State important exclusions when accidental activation is plausible.
 - Do not repeat trigger rules in the body.
 - Use `allow_implicit_invocation: false` only to prevent automatic selection.

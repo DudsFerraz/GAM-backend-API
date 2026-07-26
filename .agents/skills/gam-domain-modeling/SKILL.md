@@ -1,6 +1,6 @@
 ---
 name: gam-domain-modeling
-description: Build and sharpen the GAM domain model using project documentation standards. Use when clarifying terminology, boundaries, scenarios, relationships, ADR-worthiness, or requirement ambiguity before durable documentation is written.
+description: Clarify and document GAM domain terminology, boundaries, relationships, scenarios, and durable decisions. Use when domain ambiguity must be resolved before requirements, tests, or implementation.
 ---
 
 # GAM Domain Modeling

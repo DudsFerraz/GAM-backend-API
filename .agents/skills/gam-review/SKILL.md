@@ -1,6 +1,6 @@
 ---
 name: gam-review
-description: Review GAM code, tests, and documentation against requirements and project guidelines. Use only while acting as Agent R to independently review a diff, branch, implementation, test suite, Requirement Specification, ADR, or agent-produced change.
+description: Review GAM changes independently against requirements and project guidelines. Use only while acting as Agent R to assess code, tests, documentation, or verification evidence.
 ---
 
 # GAM Review

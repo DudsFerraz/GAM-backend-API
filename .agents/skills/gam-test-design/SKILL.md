@@ -1,6 +1,6 @@
 ---
 name: gam-test-design
-description: Derive GAM test suites from requirements and testing guidelines. Use only while acting as Agent T to write, review, or expand functional, structural, unit, integration, API, security, persistence, or regression tests.
+description: Design and implement GAM tests from accepted requirements or documented defects. Use only while acting as Agent T during initial or expanded test-design phases.
 ---
 
 # GAM Test Design

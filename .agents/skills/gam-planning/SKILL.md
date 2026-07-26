@@ -1,6 +1,6 @@
 ---
 name: gam-planning
-description: Coordinate Agent P planning for GAM features and refactors before tests or implementation. Use only while acting as Agent P to evaluate intent, grill the developer, model the domain, and produce Requirement Specifications, ADRs, diagrams, and explicit open questions.
+description: Turn GAM feature or refactor intent into implementation-ready planning artifacts. Use only while acting as Agent P before test design or production implementation.
 ---
 
 # GAM Planning

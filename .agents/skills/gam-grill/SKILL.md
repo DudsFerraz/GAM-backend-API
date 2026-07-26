@@ -1,6 +1,6 @@
 ---
 name: gam-grill
-description: Coordinate GAM grilling with domain modeling and requirements documentation. Use during Agent P planning, or when the developer wants a relentless planning interview that captures resolved understanding in Requirement Specifications, ADRs, diagrams, ubiquitous language terms, and open questions before tests or implementation.
+description: Coordinate GAM-specific grilling, domain modeling, and requirements capture. Use during Agent P planning or when the developer requests a rigorous pre-implementation planning interview.
 ---
 
 Use this skill as the GAM-specific coordinator for the grilling portion of Agent P planning.

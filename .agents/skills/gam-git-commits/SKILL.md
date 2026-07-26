@@ -1,6 +1,6 @@
 ---
 name: gam-git-commits
-description: Draft safe Conventional Commit commands for GAM without staging, committing, or pushing. Use when the developer asks to commit, stage changes, push, write a commit message, prepare commit commands, split work into commits, or summarize the current diff for version control.
+description: Draft safe GAM staging and Conventional Commit commands without executing Git changes. Use when the developer requests commit planning, commit messages, staging commands, push guidance, or a version-control diff summary.
 ---
 
 # GAM Git Commits

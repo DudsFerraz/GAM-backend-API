@@ -1,6 +1,6 @@
 ---
 name: diagnosing-bugs
-description: Explicit diagnosis-only loop for rare hard bugs, flaky failures, and performance regressions. Use only when the developer explicitly asks for $diagnosing-bugs, diagnosis mode, deep bug diagnosis, or this specific diagnostic workflow; do not use automatically for ordinary bug reports, failing tests, broken behavior, or implementation fixes.
+description: Diagnose rare hard bugs, flaky failures, and performance regressions without implementing fixes. Use only when the developer explicitly invokes $diagnosing-bugs or requests deep diagnosis mode; do not use for ordinary bug reports or implementation work.
 ---
 
 # Diagnosing Bugs
