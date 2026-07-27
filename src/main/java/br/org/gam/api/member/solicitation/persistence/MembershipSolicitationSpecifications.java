@@ -15,8 +15,6 @@ public final class MembershipSolicitationSpecifications {
     public static Specification<MembershipSolicitationEntity> fetchResponseRelations() {
         return (root, query, builder) -> {
             if (Long.class != query.getResultType()) {
-                root.fetch("account", JoinType.LEFT);
-                root.fetch("reviewedBy", JoinType.LEFT);
                 root.fetch("member", JoinType.LEFT);
             }
             return builder.conjunction();

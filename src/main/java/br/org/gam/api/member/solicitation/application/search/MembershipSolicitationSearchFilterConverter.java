@@ -2,6 +2,7 @@ package br.org.gam.api.member.solicitation.application.search;
 
 import br.org.gam.api.member.solicitation.domain.MembershipSolicitationStatus;
 import br.org.gam.api.member.solicitation.persistence.MembershipSolicitationEntity;
+import br.org.gam.api.shared.domain.GamEmail;
 import br.org.gam.api.shared.specification.ComparationMethods;
 import br.org.gam.api.shared.specification.ResourceSearchFilterConverter;
 import br.org.gam.api.shared.specification.SearchDTO;
@@ -31,9 +32,10 @@ public class MembershipSolicitationSearchFilterConverter
                     Map.of(ComparationMethods.EQUALS, SearchValueParsers::uuid)
             )),
             Map.entry("email", SearchFilterDefinition.path(
-                    "email", "account.email", Set.of(ComparationMethods.EQUALS, ComparationMethods.LIKE),
+                    "email", "applicantEmail", Set.of(ComparationMethods.EQUALS, ComparationMethods.LIKE),
                     Map.of(
-                            ComparationMethods.EQUALS, SearchValueParsers::emailEquals,
+                            ComparationMethods.EQUALS,
+                            value -> ((GamEmail) SearchValueParsers.emailEquals(value)).value(),
                             ComparationMethods.LIKE, SearchValueParsers::emailLike
                     )
             )),
@@ -72,7 +74,7 @@ public class MembershipSolicitationSearchFilterConverter
                     )
             )),
             Map.entry("reviewedByAccountId", SearchFilterDefinition.path(
-                    "reviewedByAccountId", "reviewedBy.id", Set.of(ComparationMethods.EQUALS),
+                    "reviewedByAccountId", "reviewerAccountId", Set.of(ComparationMethods.EQUALS),
                     Map.of(ComparationMethods.EQUALS, SearchValueParsers::uuid)
             ))
     );

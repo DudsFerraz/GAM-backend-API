@@ -406,6 +406,174 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
     }
 
     @Test
+    @DisplayName("REQ-MEMBER-SOL-005/006/007 - soft-deleted applicant Account -> manager search retains the solicitation and Account summary")
+    void managerSearchShouldRetainSolicitationAfterApplicantAccountDeletion() {
+        AuthSession coordinator = newSession("COORD");
+        AuthSession applicant = newSession("VISITOR");
+        UUID solicitationId = submitSolicitation(applicant);
+        softDeleteAccount(applicant.accountId());
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(coordinator)
+                .body(searchPayload())
+                .post("/membership-solicitations/search?size=100")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(200);
+        Map<String, Object> solicitation = response.<List<Map<String, Object>>>path("items").stream()
+                .filter(item -> solicitationId.toString().equals(item.get("id")))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "Manager-visible solicitation was omitted after applicant Account deletion"
+                ));
+        assertThat(solicitation.get("account")).isEqualTo(Map.of(
+                "id", applicant.accountId().toString(),
+                "email", applicant.email(),
+                "displayName", "API VISITOR"
+        ));
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-SOL-005/007 - soft-deleted applicant Account -> canonical email filter still finds the manager-visible solicitation")
+    void emailFilterShouldFindSolicitationAfterApplicantAccountDeletion() {
+        AuthSession coordinator = newSession("COORD");
+        AuthSession applicant = newSession("VISITOR");
+        UUID solicitationId = submitSolicitation(applicant);
+        softDeleteAccount(applicant.accountId());
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(coordinator)
+                .body(searchPayload(filter("email", applicant.email(), "EQUALS")))
+                .post("/membership-solicitations/search?size=100")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(200);
+        assertThat(resourceIds(response.jsonPath().getList("items"))).contains(solicitationId);
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-SOL-005/006/007 - soft-deleted reviewer Account -> manager search retains the decision and reviewer summary")
+    void managerSearchShouldRetainDecisionAfterReviewerAccountDeletion() {
+        AuthSession observer = newSession("COORD");
+        AuthSession reviewer = newSession("COORD");
+        AuthSession applicant = newSession("VISITOR");
+        UUID solicitationId = submitSolicitation(applicant);
+        rejectSolicitation(reviewer, solicitationId, "Reviewed before Account deletion");
+        softDeleteAccount(reviewer.accountId());
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(observer)
+                .body(searchPayload())
+                .post("/membership-solicitations/search?size=100")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(200);
+        Map<String, Object> solicitation = response.<List<Map<String, Object>>>path("items").stream()
+                .filter(item -> solicitationId.toString().equals(item.get("id")))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "Manager-visible decision was omitted after reviewer Account deletion"
+                ));
+        assertThat(solicitation.get("reviewedBy")).isEqualTo(Map.of(
+                "id", reviewer.accountId().toString(),
+                "email", reviewer.email(),
+                "displayName", "API COORD"
+        ));
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-SOL-005/007 - soft-deleted reviewer Account -> reviewedByAccountId still finds the manager-visible decision")
+    void reviewerFilterShouldFindDecisionAfterReviewerAccountDeletion() {
+        AuthSession observer = newSession("COORD");
+        AuthSession reviewer = newSession("COORD");
+        AuthSession applicant = newSession("VISITOR");
+        UUID solicitationId = submitSolicitation(applicant);
+        rejectSolicitation(reviewer, solicitationId, "Reviewed before Account deletion");
+        softDeleteAccount(reviewer.accountId());
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(observer)
+                .body(searchPayload(filter(
+                        "reviewedByAccountId",
+                        reviewer.accountId().toString(),
+                        "EQUALS"
+                )))
+                .post("/membership-solicitations/search?size=100")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(200);
+        assertThat(resourceIds(response.jsonPath().getList("items"))).contains(solicitationId);
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-SOL-005/006 - soft-deleted resulting Member -> manager search retains the approved memberId")
+    void managerSearchShouldRetainApprovedMemberIdAfterMemberDeletion() {
+        AuthSession coordinator = newSession("COORD");
+        AuthSession applicant = newSession(null);
+        UUID solicitationId = submitSolicitation(applicant);
+        ExtractableResponse<Response> approval = authenticatedJsonRequest(coordinator)
+                .body(reasonPayload("Approved before Member deletion"))
+                .patch("/membership-solicitations/{id}/approve", solicitationId)
+                .then()
+                .statusCode(200)
+                .extract();
+        UUID memberId = UUID.fromString(approval.path("memberId"));
+        softDeleteMember(memberId);
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(coordinator)
+                .body(searchPayload())
+                .post("/membership-solicitations/search?size=100")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(200);
+        Map<String, Object> solicitation = response.<List<Map<String, Object>>>path("items").stream()
+                .filter(item -> solicitationId.toString().equals(item.get("id")))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "Manager-visible approval was omitted after resulting Member deletion"
+                ));
+        assertThat(solicitation.get("memberId")).isEqualTo(memberId.toString());
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-SOL-005/006 - manager lookup retains every approved reference after related records are soft-deleted")
+    void managerLookupShouldRetainApprovedReferencesAfterRelatedRecordsAreDeleted() {
+        AuthSession observer = newSession("COORD");
+        AuthSession reviewer = newSession("COORD");
+        AuthSession applicant = newSession(null);
+        UUID solicitationId = submitSolicitation(applicant);
+        ExtractableResponse<Response> approval = authenticatedJsonRequest(reviewer)
+                .body(reasonPayload("Approved before related records were deleted"))
+                .patch("/membership-solicitations/{id}/approve", solicitationId)
+                .then()
+                .statusCode(200)
+                .extract();
+        UUID memberId = UUID.fromString(approval.path("memberId"));
+        softDeleteMember(memberId);
+        softDeleteAccount(applicant.accountId());
+        softDeleteAccount(reviewer.accountId());
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(observer)
+                .get("/membership-solicitations/{id}", solicitationId)
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(200);
+        assertThat(response.<Map<String, Object>>path("account")).isEqualTo(Map.of(
+                "id", applicant.accountId().toString(),
+                "email", applicant.email(),
+                "displayName", "API null"
+        ));
+        assertThat(response.<Map<String, Object>>path("reviewedBy")).isEqualTo(Map.of(
+                "id", reviewer.accountId().toString(),
+                "email", reviewer.email(),
+                "displayName", "API COORD"
+        ));
+        assertThat(response.<String>path("memberId")).isEqualTo(memberId.toString());
+    }
+
+    @Test
     @DisplayName("REQ-MEMBER-SOL-007 - every documented public filter and comparison -> finds the target solicitation")
     void documentedSolicitationSearchFiltersShouldFindTheTarget() {
         AuthSession coordinator = newSession("COORD");

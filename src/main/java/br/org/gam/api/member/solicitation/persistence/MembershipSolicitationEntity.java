@@ -22,6 +22,7 @@ import java.util.UUID;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.Formula;
 import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -39,6 +40,15 @@ public class MembershipSolicitationEntity extends FullAuditableEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "account_id", nullable = false)
     private AccountEntity account;
+
+    @Column(name = "account_id", insertable = false, updatable = false)
+    private UUID applicantAccountId;
+
+    @Formula("(select applicant.email from accounts applicant where applicant.id = account_id)")
+    private String applicantEmail;
+
+    @Formula("(select applicant.display_name from accounts applicant where applicant.id = account_id)")
+    private String applicantDisplayName;
 
     @Embedded
     private GamName name;
@@ -60,6 +70,15 @@ public class MembershipSolicitationEntity extends FullAuditableEntity {
     @JoinColumn(name = "reviewed_by_account_id")
     private AccountEntity reviewedBy;
 
+    @Column(name = "reviewed_by_account_id", insertable = false, updatable = false)
+    private UUID reviewerAccountId;
+
+    @Formula("(select reviewer.email from accounts reviewer where reviewer.id = reviewed_by_account_id)")
+    private String reviewerEmail;
+
+    @Formula("(select reviewer.display_name from accounts reviewer where reviewer.id = reviewed_by_account_id)")
+    private String reviewerDisplayName;
+
     @Column(name = "decided_at")
     private Instant decidedAt;
 
@@ -69,6 +88,9 @@ public class MembershipSolicitationEntity extends FullAuditableEntity {
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "member_id")
     private MemberEntity member;
+
+    @Column(name = "member_id", insertable = false, updatable = false)
+    private UUID approvedMemberId;
 
     @Version
     @Column(name = "version", nullable = false)
