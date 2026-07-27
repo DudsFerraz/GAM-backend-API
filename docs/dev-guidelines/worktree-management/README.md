@@ -27,7 +27,9 @@ Manual and permanent worktrees are currently out of scope.
 | Managed worktree | A disposable worktree created by starting a Codex task with **Worktree** selected. |
 | Feature branch | The named branch containing one feature's committed work. |
 | Clean worktree | A worktree with no staged, unstaged, or untracked files. |
-| Integration boundary | A rebase, final verification, merge, publish, archive, or removal. |
+| Agent W | The explicitly invoked `$gam-worktree-integration` workflow that prepares and finalizes local integration. |
+| Ready to push | Agent W has verified the integration state and fast-forwarded local `main`; the worktree and branch remain available. |
+| Integration boundary | Pre-commit verification, commit, Agent W preparation, publish, finalization, or cleanup. |
 
 Branches are not clean or dirty; worktrees are.
 
@@ -42,14 +44,18 @@ Branches are not clean or dirty; worktrees are.
    checkout.
 5. Create a named feature branch in the managed worktree before the first
    commit.
-6. Keep the primary checkout clean whenever it is used to update, merge,
-   verify, or push `main`.
-7. Keep the feature worktree clean at every integration boundary.
-8. Rebase the feature branch onto the latest `origin/main`.
-9. Integrate locally with `merge --ff-only`.
-10. Verify the integrated `main` before pushing it.
-11. Never force-push `main`.
-12. Archive the Codex task only after `origin/main` contains the feature.
+6. Run the required canonical broad verification immediately before committing
+   the completed feature.
+7. Keep both worktrees clean at every integration boundary.
+8. Invoke Agent W explicitly from a new Local task on the primary checkout.
+9. Let Agent W rebase, conditionally verify the new integration state, and
+   fast-forward local `main`.
+10. Do not repeat broad verification after an identity-preserving fast-forward.
+11. Push `main` only after Agent W returns `ready_to_push`; never force-push it.
+12. Resume the same Agent W task after the push so it can prove remote inclusion
+    and remove the worktree and branch.
+13. Archive the completed Codex tasks after Agent W returns
+    `integration_complete`.
 
 ## Cleanliness
 
@@ -62,8 +68,8 @@ rtk git status --porcelain=v1
 No output means the worktree is clean.
 
 The feature worktree may be dirty during implementation. Before integration,
-all intended changes must be committed and unrelated files must be moved or
-removed.
+the required broad verification must pass, all intended changes must be
+committed, and unrelated files must be moved or removed.
 
 If the primary checkout is dirty, stop the integration and preserve its changes
 on an appropriate branch or worktree. Do not use stashing as the routine way to
@@ -86,8 +92,11 @@ Create the worktree by selecting the original `gam-api` project and choosing
 **Worktree** for the new task. Use **Create branch here** before the first
 commit.
 
-After local integration, verification, and publication of `main`, archive the
-task and allow Codex to remove the managed worktree.
+After the verified feature is committed, start a new Local task on the primary
+checkout and invoke `$gam-worktree-integration` with the feature worktree path
+and branch. Push only after `ready_to_push`, then resume Agent W for cleanup.
+
+After `integration_complete`, archive the feature task and the Agent W task.
 
 A Codex recovery snapshot is not a replacement for a commit, branch, or remote
 copy.

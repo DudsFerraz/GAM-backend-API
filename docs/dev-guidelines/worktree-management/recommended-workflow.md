@@ -15,24 +15,27 @@ rtk git pull --ff-only origin main
 The status command must produce no output. Stop if the primary checkout is
 dirty.
 
-## 2. Create the Codex-managed worktree
+## 2. Create the managed worktree
 
 1. Select the original `gam-api` project in Codex.
-2. Start a new task.
-3. Select **Worktree**.
-4. Select the updated `main` branch as the starting state.
-5. Submit the scoped feature prompt.
-6. Use **Create branch here** before the first commit.
-7. Name the branch after one outcome, for example:
+2. Start a new task with **Worktree** selected.
+3. Select the updated `main` branch as the starting state.
+4. Submit the scoped feature prompt.
+5. Use **Create branch here** before the first commit.
+6. Name the branch after one outcome, for example:
 
    ```text
    codex/persistence-soft-delete-restoration
    ```
 
-## 3. Implement and commit the feature
+## 3. Complete the feature
 
-1. Commit every intended change on the feature branch.
-2. Confirm that the feature worktree is clean:
+In the feature worktree:
+
+1. Finish the scoped implementation.
+2. Run the required canonical broad verification.
+3. Commit every intended change without modifying the verified tree.
+4. Confirm that the worktree is clean:
 
    ```powershell
    rtk git status --porcelain=v1
@@ -40,68 +43,36 @@ dirty.
 
 Do not continue while this command produces output.
 
-## 4. Rebase and verify the feature
+## 4. Invoke Agent W
 
-In the feature worktree:
+Leave the feature branch checked out in its managed worktree.
 
-```powershell
-rtk git fetch origin
-rtk git rebase origin/main
+Start a new **Local** task from the original `gam-api` project. The primary
+checkout must be clean and on `main`. Invoke:
+
+```text
+Use $gam-worktree-integration to integrate <feature-branch> from <managed-worktree-path>.
 ```
 
-Resolve conflicts on the feature branch, then:
+Agent W validates both worktrees, updates local `main`, rebases the feature when
+required, runs only verification required by a new integration state, and
+fast-forwards local `main`.
 
-1. Run the required focused and final feature verification.
-2. Confirm that the feature worktree remains clean.
+Do not switch the primary checkout to the feature branch.
 
-Do not rebase a shared branch without coordinating with its other developers.
+## 5. Handle the preparation result
 
-## 5. Prepare local `main`
+- For `integration_escalation`, perform only the requested developer action and
+  resume the same Agent W task.
+- If resolving the blocker changes feature content, rerun the canonical broad
+  verification, commit the correction, and leave the feature worktree clean
+  before resuming.
+- For `ready_to_push`, continue to publication. The feature worktree and branch
+  remain recovery anchors.
 
-In the primary checkout:
+## 6. Publish `main`
 
-```powershell
-rtk git status --porcelain=v1
-rtk git switch main
-rtk git pull --ff-only origin main
-```
-
-Stop if the primary checkout is dirty.
-
-If `main` advanced, return to the feature worktree, rebase onto the new
-`origin/main`, rerun affected verification, and repeat this step.
-
-## 6. Integrate locally
-
-In the clean primary checkout:
-
-```powershell
-rtk git merge --ff-only codex/feature-name
-```
-
-The merge must succeed as a fast-forward. If it refuses:
-
-1. Do not perform a normal merge.
-2. Do not create a merge commit.
-3. Update and rebase the feature branch.
-4. Rerun affected verification.
-5. Retry the fast-forward merge.
-
-## 7. Verify integrated `main`
-
-Run the required final integration verification in the primary checkout.
-
-If verification fails:
-
-1. Do not push `main`.
-2. Correct the failure in the feature worktree.
-3. Commit and verify the correction.
-4. Fast-forward local `main` again.
-5. Repeat final integration verification.
-
-## 8. Publish `main`
-
-After final verification passes:
+The developer runs:
 
 ```powershell
 rtk git push origin main
@@ -109,57 +80,27 @@ rtk git push origin main
 
 Never force-push `main`.
 
-If the push is rejected because remote `main` advanced:
+- If accepted, report the successful push in the same Agent W task.
+- If rejected, report the rejection in that task. Do not reset `main`, delete
+  the branch, or remove the worktree. Agent W returns an escalation with the
+  required recovery decision.
 
-1. Keep the named feature branch and worktree.
-2. Fetch the remote state:
+## 7. Finalize
 
-   ```powershell
-   rtk git fetch origin
-   ```
+After an accepted push, Agent W:
 
-3. Confirm that the primary checkout is clean.
-4. Confirm that local `main` and the feature branch identify the same commit:
+1. Fetches `origin` and proves that `origin/main` contains the prepared commit.
+2. Fast-forwards clean local `main` when remote `main` advanced afterward.
+3. Removes the feature worktree through Git without force.
+4. Verifies the worktree is absent from the Git registry.
+5. Safely deletes the integrated feature branch.
 
-   ```powershell
-   rtk git rev-parse main
-   rtk git rev-parse codex/feature-name
-   ```
+If Agent W returns `finalization_escalation`, preserve every remaining resource
+and resolve the reported blocker.
 
-5. Continue only if the two commit identifiers match.
-6. Restore local `main` to the remote baseline:
+After `integration_complete`, archive the original feature task and the Agent W
+task.
 
-   ```powershell
-   rtk git reset --hard origin/main
-   ```
-
-7. In the feature worktree, rebase onto the new `origin/main`.
-8. Rerun verification.
-9. Repeat the local integration and publish steps.
-
-If the primary checkout is dirty or the commit identifiers do not match, stop
-and inspect the repository state instead of resetting.
-
-## 9. Clean up
-
-After `origin/main` contains the integrated feature:
-
-1. Archive the Codex task.
-2. Allow Codex to remove its managed worktree.
-3. Confirm that the feature branch is no longer checked out:
-
-   ```powershell
-   rtk git worktree list
-   ```
-
-4. Delete the merged local feature branch:
-
-   ```powershell
-   rtk git branch -d codex/feature-name
-   ```
-
-5. Delete an optional remote feature branch when it is no longer required.
-
-The feature lifecycle is complete only when remote `main` contains the work,
-the managed worktree has been released, and the obsolete feature branch has
-been removed.
+The lifecycle is complete when `origin/main` contains the feature, the managed
+worktree has been removed, the obsolete feature branch has been deleted, and
+the completed Codex tasks have been archived.
