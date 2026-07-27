@@ -15,6 +15,7 @@ The current implementation does not define this intended workflow. Existing Memb
 - `review reason`: The Coordinator's required explanation for approving or rejecting a membership solicitation.
 - `solicitation status`: The review state `PENDING`, `APPROVED`, or `REJECTED`.
 - `reviewing Account`: The authenticated Coordinator Account that approves or rejects a solicitation.
+- `retained Account summary`: The `id`, current canonical email, and current `displayName` read from an Account row for an authorized historical solicitation view, including after that Account is soft-deleted.
 
 ## Functional requirements
 
@@ -166,6 +167,8 @@ Solicitation creation, lookup, search, approval, and rejection shall return this
 
 For a decided solicitation, `reviewedBy` shall contain only the reviewing Account's `id`, `email`, and `displayName`; `decidedAt` and `reviewReason` shall contain the decision data. An approved solicitation shall contain the created `memberId`. A rejected solicitation shall have a null `memberId`.
 
+The lifecycle behavior of `account`, `reviewedBy`, and `memberId` after a related Account or Member is soft-deleted shall follow `REQ-MEMBER-SOL-015`.
+
 The response shall not expose Account roles, credentials, tokens, sessions, soft-delete fields, or row audit metadata.
 
 Rationale:
@@ -209,6 +212,8 @@ and `Ana Silva` may all match a submitted canonical full name of `Ana Silva`.
 `email LIKE` shall trim and lowercase a literal substring, require at least
 three characters, require at least two characters before any `@`, and reject a
 value containing `.` but no `@`.
+
+The `accountId`, `email`, and `reviewedByAccountId` filters shall continue to evaluate retained historical references under `REQ-MEMBER-SOL-015` after the related Account is soft-deleted. The `email` filter shall use the same current retained canonical email rendered in the solicitation's `account` summary.
 
 Empty filters shall return a paginated page of all solicitations visible to the caller. Applicant visibility from `REQ-MEMBER-SOL-005` shall be enforced in addition to caller-supplied filters.
 
@@ -337,6 +342,8 @@ Membership-solicitation routes shall use these outcomes:
 | Solicitation is missing, soft-deleted, or hidden by ownership; required Account is missing or soft-deleted | `404 Not Found` |
 | Account already has a Member, another solicitation is pending, solicitation is already decided, approval finds an inconsistent lifecycle Role projection, or concurrent operation loses | `409 Conflict` |
 
+For lookup and search of an existing visible solicitation, later soft deletion of its submitting Account, reviewing Account, or resulting Member shall not be treated as a missing required resource and shall not produce `404 Not Found`; `REQ-MEMBER-SOL-015` shall apply. Submission, approval, rejection, and other mutations shall continue to enforce their documented active-target preconditions.
+
 Failed requests shall not create or change solicitations, Members, lifecycle roles, or activity logs.
 
 Rationale:
@@ -379,6 +386,39 @@ Valid examples:
 Invalid examples:
 - Approval preserves a pre-existing COORD assignment on an Account with no Member.
 - Approval silently removes an inconsistent VISITOR assignment and succeeds.
+
+---
+
+### REQ-MEMBER-SOL-015: Authorized historical references after related soft deletion
+
+A membership solicitation visible under `REQ-MEMBER-SOL-005` shall remain visible when its submitting Account, reviewing Account, or resulting Member is later soft-deleted. This is an explicitly documented historical view under `REQ-PERSISTENCE-005`; it shall not make the related soft-deleted resource visible through an ordinary Account or Member read.
+
+The `account` and non-null `reviewedBy` fields shall render retained Account summaries even after the referenced Account is soft-deleted. Each summary shall contain the referenced Account's stable UUID and the canonical email and `displayName` currently retained on that Account row at read time.
+
+Retained Account summaries are live projections and are not part of the immutable solicitation snapshot or decision snapshot from `REQ-MEMBER-SOL-003`. If an owning authorized Account workflow changes the email or `displayName`, subsequent solicitation reads and searches shall use the updated retained value. Soft deletion shall not erase those retained values, and the solicitation shall not store a separate frozen copy.
+
+The authorization boundary shall remain `REQ-MEMBER-SOL-005`. An applicant reading its own visible history and a caller with `MEMBER_MANAGE` shall receive the same summary shape defined by `REQ-MEMBER-SOL-006`; no unrelated caller shall gain access. The historical view shall expose neither Account roles, credentials, tokens, soft-delete metadata, row audit metadata, nor any Account field outside the documented summary.
+
+For visible solicitation search, `accountId`, `email`, and `reviewedByAccountId` shall continue matching the retained historical references after related Account soft deletion. A filter shall not expand the caller's solicitation visibility.
+
+An approved solicitation shall retain its original non-null `memberId` when the resulting Member is later inactive or soft-deleted. The retained UUID records the approval outcome; it shall not make the Member ordinarily readable, restorable, or mutable and shall not bypass the Member visibility contract.
+
+Physical deletion, legal erasure, and redaction of retained historical values remain governed by `REQ-PERSISTENCE-009` and any future owning retention requirement. This historical view does not create a generic deleted-resource API or `includeDeleted` option.
+
+Rationale:
+Solicitation history must remain interpretable after related lifecycle changes while preserving the distinction between an authorized historical projection and ordinary visibility of a deleted Account or Member.
+
+Valid examples:
+- A caller with `MEMBER_MANAGE` reads an approved solicitation after the applicant Account, reviewing Account, and resulting Member are soft-deleted; the solicitation retains both Account summaries and the original `memberId`.
+- An active applicant reads its own rejected solicitation after the reviewing Account is soft-deleted and receives the retained reviewer summary.
+- A manager's email filter finds a visible solicitation through the submitting Account's retained canonical email after that Account is soft-deleted.
+
+Invalid examples:
+- Related Account deletion removes the solicitation from an authorized manager's history.
+- A retained Account summary is treated as a submission-time or decision-time snapshot.
+- Returning a retained summary makes the soft-deleted Account readable through `/accounts/{id}`.
+- A retained `memberId` makes a soft-deleted Member ordinarily readable.
+- The historical view returns Account soft-delete metadata, roles, or credentials.
 
 ## Acceptance scenarios
 
@@ -443,6 +483,21 @@ Scenario: Approval rejects an inconsistent lifecycle Role projection
   Then the system returns 409 Conflict
   And no Role is repaired or mutated
   And no Member, decision, or activity event is created
+
+Scenario: Manager retains solicitation history after related soft deletion
+  Given an approved solicitation identifies an applicant Account, reviewing Account, and resulting Member
+  And those related resources are later soft-deleted
+  When a caller with MEMBER_MANAGE reads the solicitation
+  Then the solicitation remains visible
+  And account and reviewedBy contain their retained Account summaries
+  And memberId contains the original resulting Member UUID
+  And none of the related resources becomes ordinarily readable
+
+Scenario: Historical Account filters remain within authorized visibility
+  Given a visible solicitation references a submitting Account that was later soft-deleted
+  When a caller with MEMBER_MANAGE searches by the Account's retained canonical email
+  Then the solicitation is returned
+  And the search does not expose any solicitation outside the caller's normal visibility
 ```
 
 ## Diagrams
@@ -461,6 +516,7 @@ Scenario: Approval rejects an inconsistent lifecycle Role projection
 * Creating an Account through a solicitation.
 * Member profile editing, deletion, restoration, or Account relinking.
 * Account deactivation, deletion, or restoration workflows.
+* Legal erasure, redaction, or physical-deletion policy for retained historical Account values.
 * Reading activity-log history through solicitation endpoints.
 * Test structure or implementation strategy.
 
@@ -468,6 +524,7 @@ Scenario: Approval rejects an inconsistent lifecycle Role projection
 
 * [ADR-0013: Make Member lifecycle own Coordinator designation](../../decisions/0013-make-member-lifecycle-own-coordinator-designation.md)
 * [ADR-0014: Make Member lifecycle own Oratorio Coordinator designation](../../decisions/0014-make-member-lifecycle-own-oratorio-coordinator-designation.md)
+* [ADR-0018: Standardize persistence auditing, soft deletion, and relationship enforcement](../../decisions/0018-standardize-persistence-auditing-soft-deletion-and-relationship-enforcement.md)
 
 ## Related requirements
 
@@ -477,6 +534,7 @@ Scenario: Approval rejects an inconsistent lifecycle Role projection
 * [UUID Identity](../common/uuid.md)
 * [Account Role Management](../rbac/account-role-management.md)
 * [Search and Filter Framework](../platform/search-and-filter-framework.md)
+* [Persistence Auditing and Soft Delete](../platform/persistence-auditing-and-soft-delete.md)
 
 ## Related videos
 
