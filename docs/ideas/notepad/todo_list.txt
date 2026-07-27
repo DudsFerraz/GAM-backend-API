@@ -1,3 +1,5 @@
+Perform a full code review
+
 0- **Attendance intention:** A member indicates their intention to attend an event. This does not count as confirmed attendance; a coordinator must confirm the member’s presence. This feature is useful to the whole group easily understand who and in what position is attending an event.
 ---
 For example, Missa:
@@ -14,6 +16,8 @@ These are all presence intentions, but not confirmed, since the event has not be
 0.2- Cronjobs
 
 0.4- OpenAI agents SDK
+
+0.5- comparationMethods vs ComparisonMethods
 
 1- Entender de verdade toda a security chain
 
