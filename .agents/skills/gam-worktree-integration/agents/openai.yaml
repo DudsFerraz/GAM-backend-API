@@ -1,0 +1,6 @@
+interface:
+  display_name: "GAM Worktree Integration"
+  short_description: "Safely integrate a completed GAM worktree"
+  default_prompt: "Use $gam-worktree-integration to prepare this completed feature branch for a local fast-forward merge, then resume after I push to finalize cleanup."
+policy:
+  allow_implicit_invocation: false
