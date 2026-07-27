@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -394,11 +395,151 @@ class OpenApiSharedSchemasApiIT extends AbstractOpenApiDocumentationApiIT {
     }
 
     @Test
-    @DisplayName("REQ-GAM-LOCATION-010 - removal schema -> reason length boundary")
-    void gamLocationRemovalSchemaShouldExposeReasonLengthBoundary() {
-        Map<String, Object> properties = object(object(schemas(), "RemoveGamLocationDTO"), "properties");
+    @DisplayName("REQ-GAM-LOCATION-010 - removal schema -> required reason with minimum")
+    void gamLocationRemovalSchemaShouldRequireNonEmptyReason() {
+        Map<String, Object> schema = object(schemas(), "RemoveGamLocationDTO");
+        Map<String, Object> reason = object(object(schema, "properties"), "reason");
 
-        assertLength(properties, "reason", 1, 2_000);
+        assertThat(strings(schema, "required")).contains("reason");
+        assertThat(reason)
+                .containsEntry("type", "string")
+                .containsEntry("minLength", 1);
+    }
+
+    @Test
+    @DisplayName("REQ-ACTIVITY-008, REQ-EVENT-013/015/019 and REQ-OPENAPI-004 - Event reason schemas -> normalized Unicode code-point rule")
+    void eventReasonSchemasShouldDocumentNormalizedUnicodeCodePointBoundary() {
+        Map<String, Object> schemas = schemas();
+        SoftAssertions softly = new SoftAssertions();
+
+        for (String schemaName : List.of("EventReasonDTO", "ReopenEventDTO", "EventReplacementDTO")) {
+            Map<String, Object> schema = object(schemas, schemaName);
+            Map<String, Object> reason = object(object(schema, "properties"), "reason");
+            String description = String.valueOf(reason.get("description"));
+
+            softly.assertThat(reason)
+                    .as("%s reason schema", schemaName)
+                    .containsEntry("type", "string")
+                    .containsEntry("minLength", 1)
+                    .doesNotContainKey("maxLength");
+            softly.assertThat(description)
+                    .as("%s reason description", schemaName)
+                    .containsIgnoringCase("Unicode")
+                    .contains("White_Space")
+                    .containsIgnoringCase("leading")
+                    .containsIgnoringCase("trailing")
+                    .containsIgnoringCase("1")
+                    .containsIgnoringCase("2,000")
+                    .containsIgnoringCase("code point");
+        }
+
+        softly.assertThat(strings(object(schemas, "EventReplacementDTO"), "required"))
+                .as("EventReplacementDTO required properties")
+                .doesNotContain("reason");
+
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIO-009/010, REQ-ORATORIANO-005/009/010, REQ-ORATORIANO-FORM-002/018 and REQ-OPENAPI-004 - specialized audited reasons -> owner-specific requirement semantics")
+    void specializedAuditedReasonSchemasShouldDocumentOwnerSpecificRequirementSemantics() {
+        Map<String, Object> schemas = schemas();
+        SoftAssertions softly = new SoftAssertions();
+
+        for (String schemaName : List.of("ReasonDTO", "ReopenDTO", "ReplaceOratorianoDTO")) {
+            Map<String, Object> reason = object(
+                    object(object(schemas, schemaName), "properties"),
+                    "reason"
+            );
+            String description = String.valueOf(reason.get("description"));
+
+            softly.assertThat(reason)
+                    .as("%s reason schema", schemaName)
+                    .containsEntry("type", "string")
+                    .containsEntry("minLength", 1)
+                    .doesNotContainKey("maxLength");
+            softly.assertThat(description)
+                    .as("%s reason description", schemaName)
+                    .containsIgnoringCase("normalized")
+                    .containsIgnoringCase("Unicode")
+                    .contains("White_Space")
+                    .containsIgnoringCase("leading")
+                    .containsIgnoringCase("trailing")
+                    .containsIgnoringCase("1")
+                    .containsIgnoringCase("2,000")
+                    .containsIgnoringCase("code point");
+        }
+
+        Map<String, Object> reasonDtoSchema = object(schemas, "ReasonDTO");
+        Map<String, Object> reasonDto = object(object(reasonDtoSchema, "properties"), "reason");
+        softly.assertThat(strings(reasonDtoSchema, "required"))
+                .as("ReasonDTO required properties")
+                .contains("reason");
+        softly.assertThat(String.valueOf(reasonDto.get("description")))
+                .as("ReasonDTO operation-specific requirement description")
+                .containsIgnoringCase("required")
+                .containsIgnoringCase("cancellation")
+                .containsIgnoringCase("deletion")
+                .containsIgnoringCase("restoration")
+                .containsIgnoringCase("revocation");
+
+        Map<String, Object> reopen = object(schemas, "ReopenDTO");
+        softly.assertThat(strings(reopen, "required"))
+                .as("ReopenDTO required properties")
+                .contains("reason");
+
+        Map<String, Object> replacement = object(schemas, "ReplaceOratorianoDTO");
+        softly.assertThat(strings(replacement, "required"))
+                .as("ReplaceOratorianoDTO required properties")
+                .doesNotContain("reason");
+        softly.assertThat(String.valueOf(
+                        object(object(replacement, "properties"), "reason").get("description")
+                ))
+                .as("ReplaceOratorianoDTO conditional reason description")
+                .containsIgnoringCase("required")
+                .containsIgnoringCase("name")
+                .containsIgnoringCase("change");
+
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-ACTIVITY-008, owning reason requirements and REQ-OPENAPI-004 - required audited reason schemas -> normalized Unicode code-point rule")
+    void requiredAuditedReasonSchemasShouldDocumentNormalizedUnicodeCodePointBoundary() {
+        Map<String, Object> schemas = schemas();
+        SoftAssertions softly = new SoftAssertions();
+
+        for (String schemaName : List.of(
+                "AddAccountRoleDTO",
+                "DropAccountRoleDTO",
+                "RemoveGamLocationDTO",
+                "DeactivateMemberDTO",
+                "ReviewMembershipSolicitationDTO",
+                "RegisterMemberDTO"
+        )) {
+            Map<String, Object> schema = object(schemas, schemaName);
+            Map<String, Object> reason = object(object(schema, "properties"), "reason");
+            String description = String.valueOf(reason.get("description"));
+
+            softly.assertThat(strings(schema, "required"))
+                    .as("%s required properties", schemaName)
+                    .contains("reason");
+            softly.assertThat(reason)
+                    .as("%s reason schema", schemaName)
+                    .containsEntry("type", "string")
+                    .containsEntry("minLength", 1)
+                    .doesNotContainKey("maxLength");
+            softly.assertThat(description)
+                    .as("%s reason description", schemaName)
+                    .containsIgnoringCase("normalized")
+                    .containsIgnoringCase("Unicode")
+                    .contains("White_Space")
+                    .containsIgnoringCase("1")
+                    .containsIgnoringCase("2,000")
+                    .containsIgnoringCase("code point");
+        }
+
+        softly.assertAll();
     }
 
     @Test

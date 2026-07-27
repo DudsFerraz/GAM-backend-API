@@ -28,6 +28,9 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -97,7 +100,7 @@ class ManageSudoRoleTest {
             when(accountRoleRepo.save(any(AccountRoleEntity.class))).thenReturn(savedAssignment);
             when(accountRoleMapper.entityToRDTO(savedAssignment)).thenReturn(expectedResponse);
 
-            assertThat(manageSudoRole.assignSudo(accountId, " " + reason + " "))
+            assertThat(manageSudoRole.assignSudo(accountId, "\u0085" + reason + "\u0085"))
                     .isSameAs(expectedResponse);
 
             ArgumentCaptor<AccountRoleEntity> assignmentCaptor = ArgumentCaptor.forClass(AccountRoleEntity.class);
@@ -107,6 +110,40 @@ class ManageSudoRoleTest {
             assertThat(assignmentCaptor.getValue().getRole()).isSameAs(sudoRole);
             verify(activityEvents).accountRoleAdded(
                     savedAssignment.getId(), accountId, sudoRole.getId(), SystemRole.SUDO.getCode(), reason);
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {"assign", "remove"})
+        @ResourceLock(Resources.SYSTEM_PROPERTIES)
+        @DisplayName("REQ-ACCOUNT-ROLE-009 - unavailable Developer attribution -> failure before every lookup or mutation")
+        void unavailableDeveloperAttributionShouldFailBeforeEveryLookupOrMutation(String operation) {
+            String previousUserName = System.getProperty("user.name");
+            System.setProperty("user.name", "");
+            try {
+                assertThatThrownBy(() -> {
+                    if ("assign".equals(operation)) {
+                        manageSudoRole.assignSudo(UUID.randomUUID(), "Grant emergency access");
+                    } else {
+                        manageSudoRole.removeSudo(UUID.randomUUID(), "Remove emergency access");
+                    }
+                }).isInstanceOf(RuntimeException.class);
+
+                verifyNoInteractions(
+                        accountEntityLoader,
+                        roleEntityLoader,
+                        accountRoleEntityLoader,
+                        accountRoleRepo,
+                        accountRoleMapper,
+                        activityEvents,
+                        rbacSafetyPolicy
+                );
+            } finally {
+                if (previousUserName == null) {
+                    System.clearProperty("user.name");
+                } else {
+                    System.setProperty("user.name", previousUserName);
+                }
+            }
         }
 
         @Test

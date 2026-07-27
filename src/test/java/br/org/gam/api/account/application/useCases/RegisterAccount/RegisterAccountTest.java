@@ -5,9 +5,11 @@ import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.shared.domain.GamEmail;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.account.persistence.AccountRepository;
+import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.shared.exception.ConflictException;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
+import java.util.Arrays;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,6 +42,9 @@ class RegisterAccountTest {
 
     @Mock
     private AccountMapper accountMapper;
+
+    @Mock
+    private ActivityEvents activityEvents;
 
     @InjectMocks
     private RegisterAccount registerAccount;
@@ -77,6 +82,7 @@ class RegisterAccountTest {
             assertThat(registeredAccount.getPasswordHash()).isEqualTo("encoded-password");
             assertThat(registeredAccount.getDisplayName()).isEqualTo("Eduardo");
             verify(accountRepo).save(mappedEntity);
+            verify(activityEvents).accountRegistered(expectedResponse.id());
         }
 
         @Test
@@ -92,6 +98,16 @@ class RegisterAccountTest {
 
             verifyNoInteractions(passwordEncoder, accountMapper);
             verify(accountRepo, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("REQ-AUTH-020 - activity publisher -> mandatory constructor dependency")
+        void activityPublisherShouldBeMandatoryConstructorDependency() {
+            boolean constructorRequiresActivityEvents = Arrays.stream(RegisterAccount.class.getDeclaredConstructors())
+                    .anyMatch(constructor -> Arrays.asList(constructor.getParameterTypes())
+                            .contains(ActivityEvents.class));
+
+            assertThat(constructorRequiresActivityEvents).isTrue();
         }
     }
 }

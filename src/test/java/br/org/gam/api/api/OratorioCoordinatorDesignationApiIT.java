@@ -4,6 +4,7 @@ import br.org.gam.api.testing.annotation.ApiTest;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.IntegrationTest;
 import br.org.gam.api.testing.annotation.SecurityTest;
+import io.restassured.path.json.JsonPath;
 import io.restassured.response.ExtractableResponse;
 import io.restassured.response.Response;
 import java.util.HashMap;
@@ -291,9 +292,11 @@ class OratorioCoordinatorDesignationApiIT extends OratorioModuleApiTestSupport {
                 .containsEntry("target_type", "MEMBER")
                 .containsEntry("target_id", target.memberId())
                 .containsEntry("reason", reason);
-        assertThat(activity.get("metadata").toString())
-                .contains(target.accountId().toString(), "ORATORIO_COORD")
-                .doesNotContain("firstName", "surname", "phoneNumber");
+        Map<String, Object> metadata = JsonPath.from(activity.get("metadata").toString()).getMap("$");
+        assertThat(metadata)
+                .containsOnlyKeys("accountId", "roleId")
+                .containsEntry("accountId", target.accountId().toString())
+                .containsEntry("roleId", roleId("ORATORIO_COORD").toString());
     }
 
     private ExtractableResponse<Response> concurrentGrant(

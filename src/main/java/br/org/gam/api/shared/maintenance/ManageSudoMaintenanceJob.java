@@ -3,6 +3,8 @@ package br.org.gam.api.shared.maintenance;
 import br.org.gam.api.account.application.AccountEntityLoader;
 import br.org.gam.api.shared.domain.GamEmail;
 import br.org.gam.api.rbac.accountRole.application.useCases.ManageSudoRole;
+import br.org.gam.api.shared.activitylog.ActivityReasonNormalizer;
+import br.org.gam.api.shared.activitylog.DeveloperActorReference;
 import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -35,8 +37,11 @@ public class ManageSudoMaintenanceJob implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         String action = requiredOption(args, "maintenance.action");
+        validateAction(action);
+        AccountSelector selector = requiredAccountSelector(args);
         String reason = requiredReason(args);
-        UUID accountId = requiredAccountId(args);
+        DeveloperActorReference.resolveRequired();
+        UUID accountId = selector.resolve(accountEntityLoader);
 
         switch (action) {
             case "assign-sudo" -> {
@@ -47,13 +52,19 @@ public class ManageSudoMaintenanceJob implements ApplicationRunner {
                 manageSudoRole.removeSudo(accountId, reason);
                 log.info("Removed SUDO role from account {}.", accountId);
             }
-            default -> throw new IllegalArgumentException("Unsupported maintenance.action for sudo job: " + action);
+            default -> throw new IllegalStateException("Validated SUDO maintenance action became unsupported.");
         }
 
         SpringApplication.exit(applicationContext, () -> 0);
     }
 
-    private UUID requiredAccountId(ApplicationArguments args) {
+    private void validateAction(String action) {
+        if (!"assign-sudo".equals(action) && !"remove-sudo".equals(action)) {
+            throw new IllegalArgumentException("Unsupported maintenance.action for sudo job: " + action);
+        }
+    }
+
+    private AccountSelector requiredAccountSelector(ApplicationArguments args) {
         String accountId = rawOption(args, "maintenance.account-id");
         String accountEmail = rawOption(args, "maintenance.account-email");
 
@@ -67,14 +78,14 @@ public class ManageSudoMaintenanceJob implements ApplicationRunner {
             if (accountId.isBlank()) {
                 throw new IllegalArgumentException("Account selector must not be blank.");
             }
-            return UUID.fromString(accountId.trim());
+            return new AccountSelector(UUID.fromString(accountId.trim()), null);
         }
 
         if (accountEmail != null) {
             if (accountEmail.isBlank()) {
                 throw new IllegalArgumentException("Account selector must not be blank.");
             }
-            return accountEntityLoader.requiredByEmail(GamEmail.of(accountEmail.trim())).getId();
+            return new AccountSelector(null, GamEmail.of(accountEmail.trim()));
         }
 
         throw new IllegalArgumentException(
@@ -91,13 +102,15 @@ public class ManageSudoMaintenanceJob implements ApplicationRunner {
     }
 
     private String requiredReason(ApplicationArguments args) {
-        String reason = requiredOption(args, "maintenance.reason");
-        String normalizedReason = reason.strip();
-        if (normalizedReason.isEmpty()
-                || normalizedReason.codePointCount(0, normalizedReason.length()) > 2_000) {
+        String reason = rawOption(args, "maintenance.reason");
+        if (reason == null) {
+            throw new IllegalArgumentException("Missing required option --maintenance.reason");
+        }
+        try {
+            return ActivityReasonNormalizer.normalizeRequired(reason);
+        } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("SUDO role changes require an audit reason.");
         }
-        return normalizedReason;
     }
 
     private String rawOption(ApplicationArguments args, String name) {
@@ -118,5 +131,13 @@ public class ManageSudoMaintenanceJob implements ApplicationRunner {
             return null;
         }
         return values.getFirst().trim();
+    }
+
+    private record AccountSelector(UUID accountId, GamEmail accountEmail) {
+        UUID resolve(AccountEntityLoader accountEntityLoader) {
+            return accountId != null
+                    ? accountId
+                    : accountEntityLoader.requiredByEmail(accountEmail).getId();
+        }
     }
 }

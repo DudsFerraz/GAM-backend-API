@@ -7,7 +7,7 @@ import br.org.gam.api.rbac.accountRole.persistence.AccountRoleRepository;
 import br.org.gam.api.rbac.role.application.RoleEntityLoader;
 import br.org.gam.api.rbac.application.RbacSafetyPolicy;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
-import br.org.gam.api.shared.exception.InvalidCommandException;
+import br.org.gam.api.shared.validation.RequiredReason;
 import jakarta.transaction.Transactional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -56,15 +56,6 @@ public class DropAccountRole {
     }
 
     private String requiredAuditReason(String reason) {
-        if (reason == null) {
-            throw InvalidCommandException.reason("Account role changes require an audit reason.");
-        }
-
-        String normalizedReason = reason.strip();
-        if (normalizedReason.isEmpty()
-                || normalizedReason.codePointCount(0, normalizedReason.length()) > 2_000) {
-            throw InvalidCommandException.reason("Account role changes require an audit reason.");
-        }
-        return normalizedReason;
+        return RequiredReason.normalize(reason, "Account role changes require an audit reason.");
     }
 }

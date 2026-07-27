@@ -229,7 +229,7 @@ public class OratorioOperations {
                 id,
                 null,
                 "Oratorio planning replaced",
-                Map.of("oratorioId", id, "changedFields", List.copyOf(changed))
+                Map.of("changedFields", List.copyOf(changed))
         );
         return detail(oratorio);
     }
@@ -265,7 +265,7 @@ public class OratorioOperations {
                     id,
                     null,
                     "Member assigned to Oratorio team",
-                    Map.of("oratorioId", id, "memberId", memberId, "teamType", teamType.name())
+                    Map.of("memberId", memberId, "teamType", teamType.name())
             );
         }
     }
@@ -289,7 +289,7 @@ public class OratorioOperations {
                     id,
                     null,
                     "Member removed from Oratorio team",
-                    Map.of("oratorioId", id, "memberId", memberId, "teamType", teamType.name())
+                    Map.of("memberId", memberId, "teamType", teamType.name())
             );
         }
     }
@@ -351,7 +351,7 @@ public class OratorioOperations {
                 id,
                 reason,
                 "Oratorio occurrence deleted",
-                Map.of("oratorioId", id, "status", status.name())
+                Map.of("status", status.name())
         );
     }
 
@@ -459,8 +459,7 @@ public class OratorioOperations {
                 "Oratoriano registered and marked present",
                 Map.of(
                         "oratorioId", oratorioId,
-                        "oratorianoId", oratoriano.getId(),
-                        "attendanceId", attendance.getId()
+                        "oratorianoId", oratoriano.getId()
                 )
         );
         return new QuickRegistrationRDTO(oratorianoRDTO, oratorianoAttendance(attendance));
@@ -697,7 +696,7 @@ public class OratorioOperations {
                 id,
                 reason,
                 "Oratorio lifecycle changed",
-                Map.of("oratorioId", id, "fromStatus", current.name(), "toStatus", target.name())
+                Map.of("fromStatus", current.name(), "toStatus", target.name())
         );
     }
 

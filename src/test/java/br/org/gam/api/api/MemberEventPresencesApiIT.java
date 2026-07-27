@@ -294,9 +294,10 @@ class MemberEventPresencesApiIT extends MemberApiTestSupport {
                 .contains(
                         memberId.toString(),
                         eventId.toString(),
-                        "Before",
-                        "After correction"
-                );
+                        "\"previousObservationsPresent\": true",
+                        "\"newObservationsPresent\": true"
+                )
+                .doesNotContain("Before", "After correction");
         assertThat(activityCountFor("PRESENCE_UPDATED", presenceId)).isEqualTo(1);
     }
 
@@ -375,7 +376,12 @@ class MemberEventPresencesApiIT extends MemberApiTestSupport {
         Map<String, Object> activity = activityFor("PRESENCE_REMOVED", removedPresenceId);
         assertThat(activity).containsEntry("reason", VALID_REMOVAL_REASON.trim());
         assertThat(activity.get("metadata").toString())
-                .contains(memberId.toString(), eventId.toString(), "Final observation");
+                .contains(
+                        memberId.toString(),
+                        eventId.toString(),
+                        "\"observationsPresent\": true"
+                )
+                .doesNotContain("Final observation");
 
         ExtractableResponse<Response> lookup = authenticatedJsonRequest(caller)
                 .get(EVENTS + "/{eventId}/presences/{memberId}", eventId, memberId)

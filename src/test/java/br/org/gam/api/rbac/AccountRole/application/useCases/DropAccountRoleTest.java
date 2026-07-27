@@ -18,6 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InjectMocks;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -27,6 +28,7 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -137,6 +139,41 @@ class DropAccountRoleTest {
                     entity.getId(), accountId, roleId, "ADMIN", reason);
         }
 
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("validUnicodeReasons")
+        @DisplayName("REQ-ACTIVITY-008 and REQ-ACCOUNT-ROLE-005 - Unicode reason boundary -> normalized once")
+        void unicodeReasonBoundaryShouldBeAcceptedAndNormalized(
+                String scenario,
+                String submittedReason,
+                String normalizedReason
+        ) {
+            UUID accountId = UUID.randomUUID();
+            UUID roleId = UUID.randomUUID();
+            AccountRoleDTO dto = new AccountRoleDTO(accountId, roleId, submittedReason);
+            AccountRoleEntity entity = new AccountRoleEntity();
+            entity.setId(UUID.randomUUID());
+            RoleEntity role = new RoleEntity();
+            role.setId(roleId);
+            role.setName("ADMIN");
+            role.setSystemManaged(false);
+            entity.setRole(role);
+
+            when(getRoleInstance.requiredById(roleId)).thenReturn(role);
+            when(getAccountRoleInstance.requiredByDTO(dto)).thenReturn(entity);
+
+            assertThatCode(() -> dropAccountRole.byDTO(dto))
+                    .as(scenario)
+                    .doesNotThrowAnyException();
+
+            verify(activityEvents).accountRoleRemoved(
+                    entity.getId(),
+                    accountId,
+                    roleId,
+                    "ADMIN",
+                    normalizedReason
+            );
+        }
+
         @Test
         @DisplayName("REQ-ACCOUNT-ROLE-007 and ADR-0004 - generic drop exposes no audit or safety bypass")
         void genericDropShouldNotExposeAuditOrSafetyBypass() {
@@ -210,5 +247,32 @@ class DropAccountRoleTest {
         private static Stream<String> invalidReasons() {
             return Stream.of(null, "", " \n\t", "a".repeat(2_001));
         }
+
+        private static Stream<Arguments> validUnicodeReasons() {
+            String boundary = unicodeWhiteSpaceBoundary();
+            String supplementaryReason = "🙏".repeat(2_000);
+            return Stream.of(
+                    Arguments.of(
+                            "complete Unicode White_Space boundary around 2,000 supplementary code points",
+                            boundary + supplementaryReason + boundary,
+                            supplementaryReason
+                    ),
+                    Arguments.of(
+                            "U+001C is retained because it is not Unicode White_Space",
+                            " \u001C ",
+                            "\u001C"
+                    )
+            );
+        }
+    }
+
+    private static String unicodeWhiteSpaceBoundary() {
+        return Stream.of(
+                        0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x0020, 0x0085, 0x00A0, 0x1680,
+                        0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008,
+                        0x2009, 0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000
+                )
+                .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append)
+                .toString();
     }
 }

@@ -29,11 +29,27 @@ public final class OratorioApiModels {
     ) {
     }
 
-    public record ReasonDTO(String reason) {
+    public record ReasonDTO(
+            @NotNull
+            @Schema(
+                    minLength = 1,
+                    description = "Required for cancellation, deletion, restoration, and revocation operations. "
+                            + "Leading and trailing Unicode White_Space code points are removed before validation; "
+                            + "the normalized reason must contain from 1 through 2,000 Unicode code points."
+            )
+            String reason
+    ) {
     }
 
     public record ReopenDTO(
             @NotNull br.org.gam.api.event.domain.EventStatus targetStatus,
+            @NotNull
+            @Schema(
+                    minLength = 1,
+                    description = "Required for reopening. Leading and trailing Unicode White_Space code points are "
+                            + "removed before validation; the normalized reason must contain from 1 through 2,000 "
+                            + "Unicode code points."
+            )
             String reason
     ) {
     }

@@ -114,14 +114,17 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
 
         Map<String, Object> activity = activity("MEMBERSHIP_SOLICITATION_SUBMITTED");
         assertThat(activity)
+                .containsEntry("actor_kind", "ACCOUNT")
                 .containsEntry("actor_account_id", applicant.accountId())
+                .containsEntry("actor_reference", null)
+                .containsEntry("target_type", "MEMBERSHIP_SOLICITATION")
                 .containsEntry("target_id", solicitationId)
+                .containsEntry("target_scope", null)
                 .containsEntry("reason", null);
         assertThat(activity.get("metadata").toString())
-                .contains(solicitationId.toString(), applicant.accountId().toString())
-                .doesNotContain(VALID_JUSTIFICATION, CANONICAL_PHONE);
-        assertThat(activity.get("request_id")).isNotNull();
-        assertThat(activity.get("user_agent")).isEqualTo("membership-solicitation-functional-test");
+                .contains(applicant.accountId().toString())
+                .doesNotContain(solicitationId.toString(), VALID_JUSTIFICATION, CANONICAL_PHONE);
+        assertThat(((UUID) activity.get("request_id")).version()).isEqualTo(7);
     }
 
     @Test
@@ -773,12 +776,14 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
                 .containsEntry("reason", "Approved after Coordinator review");
         assertThat(activity.get("metadata").toString())
                 .contains(
-                        solicitationId.toString(),
                         applicant.accountId().toString(),
                         memberId.toString(),
-                        roleId("MEMBER").toString()
+                        roleId("MEMBER").toString(),
+                        "PENDING",
+                        "APPROVED"
                 )
                 .doesNotContain(
+                        solicitationId.toString(),
                         roleId("VISITOR").toString(),
                         roleId("COORD").toString(),
                         VALID_JUSTIFICATION,

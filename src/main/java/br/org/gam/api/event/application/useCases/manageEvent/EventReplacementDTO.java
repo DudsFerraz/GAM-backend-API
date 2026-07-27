@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.UUID;
 import org.springframework.lang.Nullable;
@@ -17,6 +16,13 @@ public record EventReplacementDTO(
         @Nullable UUID requiredPermissionId,
         @NotNull Instant beginDate,
         @NotNull Instant endDate,
-        @Nullable @Size(max = 2_000) String reason
+        @Nullable
+        @Schema(
+                minLength = 1,
+                description = "When supplied, leading and trailing Unicode White_Space code points are removed "
+                        + "before validation; the normalized reason must contain from 1 through 2,000 Unicode "
+                        + "code points."
+        )
+        String reason
 ) {
 }

@@ -229,9 +229,10 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
         UUID roleId = createCustomRole();
         String roleName = roleName(roleId);
         String reason = "Grant custom operational access";
+        UUID inboundRequestId = UUID.randomUUID();
 
         ExtractableResponse<Response> httpResponse = withUntrustedForwardingHeaders(authenticatedJsonRequest(coordinator))
-                .header("X-Request-Id", "account-role-add-request")
+                .header("X-Request-Id", inboundRequestId.toString())
                 .header("User-Agent", "account-role-test")
                 .body(addPayload(roleId, " " + reason + " "))
                 .post("/accounts/{accountId}/roles", targetId)
@@ -252,12 +253,16 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
 
         Map<String, Object> activity = accountRoleActivity(assignmentId, "ACCOUNT_ROLE_ADDED");
         assertThat(activity.get("actor_account_id").toString()).isEqualTo(coordinator.accountId().toString());
+        assertThat(activity.get("actor_kind")).isEqualTo("ACCOUNT");
+        assertThat(activity.get("actor_reference")).isNull();
         assertThat(activity.get("reason")).isEqualTo(reason);
-        assertThat(activity.get("request_id")).isEqualTo("account-role-add-request");
-        assertThat(activity.get("user_agent")).isEqualTo("account-role-test");
+        UUID responseRequestId = UUID.fromString(httpResponse.header("X-Request-Id"));
+        assertThat(responseRequestId).isNotEqualTo(inboundRequestId);
+        assertThat(responseRequestId.version()).isEqualTo(7);
+        assertThat(activity.get("request_id")).isEqualTo(responseRequestId);
         assertThat(activity.get("account_id").toString()).isEqualTo(targetId.toString());
         assertThat(activity.get("role_id").toString()).isEqualTo(roleId.toString());
-        assertThat(activity.get("role_name")).isEqualTo(roleName);
+        assertThat(activity.get("system_managed")).isEqualTo(false);
     }
 
     @Test
@@ -387,7 +392,7 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
         UUID assignmentId = activeAccountRoleId(targetId, roleId);
 
         authenticatedJsonRequest(coordinator)
-                .header("X-Request-Id", "account-role-drop-request")
+                .header("X-Request-Id", UUID.randomUUID().toString())
                 .header("User-Agent", "account-role-test")
                 .body(reasonPayload(" Remove custom operational access "))
                 .patch("/accounts/{accountId}/roles/{roleId}/drop", targetId, roleId)
@@ -688,7 +693,7 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
 
     private long accountRoleActivityCount() {
         return Objects.requireNonNull(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM activity_logs WHERE target_type = 'ACCOUNT_ROLE'",
+                "SELECT COUNT(*) FROM activity_logs WHERE target_type = 'ACCOUNT_ROLE_ASSIGNMENT'",
                 Long.class
         ), "Expected account-role activity count");
     }
@@ -696,7 +701,7 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
     private long accountRoleActivityCount(UUID assignmentId, String action) {
         return Objects.requireNonNull(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM activity_logs "
-                        + "WHERE target_type = 'ACCOUNT_ROLE' AND action = ? AND target_id = ?",
+                        + "WHERE target_type = 'ACCOUNT_ROLE_ASSIGNMENT' AND action = ? AND target_id = ?",
                 Long.class,
                 action,
                 assignmentId
@@ -705,12 +710,12 @@ class AccountRoleManagementApiIT extends BaseApiIntegrationTest {
 
     private Map<String, Object> accountRoleActivity(UUID assignmentId, String action) {
         return jdbcTemplate.queryForMap(
-                "SELECT actor_account_id, reason, request_id, user_agent, "
+                "SELECT actor_kind, actor_account_id, actor_reference, reason, request_id, "
                         + "metadata ->> 'accountId' AS account_id, "
                         + "metadata ->> 'roleId' AS role_id, "
-                        + "metadata ->> 'roleName' AS role_name "
+                        + "(metadata ->> 'systemManaged')::boolean AS system_managed "
                         + "FROM activity_logs "
-                        + "WHERE target_type = 'ACCOUNT_ROLE' AND action = ? AND target_id = ?",
+                        + "WHERE target_type = 'ACCOUNT_ROLE_ASSIGNMENT' AND action = ? AND target_id = ?",
                 action,
                 assignmentId
         );

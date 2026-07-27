@@ -352,7 +352,8 @@ abstract class MemberApiTestSupport extends BaseApiIntegrationTest {
 
     protected Map<String, Object> activity(String action) {
         return jdbcTemplate.queryForMap(
-                "SELECT actor_account_id, target_id, reason, metadata, request_id, ip_address, user_agent "
+                "SELECT actor_kind, actor_account_id, actor_reference, "
+                        + "target_type, target_id, target_scope, reason, metadata, request_id "
                         + "FROM activity_logs WHERE action = ?",
                 action
         );

@@ -4,6 +4,7 @@ import br.org.gam.api.testing.annotation.ApiTest;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.IntegrationTest;
 import br.org.gam.api.testing.annotation.SecurityTest;
+import io.restassured.path.json.JsonPath;
 import io.restassured.response.ExtractableResponse;
 import io.restassured.response.Response;
 import java.sql.Timestamp;
@@ -95,8 +96,15 @@ class EventRecordsLifecycleApiIT extends MemberApiTestSupport {
         assertThat(activityCountFor("EVENT_CREATED", eventId)).isEqualTo(1);
         Map<String, Object> activity = eventActivity("EVENT_CREATED", eventId);
         assertThat(activity).containsEntry("target_id", eventId).containsEntry("reason", null);
-        assertThat(activity.get("metadata").toString())
-                .contains("Encontro de Oração", "GENERIC", "COMPLETED", locationId.toString());
+        Map<String, Object> metadata = JsonPath.from(activity.get("metadata").toString()).getMap("$");
+        assertThat(metadata)
+                .containsOnlyKeys("type", "status", "gamLocationId", "requiredPermissionId")
+                .containsEntry("type", "GENERIC")
+                .containsEntry("status", "COMPLETED")
+                .containsEntry("gamLocationId", locationId.toString())
+                .containsEntry("requiredPermissionId", null);
+        assertThat(metadata.toString())
+                .doesNotContain("Encontro de Oração", "Texto com espaços internos");
     }
 
     @ParameterizedTest(name = "{0}")
@@ -519,7 +527,11 @@ class EventRecordsLifecycleApiIT extends MemberApiTestSupport {
         assertThat(response.<String>path("status")).isEqualTo(target);
         assertThat(activityCountFor(action, eventId)).isEqualTo(1);
         Map<String, Object> activity = eventActivity(action, eventId);
-        assertThat(activity.get("metadata").toString()).contains(source, target);
+        Map<String, Object> metadata = JsonPath.from(activity.get("metadata").toString()).getMap("$");
+        assertThat(metadata)
+                .containsOnlyKeys("fromStatus", "toStatus")
+                .containsEntry("fromStatus", source)
+                .containsEntry("toStatus", target);
         assertThat(activity.get("reason")).isEqualTo(reasonRequired ? VALID_REASON.trim() : null);
         if ("CANCELLED".equals(target)) {
             assertThat(response.<String>path("cancellationReason")).isEqualTo(VALID_REASON.trim());
@@ -588,6 +600,40 @@ class EventRecordsLifecycleApiIT extends MemberApiTestSupport {
         assertThat(activityCountForTarget(eventId)).isZero();
     }
 
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("unicodeReasonContracts")
+    @DisplayName("REQ-ACTIVITY-008 and REQ-EVENT-013 - cancellation reason -> exact code-point normalization reused by domain and activity")
+    void cancellationShouldReuseTheExactNormalizedUnicodeReason(
+            String scenario,
+            String submittedReason,
+            String expectedReason,
+            int expectedCodePoints
+    ) {
+        AuthSession caller = newSessionWithPermissions(
+                "GAM_LOCATION_CREATE", "EVENT_CREATE", "EVENT_MANAGE"
+        );
+        UUID eventId = createEventForStatus(caller, "SCHEDULED");
+        clearActivities();
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .body(reasonPayload(submittedReason))
+                .patch(EVENTS + "/{id}/cancel", eventId)
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(scenario).isEqualTo(200);
+        assertThat(expectedReason.codePointCount(0, expectedReason.length()))
+                .isEqualTo(expectedCodePoints);
+        assertThat(response.<String>path("cancellationReason")).isEqualTo(expectedReason);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT cancellation_reason FROM events WHERE id = ?",
+                String.class,
+                eventId
+        )).isEqualTo(expectedReason);
+        assertThat(eventActivity("EVENT_CANCELLED", eventId).get("reason"))
+                .isEqualTo(expectedReason);
+    }
+
     @Test
     @DisplayName("REQ-EVENT-014 and REQ-EVENT-015 - audience-changing full replacement normalizes data, changes effective status, and audits changed fields")
     void audienceChangingReplacementShouldRequireVisibilityAndAuditChanges() {
@@ -615,9 +661,36 @@ class EventRecordsLifecycleApiIT extends MemberApiTestSupport {
         assertThat(response.<String>path("requiredPermission.code")).isEqualTo("EVENT_GET_COORD");
         Map<String, Object> activity = eventActivity("EVENT_UPDATED", eventId);
         assertThat(activity.get("reason")).isEqualTo(VALID_REASON.trim());
-        assertThat(activity.get("metadata").toString())
-                .contains("title", "gamLocationId", "requiredPermissionId", "beginDate", "endDate",
-                        "fromStatus", "COMPLETED", "toStatus", "SCHEDULED");
+        Map<String, Object> metadata = JsonPath.from(activity.get("metadata").toString()).getMap("$");
+        assertThat(metadata)
+                .containsOnlyKeys("changedFields", "fromStatus", "toStatus")
+                .containsEntry("fromStatus", "COMPLETED")
+                .containsEntry("toStatus", "SCHEDULED");
+        assertThat(metadata.get("changedFields"))
+                .isEqualTo(List.of("title", "gamLocationId", "requiredPermissionId", "beginDate", "endDate"));
+    }
+
+    @Test
+    @DisplayName("REQ-EVENT-015 and REQ-EVENT-020 - non-audience update -> optional reason and exact changedFields metadata")
+    void nonAudienceUpdateShouldAllowOmittedReasonAndAuditOnlyStableChangedFields() {
+        AuthSession caller = newSessionWithPermissions(
+                "GAM_LOCATION_CREATE", "EVENT_CREATE", "EVENT_MANAGE"
+        );
+        UUID eventId = createEvent(caller, "Before title edit", null,
+                Instant.now().plusSeconds(3_600), Instant.now().plusSeconds(7_200));
+        Map<String, Object> replacement = currentReplacement(eventId);
+        replacement.put("title", "After title edit");
+        clearActivities();
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .body(replacement).put(EVENTS + "/{id}", eventId).then().extract();
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        Map<String, Object> activity = eventActivity("EVENT_UPDATED", eventId);
+        assertThat(activity.get("reason")).isNull();
+        Map<String, Object> metadata = JsonPath.from(activity.get("metadata").toString()).getMap("$");
+        assertThat(metadata).containsOnlyKeys("changedFields");
+        assertThat(metadata.get("changedFields")).isEqualTo(List.of("title"));
     }
 
     @Test
@@ -750,8 +823,13 @@ class EventRecordsLifecycleApiIT extends MemberApiTestSupport {
                 .isEqualTo(1);
         Map<String, Object> activity = eventActivity("EVENT_DELETED", eventId);
         assertThat(activity.get("reason")).isEqualTo(VALID_REASON.trim());
-        assertThat(activity.get("metadata").toString())
-                .contains("title", "type", "COMPLETED", "gamLocationId");
+        Map<String, Object> metadata = JsonPath.from(activity.get("metadata").toString()).getMap("$");
+        assertThat(metadata)
+                .containsOnlyKeys("type", "fromStatus", "gamLocationId")
+                .containsEntry("type", "GENERIC")
+                .containsEntry("fromStatus", "COMPLETED");
+        assertThat(metadata.get("gamLocationId")).isNotNull();
+        assertThat(metadata.toString()).doesNotContain("COMPLETED Event");
         assertResourceNotFound(jsonRequest().get(EVENTS + "/{id}", eventId).then().extract(), "Event");
     }
 
@@ -914,9 +992,9 @@ class EventRecordsLifecycleApiIT extends MemberApiTestSupport {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("presenceObservationMetadataCases")
-    @DisplayName("REQ-PRESENCE-006 - registration activity contains normalized observations including null")
-    void presenceRegistrationActivityShouldContainNormalizedObservations(
-            String scenario, String submittedObservations, String expectedObservations
+    @DisplayName("REQ-PRESENCE-006 - registration activity contains only the observation-presence indicator")
+    void presenceRegistrationActivityShouldContainOnlyObservationPresenceIndicator(
+            String scenario, String submittedObservations, boolean expectedObservationsPresent
     ) {
         AuthSession caller = newSessionWithPermissions(
                 "GAM_LOCATION_CREATE", "EVENT_CREATE", "PRESENCE_REGISTER"
@@ -938,16 +1016,16 @@ class EventRecordsLifecycleApiIT extends MemberApiTestSupport {
         Map<String, Object> activity = jdbcTemplate.queryForMap(
                 "SELECT metadata ->> 'memberId' AS \"memberId\", "
                         + "metadata ->> 'eventId' AS \"eventId\", "
-                        + "jsonb_exists(metadata, 'observations') AS \"hasObservations\", "
-                        + "metadata ->> 'observations' AS observations "
+                        + "(metadata ->> 'observationsPresent')::boolean AS \"observationsPresent\", "
+                        + "jsonb_exists(metadata, 'observations') AS \"hasObservations\" "
                         + "FROM activity_logs WHERE action = 'PRESENCE_REGISTERED' AND target_id = ?",
                 presenceId
         );
         assertThat(activity)
                 .containsEntry("memberId", memberId.toString())
                 .containsEntry("eventId", eventId.toString())
-                .containsEntry("hasObservations", true)
-                .containsEntry("observations", expectedObservations);
+                .containsEntry("observationsPresent", expectedObservationsPresent)
+                .containsEntry("hasObservations", false);
     }
 
     @Test
@@ -1080,10 +1158,34 @@ class EventRecordsLifecycleApiIT extends MemberApiTestSupport {
         );
     }
 
+    private static Stream<Arguments> unicodeReasonContracts() {
+        String supplementaryReason = new String(Character.toChars(0x1F64F)).repeat(2_000);
+        return Stream.of(
+                Arguments.of(
+                        "Unicode White_Space is removed",
+                        "\u0085\u00A0\u202Fintent\u0085\u00A0\u202F",
+                        "intent",
+                        6
+                ),
+                Arguments.of(
+                        "non-White_Space control characters are retained",
+                        " \u001Cintent\u001C ",
+                        "\u001Cintent\u001C",
+                        8
+                ),
+                Arguments.of(
+                        "2,000 supplementary code points are accepted",
+                        "\u0085" + supplementaryReason + "\u0085",
+                        supplementaryReason,
+                        2_000
+                )
+        );
+    }
+
     private static Stream<Arguments> presenceObservationMetadataCases() {
         return Stream.of(
-                Arguments.of("trimmed value", "  Arrived at the entrance  ", "Arrived at the entrance"),
-                Arguments.of("explicit null", null, null)
+                Arguments.of("trimmed value", "  Arrived at the entrance  ", true),
+                Arguments.of("explicit null", null, false)
         );
     }
 

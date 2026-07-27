@@ -590,8 +590,7 @@ class GamLocationApiIT extends MemberApiTestSupport {
         assertThat(activity)
                 .containsEntry("target_id", id)
                 .containsEntry("reason", "Venue is no longer available");
-        assertThat(activity.get("metadata").toString()).contains("Removable location");
-        assertThat(activity.get("metadata").toString()).doesNotContain("Rua São José", "Campinas", "BR");
+        assertThat(activity.get("metadata").toString()).isEqualTo("{}");
     }
 
     @Test

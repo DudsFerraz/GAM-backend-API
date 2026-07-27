@@ -4,6 +4,7 @@ import br.org.gam.api.testing.annotation.ApiTest;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.IntegrationTest;
 import br.org.gam.api.testing.annotation.SecurityTest;
+import io.restassured.path.json.JsonPath;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -89,7 +90,7 @@ class CoordinatorLifecycleApiIT extends MemberApiTestSupport {
         clearActivities();
 
         authenticatedJsonRequest(actor)
-                .header("X-Request-Id", "coordinator-grant-request")
+                .header("X-Request-Id", UUID.randomUUID().toString())
                 .header("User-Agent", "coordinator-lifecycle-test")
                 .body(reasonPayload("  Leading the next activity  "))
                 .patch("/members/{memberId}/coordinator/grant", memberId)
@@ -106,13 +107,19 @@ class CoordinatorLifecycleApiIT extends MemberApiTestSupport {
         assertThat(allLifecycleActivityCount()).isEqualTo(1);
         Map<String, Object> activity = activity("COORDINATOR_GRANTED");
         assertThat(activity)
+                .containsEntry("actor_kind", "ACCOUNT")
                 .containsEntry("actor_account_id", actor.accountId())
+                .containsEntry("actor_reference", null)
+                .containsEntry("target_type", "MEMBER")
                 .containsEntry("target_id", memberId)
-                .containsEntry("reason", "Leading the next activity")
-                .containsEntry("request_id", "coordinator-grant-request")
-                .containsEntry("user_agent", "coordinator-lifecycle-test");
-        assertThat(activity.get("metadata").toString())
-                .contains(accountId.toString(), roleId("COORD").toString());
+                .containsEntry("target_scope", null)
+                .containsEntry("reason", "Leading the next activity");
+        assertThat(((UUID) activity.get("request_id")).version()).isEqualTo(7);
+        Map<String, Object> metadata = JsonPath.from(activity.get("metadata").toString()).getMap("$");
+        assertThat(metadata)
+                .containsOnlyKeys("accountId", "roleId")
+                .containsEntry("accountId", accountId.toString())
+                .containsEntry("roleId", roleId("COORD").toString());
     }
 
     @Test

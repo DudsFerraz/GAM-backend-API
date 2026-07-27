@@ -92,6 +92,72 @@ class AuthApiIT extends BaseApiIntegrationTest {
                 .startsWith("{pbkdf2}")
                 .isNotEqualTo(rawPassword);
         assertThat(passwordEncoder.matches(rawPassword, storedAccount.get("password_hash").toString())).isTrue();
+
+        Map<String, Object> registrationActivity = jdbcTemplate.queryForMap(
+                "SELECT action, actor_kind, actor_account_id, actor_reference, "
+                        + "target_type, target_id, target_scope, reason, metadata::text AS metadata_json "
+                        + "FROM activity_logs WHERE action = 'ACCOUNT_REGISTERED' AND target_id = ?",
+                accountId
+        );
+        assertThat(registrationActivity)
+                .containsEntry("action", "ACCOUNT_REGISTERED")
+                .containsEntry("actor_kind", "ANONYMOUS")
+                .containsEntry("actor_account_id", null)
+                .containsEntry("actor_reference", null)
+                .containsEntry("target_type", "ACCOUNT")
+                .containsEntry("target_id", accountId)
+                .containsEntry("target_scope", null)
+                .containsEntry("reason", null)
+                .containsEntry("metadata_json", "{}");
+    }
+
+    @Test
+    @DisplayName("REQ-ACTIVITY-007, REQ-AUTH-020, and REQ-WEB-012 - direct registration request -> one generated UUID v7 in response and activity")
+    void directRegistrationShouldIgnoreInboundRequestIdAndCorrelateTheActivity() {
+        UUID inboundRequestId = UUID.randomUUID();
+        ExtractableResponse<Response> response = jsonRequest()
+                .header("X-Request-Id", inboundRequestId.toString())
+                .body(registerPayload(uniqueEmail("request-correlation"), TEST_PASSWORD, "Correlation Account"))
+                .post("/auth/register")
+                .then()
+                .statusCode(201)
+                .extract();
+
+        UUID accountId = UUID.fromString(response.path("id"));
+        trackAccount(accountId);
+        assertThat(response.header("X-Request-Id")).isNotBlank();
+        UUID responseRequestId = UUID.fromString(response.header("X-Request-Id"));
+        assertThat(responseRequestId).isNotEqualTo(inboundRequestId);
+        assertThat(responseRequestId.version()).isEqualTo(7);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT request_id FROM activity_logs "
+                        + "WHERE action = 'ACCOUNT_REGISTERED' AND target_id = ?",
+                UUID.class,
+                accountId
+        )).isEqualTo(responseRequestId);
+    }
+
+    @Test
+    @DisplayName("REQ-ACTIVITY-010 and REQ-AUTH-020 - registration audit persistence failure -> Account creation rolls back")
+    void registrationShouldRollBackWhenItsActivityCannotPersist() {
+        String email = uniqueEmail("activity-rollback");
+        installAccountRegistrationActivityFailureTrigger();
+        try {
+            ExtractableResponse<Response> response = jsonRequest()
+                    .body(registerPayload(email, TEST_PASSWORD, "Atomic Registration"))
+                    .post("/auth/register")
+                    .then()
+                    .extract();
+            trackCreatedAccount(response);
+
+            assertThat(response.statusCode() / 100).isNotEqualTo(2);
+            assertThat(count("SELECT COUNT(*) FROM accounts WHERE email = ?", email)).isZero();
+            assertThat(count(
+                    "SELECT COUNT(*) FROM activity_logs WHERE action = 'ACCOUNT_REGISTERED'"
+            )).isZero();
+        } finally {
+            removeAccountRegistrationActivityFailureTrigger();
+        }
     }
 
     @Test
@@ -524,6 +590,37 @@ class AuthApiIT extends BaseApiIntegrationTest {
         if (response.statusCode() == 201 && response.path("id") != null) {
             trackAccount(UUID.fromString(response.path("id")));
         }
+    }
+
+    private void installAccountRegistrationActivityFailureTrigger() {
+        removeAccountRegistrationActivityFailureTrigger();
+        jdbcTemplate.execute("""
+                CREATE OR REPLACE FUNCTION fail_account_registration_activity() RETURNS trigger AS $$
+                BEGIN
+                    IF NEW.action = 'ACCOUNT_REGISTERED' THEN
+                        RAISE EXCEPTION 'forced account-registration activity persistence failure';
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql
+                """);
+        try {
+            jdbcTemplate.execute("""
+                    CREATE TRIGGER fail_account_registration_activity_trigger
+                    BEFORE INSERT ON activity_logs
+                    FOR EACH ROW EXECUTE FUNCTION fail_account_registration_activity()
+                    """);
+        } catch (RuntimeException exception) {
+            removeAccountRegistrationActivityFailureTrigger();
+            throw exception;
+        }
+    }
+
+    private void removeAccountRegistrationActivityFailureTrigger() {
+        jdbcTemplate.execute(
+                "DROP TRIGGER IF EXISTS fail_account_registration_activity_trigger ON activity_logs"
+        );
+        jdbcTemplate.execute("DROP FUNCTION IF EXISTS fail_account_registration_activity()");
     }
 
     private String storedDisplayName(UUID accountId) {

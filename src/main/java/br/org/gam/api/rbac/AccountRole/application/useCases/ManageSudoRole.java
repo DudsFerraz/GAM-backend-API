@@ -13,6 +13,8 @@ import br.org.gam.api.rbac.role.application.RoleEntityLoader;
 import br.org.gam.api.rbac.role.persistence.RoleEntity;
 import br.org.gam.api.rbac.application.RbacSafetyPolicy;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
+import br.org.gam.api.shared.activitylog.ActivityReasonNormalizer;
+import br.org.gam.api.shared.activitylog.DeveloperActorReference;
 import br.org.gam.api.shared.exception.ConflictException;
 import br.org.gam.api.shared.exception.InvalidCommandException;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
@@ -48,6 +50,7 @@ public class ManageSudoRole {
     @Transactional
     public AccountRoleRDTO assignSudo(UUID accountId, String reason) {
         String auditReason = requiredAuditReason(reason);
+        DeveloperActorReference.resolveRequired();
         AccountEntity account = accountEntityLoader.requiredById(accountId);
         RoleEntity sudoRole = roleEntityLoader.requiredByName(SystemRole.SUDO.getCode());
 
@@ -79,6 +82,7 @@ public class ManageSudoRole {
     @Transactional
     public void removeSudo(UUID accountId, String reason) {
         String auditReason = requiredAuditReason(reason);
+        DeveloperActorReference.resolveRequired();
         RoleEntity sudoRole = roleEntityLoader.requiredByName(SystemRole.SUDO.getCode());
         AccountRoleDTO dto = new AccountRoleDTO(accountId, sudoRole.getId(), auditReason);
         AccountRoleEntity accountRole = accountRoleEntityLoader.requiredByDTO(dto);
@@ -95,15 +99,10 @@ public class ManageSudoRole {
     }
 
     private String requiredAuditReason(String reason) {
-        if (reason == null) {
+        try {
+            return ActivityReasonNormalizer.normalizeRequired(reason);
+        } catch (IllegalArgumentException exception) {
             throw InvalidCommandException.reason("SUDO role changes require an audit reason.");
         }
-
-        String normalizedReason = reason.strip();
-        if (normalizedReason.isEmpty()
-                || normalizedReason.codePointCount(0, normalizedReason.length()) > 2_000) {
-            throw InvalidCommandException.reason("SUDO role changes require an audit reason.");
-        }
-        return normalizedReason;
     }
 }

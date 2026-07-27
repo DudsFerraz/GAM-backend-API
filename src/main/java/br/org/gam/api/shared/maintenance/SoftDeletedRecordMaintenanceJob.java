@@ -2,6 +2,7 @@ package br.org.gam.api.shared.maintenance;
 
 import br.org.gam.api.shared.activitylog.ActivityAction;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
+import br.org.gam.api.shared.activitylog.ActivityReasonNormalizer;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import java.util.List;
@@ -17,14 +18,14 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Component
 @Profile("maintenance")
 @ConditionalOnProperty(name = "maintenance.job", havingValue = "soft-delete", matchIfMissing = true)
 public class SoftDeletedRecordMaintenanceJob implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(SoftDeletedRecordMaintenanceJob.class);
-    private static final UUID BULK_TARGET_ID = new UUID(0L, 0L);
-
     private static final Set<String> ALLOWED_TABLES = Set.of(
             "accounts",
             "roles",
@@ -59,29 +60,41 @@ public class SoftDeletedRecordMaintenanceJob implements ApplicationRunner {
         validateTable(table);
 
         switch (action) {
-            case "inspect-soft-deleted" -> inspectSoftDeleted(table);
-            case "restore" -> restore(table, requiredUuid(args, "maintenance.id"), requiredOption(args, "maintenance.reason"));
-            case "hard-delete" -> hardDelete(table, requiredUuid(args, "maintenance.id"), requiredOption(args, "maintenance.reason"));
+            case "inspect-soft-deleted" -> inspectSoftDeleted(table, requiredReason(args));
+            case "restore" -> restore(table, requiredUuid(args, "maintenance.id"), requiredReason(args));
+            case "hard-delete" -> hardDelete(table, requiredUuid(args, "maintenance.id"), requiredReason(args));
             default -> throw new IllegalArgumentException("Unsupported maintenance.action: " + action);
         }
 
         SpringApplication.exit(applicationContext, () -> 0);
     }
 
-    private void inspectSoftDeleted(String table) {
+    private void inspectSoftDeleted(String table, String reason) {
         List<?> ids = entityManager.createNativeQuery(
                         "SELECT id FROM " + table + " WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")
                 .getResultList();
 
-        log.info("Soft-deleted records in {}: {}", table, ids);
         activityEvents.developerMaintenance(
                 ActivityAction.DEVELOPER_VIEWED_SOFT_DELETED_RECORDS,
-                BULK_TARGET_ID,
-                table,
                 null,
-                "Developer inspected soft-deleted records in " + table,
-                Map.of("table", table, "count", ids.size())
+                table,
+                reason,
+                "Developer inspected soft-deleted records",
+                Map.of("count", ids.size())
         );
+        discloseAfterCommit(table, ids);
+    }
+
+    private void discloseAfterCommit(String table, List<?> ids) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                log.info("Soft-deleted records in {}: {}", table, ids);
+            }
+        });
     }
 
     private void restore(String table, UUID id, String reason) {
@@ -140,5 +153,11 @@ public class SoftDeletedRecordMaintenanceJob implements ApplicationRunner {
 
     private UUID requiredUuid(ApplicationArguments args, String name) {
         return UUID.fromString(requiredOption(args, name));
+    }
+
+    private String requiredReason(ApplicationArguments args) {
+        List<String> values = args.getOptionValues("maintenance.reason");
+        String reason = values == null || values.isEmpty() ? null : values.getFirst();
+        return ActivityReasonNormalizer.normalizeRequired(reason);
     }
 }

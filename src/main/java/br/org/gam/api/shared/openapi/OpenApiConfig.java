@@ -1,5 +1,6 @@
 package br.org.gam.api.shared.openapi;
 
+import br.org.gam.api.shared.activitylog.RequestCorrelationFilter;
 import io.swagger.v3.oas.annotations.OpenAPIDefinition;
 import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
 import io.swagger.v3.oas.annotations.info.Info;
@@ -141,6 +142,7 @@ public class OpenApiConfig {
                 documentLocationResponseHeader(operation);
                 documentErrorResponses(operation);
                 documentCurrentAccountContext(operation);
+                documentRequestCorrelationResponseHeader(operation);
                 addExamples(openApi, operation);
             }));
         };
@@ -522,6 +524,15 @@ public class OpenApiConfig {
                     .description("Public API URI of the created " + resource + " resource.")
                     .schema(new StringSchema().format("uri")));
         }
+    }
+
+    private void documentRequestCorrelationResponseHeader(io.swagger.v3.oas.models.Operation operation) {
+        operation.getResponses().values().forEach(response -> response.addHeaderObject(
+                RequestCorrelationFilter.HEADER_NAME,
+                new Header()
+                        .description("UUID correlating this response with activity entries produced by the request.")
+                        .schema(new StringSchema().format("uuid"))
+        ));
     }
 
     private Parameter pageParameter() {

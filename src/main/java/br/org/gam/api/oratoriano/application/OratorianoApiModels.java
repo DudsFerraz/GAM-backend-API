@@ -22,11 +22,25 @@ public final class OratorianoApiModels {
             @NotBlank @Schema(maxLength = 64) String surname,
             LocalDate birthDate,
             String phoneNumber,
+            @Schema(
+                    minLength = 1,
+                    description = "Required when the Oratoriano name changes. When supplied, leading and trailing "
+                            + "Unicode White_Space code points are removed before validation; the normalized reason "
+                            + "must contain from 1 through 2,000 Unicode code points."
+            )
             String reason
     ) {
     }
 
-    public record ReasonDTO(String reason) {
+    public record ReasonDTO(
+            @Schema(
+                    minLength = 1,
+                    description = "Required for cancellation, deletion, restoration, and revocation operations. "
+                            + "Leading and trailing Unicode White_Space code points are removed before validation; "
+                            + "the normalized reason must contain from 1 through 2,000 Unicode code points."
+            )
+            String reason
+    ) {
     }
 
     public record OratorianoRDTO(

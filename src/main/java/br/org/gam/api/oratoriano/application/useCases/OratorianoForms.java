@@ -140,7 +140,7 @@ public class OratorianoForms {
                 id,
                 null,
                 "Oratoriano additional-form draft created",
-                Map.of("oratorianoId", oratorianoId, "formId", id, "origin", dto.origin().name())
+                Map.of("oratorianoId", oratorianoId, "origin", dto.origin().name())
         );
         return getRow(oratorianoId, id);
     }
@@ -172,7 +172,7 @@ public class OratorianoForms {
                 formId,
                 null,
                 "Oratoriano additional-form draft updated",
-                Map.of("oratorianoId", oratorianoId, "formId", formId, "draftRevision", revision)
+                Map.of("oratorianoId", oratorianoId, "draftRevision", revision)
         );
         return getRow(oratorianoId, formId);
     }
@@ -281,7 +281,7 @@ public class OratorianoForms {
                 formId,
                 null,
                 "Oratoriano additional form completed",
-                Map.of("oratorianoId", oratorianoId, "formId", formId)
+                Map.of("oratorianoId", oratorianoId)
         );
     }
 
@@ -346,7 +346,6 @@ public class OratorianoForms {
                 "Oratoriano form signed attachments replaced",
                 Map.of(
                         "oratorianoId", oratorianoId,
-                        "formId", formId,
                         "attachmentCount", result.size()
                 )
         );
@@ -380,7 +379,6 @@ public class OratorianoForms {
                 "Sensitive Oratoriano form attachment downloaded",
                 Map.of(
                         "oratorianoId", oratorianoId,
-                        "formId", formId,
                         "attachmentId", attachmentId
                 )
         );
@@ -431,7 +429,6 @@ public class OratorianoForms {
                 "Oratoriano form print snapshot created",
                 Map.of(
                         "oratorianoId", oratorianoId,
-                        "formId", formId,
                         "printSnapshotId", id
                 )
         );
@@ -477,7 +474,6 @@ public class OratorianoForms {
                 "Oratoriano form PDF rendered",
                 Map.of(
                         "oratorianoId", oratorianoId,
-                        "formId", formId,
                         "printSnapshotId", snapshotId
                 )
         );
@@ -519,7 +515,7 @@ public class OratorianoForms {
                 formId,
                 reason,
                 "Oratoriano additional-form draft deleted",
-                Map.of("oratorianoId", oratorianoId, "formId", formId)
+                Map.of("oratorianoId", oratorianoId)
         );
     }
 
@@ -588,7 +584,7 @@ public class OratorianoForms {
                 formId,
                 null,
                 "Sensitive Oratoriano form detail read",
-                Map.of("oratorianoId", oratorianoId, "formId", formId)
+                Map.of("oratorianoId", oratorianoId)
         );
         return row.toRDTO();
     }
@@ -623,7 +619,7 @@ public class OratorianoForms {
                 formId,
                 reason,
                 "Current Oratoriano form revoked",
-                Map.of("oratorianoId", oratorianoId, "formId", formId)
+                Map.of("oratorianoId", oratorianoId)
         );
     }
 

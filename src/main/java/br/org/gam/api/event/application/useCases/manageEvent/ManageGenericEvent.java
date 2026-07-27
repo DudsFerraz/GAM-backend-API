@@ -172,9 +172,8 @@ public class ManageGenericEvent {
         activityEvents.eventChanged(
                 ActivityAction.EVENT_DELETED, eventId, reason, "Event deleted",
                 Map.of(
-                        "title", entity.getTitle(),
                         "type", entity.getType().name(),
-                        "status", status.name(),
+                        "fromStatus", status.name(),
                         "gamLocationId", entity.getLocation().getId()
                 )
         );

@@ -4,6 +4,7 @@ import br.org.gam.api.account.application.AccountMapper;
 import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.account.persistence.AccountRepository;
+import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.shared.exception.ConflictException;
 import jakarta.transaction.Transactional;
 import org.hibernate.exception.ConstraintViolationException;
@@ -19,11 +20,18 @@ public class RegisterAccount {
     private final AccountRepository accountRepo;
     private final PasswordEncoder passwordEncoder;
     private final AccountMapper accountMapper;
+    private final ActivityEvents activityEvents;
 
-    public RegisterAccount(AccountRepository accountRepo, PasswordEncoder passwordEncoder, AccountMapper accountMapper) {
+    public RegisterAccount(
+            AccountRepository accountRepo,
+            PasswordEncoder passwordEncoder,
+            AccountMapper accountMapper,
+            ActivityEvents activityEvents
+    ) {
         this.accountRepo = accountRepo;
         this.passwordEncoder = passwordEncoder;
         this.accountMapper = accountMapper;
+        this.activityEvents = activityEvents;
     }
 
     @Transactional
@@ -56,7 +64,9 @@ public class RegisterAccount {
             );
         }
 
-        return accountMapper.entityToRegisterAccountRDTO(savedAccountEntity);
+        RegisterAccountRDTO response = accountMapper.entityToRegisterAccountRDTO(savedAccountEntity);
+        activityEvents.accountRegistered(response.id());
+        return response;
     }
 
     private boolean isEmailUniqueConstraintViolation(DataIntegrityViolationException exception) {

@@ -127,15 +127,21 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
 
         Map<String, Object> activity = activity("MEMBER_REGISTERED");
         assertThat(activity)
+                .containsEntry("actor_kind", "ACCOUNT")
                 .containsEntry("actor_account_id", coordinator.accountId())
+                .containsEntry("actor_reference", null)
+                .containsEntry("target_type", "MEMBER")
                 .containsEntry("target_id", memberId)
+                .containsEntry("target_scope", null)
                 .containsEntry("reason", "Accepted as a GAM Member");
         assertThat(activity.get("metadata").toString())
-                .contains(targetId.toString(), memberId.toString(), roleId("MEMBER").toString())
-                .doesNotContain(roleId("VISITOR").toString(), roleId("COORD").toString());
-        assertThat(activity.get("request_id")).isNotNull();
-        assertThat(activity.get("ip_address")).isNotNull();
-        assertThat(activity.get("user_agent")).isEqualTo("member-lifecycle-functional-test");
+                .contains(targetId.toString(), roleId("MEMBER").toString())
+                .doesNotContain(
+                        memberId.toString(),
+                        roleId("VISITOR").toString(),
+                        roleId("COORD").toString()
+                );
+        assertThat(((UUID) activity.get("request_id")).version()).isEqualTo(7);
     }
 
     @Test

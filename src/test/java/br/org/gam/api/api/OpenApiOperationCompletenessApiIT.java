@@ -114,6 +114,44 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
     }
 
     @Test
+    @DisplayName("REQ-ACTIVITY-007 and REQ-OPENAPI-003 - every response -> UUID X-Request-Id header")
+    void everyResponseShouldDocumentTheRequestCorrelationHeader() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        List<String> missingHeaders = new ArrayList<>();
+        List<String> invalidSchemas = new ArrayList<>();
+
+        for (Map<String, Object> operation : operations(contract)) {
+            String operationId = String.valueOf(operation.get("operationId"));
+            Map<String, Object> responses = object(operation, "responses");
+            responses.forEach((status, responseValue) -> {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> response = (Map<String, Object>) responseValue;
+                Map<String, Object> headers = object(response, "headers");
+                String responseName = operationId + " response " + status;
+                if (headers == null || !(headers.get("X-Request-Id") instanceof Map<?, ?>)) {
+                    missingHeaders.add(responseName);
+                    return;
+                }
+
+                Map<String, Object> requestIdHeader = object(headers, "X-Request-Id");
+                Map<String, Object> schema = object(requestIdHeader, "schema");
+                if (schema == null
+                        || !"string".equals(schema.get("type"))
+                        || !"uuid".equals(schema.get("format"))) {
+                    invalidSchemas.add(responseName);
+                }
+            });
+        }
+
+        assertThat(missingHeaders)
+                .as("responses missing the X-Request-Id header")
+                .isEmpty();
+        assertThat(invalidSchemas)
+                .as("X-Request-Id headers without a string/uuid schema")
+                .isEmpty();
+    }
+
+    @Test
     @DisplayName("REQ-ORATORIO-012, REQ-ORATORIO-ATT-011, REQ-ORATORIANO-012 and REQ-ORATORIANO-FORM-019 - accepted route catalog -> generated contract")
     void acceptedOratorioModuleRouteCatalogShouldBeGeneratedExactly() {
         Map<String, Object> paths = object(openApiContract().jsonPath().getMap("$"), "paths");

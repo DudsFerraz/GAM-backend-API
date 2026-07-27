@@ -77,7 +77,6 @@ class ManageSudoRoleIT extends PostgreSQLIntegrationTest {
                 "ACCOUNT_ROLE_ADDED",
                 accountId,
                 sudoRoleId,
-                SystemRole.SUDO.getCode(),
                 reason
         );
     }
@@ -118,7 +117,6 @@ class ManageSudoRoleIT extends PostgreSQLIntegrationTest {
                 "ACCOUNT_ROLE_REMOVED",
                 targetAccountId,
                 sudoRoleId,
-                SystemRole.SUDO.getCode(),
                 reason
         );
     }
@@ -334,7 +332,7 @@ class ManageSudoRoleIT extends PostgreSQLIntegrationTest {
 
     private long accountRoleActivityCount() {
         return Objects.requireNonNull(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM activity_logs WHERE target_type = 'ACCOUNT_ROLE'",
+                "SELECT COUNT(*) FROM activity_logs WHERE target_type = 'ACCOUNT_ROLE_ASSIGNMENT'",
                 Long.class
         ), "Expected account-role activity count");
     }
@@ -342,7 +340,7 @@ class ManageSudoRoleIT extends PostgreSQLIntegrationTest {
     private long accountRoleActivityCount(UUID assignmentId, String action) {
         return Objects.requireNonNull(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM activity_logs "
-                        + "WHERE target_type = 'ACCOUNT_ROLE' AND action = ? AND target_id = ?",
+                        + "WHERE target_type = 'ACCOUNT_ROLE_ASSIGNMENT' AND action = ? AND target_id = ?",
                 Long.class,
                 action,
                 assignmentId
@@ -354,21 +352,27 @@ class ManageSudoRoleIT extends PostgreSQLIntegrationTest {
             String action,
             UUID accountId,
             UUID roleId,
-            String roleName,
             String reason
     ) {
         Map<String, Object> activity = jdbcTemplate.queryForMap(
-                "SELECT action, reason, metadata ->> 'accountId' AS account_id, "
-                        + "metadata ->> 'roleId' AS role_id, metadata ->> 'roleName' AS role_name "
-                        + "FROM activity_logs WHERE target_type = 'ACCOUNT_ROLE' AND target_id = ?",
+                "SELECT action, actor_kind, actor_account_id, actor_reference, reason, "
+                        + "metadata ->> 'accountId' AS account_id, "
+                        + "metadata ->> 'roleId' AS role_id, "
+                        + "(metadata ->> 'systemManaged')::boolean AS system_managed "
+                        + "FROM activity_logs "
+                        + "WHERE target_type = 'ACCOUNT_ROLE_ASSIGNMENT' AND target_id = ?",
                 assignmentId
         );
 
         assertThat(activity)
                 .containsEntry("action", action)
+                .containsEntry("actor_kind", "DEVELOPER")
+                .containsEntry("actor_account_id", null)
                 .containsEntry("reason", reason)
                 .containsEntry("account_id", accountId.toString())
                 .containsEntry("role_id", roleId.toString())
-                .containsEntry("role_name", roleName);
+                .containsEntry("system_managed", true);
+        assertThat(activity.get("actor_reference")).isInstanceOf(String.class);
+        assertThat((String) activity.get("actor_reference")).isNotBlank();
     }
 }

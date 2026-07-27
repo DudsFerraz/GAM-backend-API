@@ -2,6 +2,7 @@ package br.org.gam.api.shared.activitylog;
 
 import br.org.gam.api.shared.activitylog.events.AccountRoleAddedActivity;
 import br.org.gam.api.shared.activitylog.events.AccountRoleRemovedActivity;
+import br.org.gam.api.shared.activitylog.events.AccountRegisteredActivity;
 import br.org.gam.api.shared.activitylog.events.DeveloperMaintenanceActivity;
 import br.org.gam.api.shared.activitylog.events.EventCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.EventChangedActivity;
@@ -12,7 +13,6 @@ import br.org.gam.api.shared.activitylog.events.ModuleActivity;
 import br.org.gam.api.shared.activitylog.events.MemberRegisteredActivity;
 import br.org.gam.api.shared.activitylog.events.MembershipSolicitationActivity;
 import java.util.HashMap;
-import br.org.gam.api.shared.activitylog.events.MissaCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.OratorioCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.PresenceRegisteredActivity;
 import br.org.gam.api.shared.activitylog.events.PresenceRemovedActivity;
@@ -20,7 +20,9 @@ import br.org.gam.api.shared.activitylog.events.PresenceUpdatedActivity;
 import br.org.gam.api.shared.activitylog.events.GamLocationCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.GamLocationRemovedActivity;
 import br.org.gam.api.shared.activitylog.events.GamLocationUpdatedActivity;
+import br.org.gam.api.rbac.role.domain.SystemRole;
 import java.util.Map;
+import java.util.UUID;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -36,7 +38,6 @@ public class ActivityLogEventListener {
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void handle(MemberStatusChangedActivity activity) {
         Map<String, Object> metadata = new HashMap<>(Map.of(
-                "memberId", activity.memberId(),
                 "accountId", activity.accountId(),
                 "previousStatus", activity.previousStatus(),
                 "newStatus", activity.newStatus(),
@@ -56,46 +57,37 @@ public class ActivityLogEventListener {
                 ActivityTargetType.MEMBER,
                 activity.memberId(),
                 activity.reason(),
-                "Member status changed from " + activity.previousStatus() + " to " + activity.newStatus(),
+                null,
                 metadata
         );
     }
 
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void handle(CoordinatorChangedActivity activity) {
-        String transition = activity.action() == ActivityAction.COORDINATOR_GRANTED ? "granted" : "revoked";
         activityLogger.log(
                 activity.action(),
                 ActivityTargetType.MEMBER,
                 activity.memberId(),
                 activity.reason(),
-                "Coordinator designation " + transition,
+                null,
                 Map.of(
-                        "memberId", activity.memberId(),
                         "accountId", activity.accountId(),
-                        "coordRoleId", activity.coordRoleId(),
-                        "roleChange", transition
+                        "roleId", activity.coordRoleId()
                 )
         );
     }
 
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void handle(OratorioCoordinatorChangedActivity activity) {
-        String transition = activity.action() == ActivityAction.ORATORIO_COORDINATOR_GRANTED
-                ? "granted"
-                : "revoked";
         activityLogger.log(
                 activity.action(),
                 ActivityTargetType.MEMBER,
                 activity.memberId(),
                 activity.reason(),
-                "Oratorio Coordinator designation " + transition,
+                null,
                 Map.of(
-                        "memberId", activity.memberId(),
                         "accountId", activity.accountId(),
-                        "roleId", activity.roleId(),
-                        "roleCode", activity.roleCode(),
-                        "transition", transition
+                        "roleId", activity.roleId()
                 )
         );
     }
@@ -115,7 +107,6 @@ public class ActivityLogEventListener {
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void handle(MemberRegisteredActivity activity) {
         Map<String, Object> metadata = new HashMap<>();
-        metadata.put("memberId", activity.memberId());
         metadata.put("accountId", activity.accountId());
         metadata.put("newStatus", "ACTIVE");
         if (activity.roleAddedId() != null) metadata.put("roleAddedId", activity.roleAddedId());
@@ -125,7 +116,7 @@ public class ActivityLogEventListener {
                 ActivityTargetType.MEMBER,
                 activity.memberId(),
                 activity.reason(),
-                "Member registered for account " + activity.accountId(),
+                null,
                 metadata
         );
     }
@@ -133,7 +124,6 @@ public class ActivityLogEventListener {
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void handle(MembershipSolicitationActivity activity) {
         Map<String, Object> metadata = new HashMap<>();
-        metadata.put("solicitationId", activity.solicitationId());
         metadata.put("applicantAccountId", activity.applicantAccountId());
         metadata.put("newStatus", activity.newStatus());
         if (activity.previousStatus() != null) metadata.put("previousStatus", activity.previousStatus());
@@ -146,63 +136,84 @@ public class ActivityLogEventListener {
                 ActivityTargetType.MEMBERSHIP_SOLICITATION,
                 activity.solicitationId(),
                 activity.reason(),
-                "Membership solicitation status is " + activity.newStatus(),
+                null,
                 metadata
         );
     }
 
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void handle(AccountRoleAddedActivity activity) {
-        activityLogger.log(
+        logAccountRoleActivity(
                 ActivityAction.ACCOUNT_ROLE_ADDED,
-                ActivityTargetType.ACCOUNT_ROLE,
                 activity.accountRoleId(),
+                activity.accountId(),
+                activity.roleId(),
+                activity.roleName(),
                 activity.reason(),
-                "Role " + activity.roleName() + " added to account " + activity.accountId(),
-                Map.of(
-                        "accountId", activity.accountId(),
-                        "roleId", activity.roleId(),
-                        "roleName", activity.roleName()
-                )
+                activity.actorKind()
         );
     }
 
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void handle(AccountRoleRemovedActivity activity) {
-        String roleName = activity.roleName() == null ? "" : activity.roleName();
-
-        activityLogger.log(
+        logAccountRoleActivity(
                 ActivityAction.ACCOUNT_ROLE_REMOVED,
-                ActivityTargetType.ACCOUNT_ROLE,
                 activity.accountRoleId(),
+                activity.accountId(),
+                activity.roleId(),
+                activity.roleName(),
                 activity.reason(),
-                "Role " + activity.roleId() + " removed from account " + activity.accountId(),
-                Map.of(
-                        "accountId", activity.accountId(),
-                        "roleId", activity.roleId(),
-                        "roleName", roleName
-                )
+                activity.actorKind()
+        );
+    }
+
+    private void logAccountRoleActivity(
+            ActivityAction action,
+            UUID accountRoleId,
+            UUID accountId,
+            UUID roleId,
+            String roleName,
+            String reason,
+            ActivityActorKind actorKind
+    ) {
+        Map<String, Object> metadata = Map.of(
+                "accountId", accountId,
+                "roleId", roleId,
+                "systemManaged", SystemRole.fromCode(roleName).isPresent()
+        );
+        if (actorKind == ActivityActorKind.DEVELOPER) {
+            activityLogger.logDeveloper(
+                    action,
+                    ActivityTargetType.ACCOUNT_ROLE_ASSIGNMENT,
+                    accountRoleId,
+                    reason,
+                    metadata
+            );
+            return;
+        }
+        activityLogger.log(
+                action,
+                ActivityTargetType.ACCOUNT_ROLE_ASSIGNMENT,
+                accountRoleId,
+                reason,
+                null,
+                metadata
         );
     }
 
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void handle(EventCreatedActivity activity) {
         Map<String, Object> metadata = new HashMap<>();
-        metadata.put("eventId", activity.eventId());
-        metadata.put("title", activity.title());
         metadata.put("type", activity.eventType().name());
-        metadata.put("eventType", activity.eventType().name());
         metadata.put("status", activity.status().name());
         metadata.put("gamLocationId", activity.gamLocationId());
-        if (activity.requiredPermissionId() != null) {
-            metadata.put("requiredPermissionId", activity.requiredPermissionId());
-        }
+        metadata.put("requiredPermissionId", activity.requiredPermissionId());
         activityLogger.log(
                 ActivityAction.EVENT_CREATED,
                 ActivityTargetType.EVENT,
                 activity.eventId(),
                 null,
-                "Event created: " + activity.title(),
+                null,
                 metadata
         );
     }
@@ -216,50 +227,29 @@ public class ActivityLogEventListener {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
-    public void handle(MissaCreatedActivity activity) {
-        activityLogger.log(
-                ActivityAction.MISSA_CREATED,
-                ActivityTargetType.MISSA,
-                activity.missaId(),
-                null,
-                "Missa created for event " + activity.eventId(),
-                Map.of(
-                        "missaId", activity.missaId(),
-                        "eventId", activity.eventId()
-                )
-        );
-    }
-
-    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void handle(OratorioCreatedActivity activity) {
         activityLogger.log(
                 ActivityAction.ORATORIO_CREATED,
                 ActivityTargetType.ORATORIO,
                 activity.oratorioId(),
                 null,
-                "Oratorio created for event " + activity.eventId(),
-                Map.of(
-                        "oratorioId", activity.oratorioId(),
-                        "eventId", activity.eventId()
-                )
+                null,
+                Map.of()
         );
     }
 
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void handle(PresenceRegisteredActivity activity) {
         Map<String, Object> metadata = new HashMap<>();
-        metadata.put("presenceId", activity.presenceId());
         metadata.put("memberId", activity.memberId());
         metadata.put("eventId", activity.eventId());
-        if (activity.observationsIncluded()) {
-            metadata.put("observations", activity.observations());
-        }
+        metadata.put("observationsPresent", activity.observations() != null);
         activityLogger.log(
                 ActivityAction.PRESENCE_REGISTERED,
                 ActivityTargetType.PRESENCE,
                 activity.presenceId(),
                 null,
-                "Presence registered for member " + activity.memberId() + " and event " + activity.eventId(),
+                null,
                 metadata
         );
     }
@@ -269,14 +259,14 @@ public class ActivityLogEventListener {
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("memberId", activity.memberId());
         metadata.put("eventId", activity.eventId());
-        metadata.put("previousObservations", activity.previousObservations());
-        metadata.put("newObservations", activity.newObservations());
+        metadata.put("previousObservationsPresent", activity.previousObservations() != null);
+        metadata.put("newObservationsPresent", activity.newObservations() != null);
         activityLogger.log(
                 ActivityAction.PRESENCE_UPDATED,
                 ActivityTargetType.PRESENCE,
                 activity.presenceId(),
                 null,
-                "Presence observations updated",
+                null,
                 metadata
         );
     }
@@ -286,13 +276,13 @@ public class ActivityLogEventListener {
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("memberId", activity.memberId());
         metadata.put("eventId", activity.eventId());
-        metadata.put("observations", activity.observations());
+        metadata.put("observationsPresent", activity.observations() != null);
         activityLogger.log(
                 ActivityAction.PRESENCE_REMOVED,
                 ActivityTargetType.PRESENCE,
                 activity.presenceId(),
                 activity.reason(),
-                "Presence removed",
+                null,
                 metadata
         );
     }
@@ -304,7 +294,7 @@ public class ActivityLogEventListener {
                 ActivityTargetType.GAM_LOCATION,
                 activity.locationId(),
                 null,
-                "GamLocation created",
+                null,
                 Map.of()
         );
     }
@@ -316,7 +306,7 @@ public class ActivityLogEventListener {
                 ActivityTargetType.GAM_LOCATION,
                 activity.locationId(),
                 null,
-                "GamLocation updated",
+                null,
                 Map.of("changedFields", activity.changedFields())
         );
     }
@@ -328,20 +318,58 @@ public class ActivityLogEventListener {
                 ActivityTargetType.GAM_LOCATION,
                 activity.locationId(),
                 activity.reason(),
-                "GamLocation removed",
-                Map.of("name", activity.name())
+                null,
+                Map.of()
         );
     }
 
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void handle(DeveloperMaintenanceActivity activity) {
+        if (activity.action() == ActivityAction.DEVELOPER_VIEWED_SOFT_DELETED_RECORDS) {
+            activityLogger.logScope(
+                    activity.action(),
+                    targetTypeForTable(activity.table()),
+                    "SOFT_DELETED_RECORDS",
+                    activity.reason(),
+                    activity.metadata()
+            );
+            return;
+        }
         activityLogger.log(
                 activity.action(),
-                ActivityTargetType.MAINTENANCE_RECORD,
+                targetTypeForTable(activity.table()),
                 activity.targetId(),
                 activity.reason(),
-                activity.summary(),
-                activity.metadata()
+                null,
+                Map.of()
         );
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    public void handle(AccountRegisteredActivity activity) {
+        activityLogger.logAnonymous(
+                ActivityAction.ACCOUNT_REGISTERED,
+                ActivityTargetType.ACCOUNT,
+                activity.accountId(),
+                null,
+                Map.of()
+        );
+    }
+
+    private ActivityTargetType targetTypeForTable(String table) {
+        return switch (table) {
+            case "accounts" -> ActivityTargetType.ACCOUNT;
+            case "roles" -> ActivityTargetType.ROLE;
+            case "permissions" -> ActivityTargetType.PERMISSION;
+            case "account_roles" -> ActivityTargetType.ACCOUNT_ROLE_ASSIGNMENT;
+            case "role_permissions" -> ActivityTargetType.ROLE_PERMISSION_ASSIGNMENT;
+            case "gam_locations" -> ActivityTargetType.GAM_LOCATION;
+            case "events" -> ActivityTargetType.EVENT;
+            case "members" -> ActivityTargetType.MEMBER;
+            case "presences" -> ActivityTargetType.PRESENCE;
+            case "oratorios" -> ActivityTargetType.ORATORIO;
+            case "oratorianos" -> ActivityTargetType.ORATORIANO;
+            default -> throw new IllegalArgumentException("Unsupported activity target table: " + table);
+        };
     }
 }

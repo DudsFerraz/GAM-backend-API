@@ -24,6 +24,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -33,6 +34,7 @@ import org.mockito.Mock;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -162,6 +164,40 @@ class AddAccountRoleTest {
                     savedEntity.getId(), account.getId(), role.getId(), role.getName(), reason);
         }
 
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("validUnicodeReasons")
+        @DisplayName("REQ-ACTIVITY-008 and REQ-ACCOUNT-ROLE-005 - Unicode reason boundary -> normalized once")
+        void unicodeReasonBoundaryShouldBeAcceptedAndNormalized(
+                String scenario,
+                String submittedReason,
+                String normalizedReason
+        ) {
+            AccountEntity account = account();
+            RoleEntity role = role();
+            AccountRoleDTO dto = new AccountRoleDTO(account.getId(), role.getId(), submittedReason);
+            AccountRoleEntity savedEntity = new AccountRoleEntity();
+            savedEntity.setId(UUID.randomUUID());
+            AccountRoleRDTO expectedResponse = response(role.getId());
+
+            when(getAccountInstance.requiredById(account.getId())).thenReturn(account);
+            when(getRoleInstance.requiredById(role.getId())).thenReturn(role);
+            when(accountRoleRepo.existsByAccount_IdAndRole_Id(account.getId(), role.getId())).thenReturn(false);
+            when(accountRoleRepo.save(anyAccountRoleEntity())).thenReturn(savedEntity);
+            when(accountRoleMapper.entityToRDTO(savedEntity)).thenReturn(expectedResponse);
+
+            assertThatCode(() -> addAccountRole.byDTO(dto))
+                    .as(scenario)
+                    .doesNotThrowAnyException();
+
+            verify(activityEvents).accountRoleAdded(
+                    savedEntity.getId(),
+                    account.getId(),
+                    role.getId(),
+                    role.getName(),
+                    normalizedReason
+            );
+        }
+
         @Test
         @DisplayName("REQ-ACCOUNT-ROLE-007 and ADR-0004 - generic add exposes no audit or safety bypass")
         void genericAddShouldNotExposeAuditOrSafetyBypass() {
@@ -253,6 +289,33 @@ class AddAccountRoleTest {
         private static Stream<String> invalidReasons() {
             return Stream.of(null, "", " \n\t", "a".repeat(2_001));
         }
+
+        private static Stream<Arguments> validUnicodeReasons() {
+            String boundary = unicodeWhiteSpaceBoundary();
+            String supplementaryReason = "🙏".repeat(2_000);
+            return Stream.of(
+                    Arguments.of(
+                            "complete Unicode White_Space boundary around 2,000 supplementary code points",
+                            boundary + supplementaryReason + boundary,
+                            supplementaryReason
+                    ),
+                    Arguments.of(
+                            "U+001C is retained because it is not Unicode White_Space",
+                            " \u001C ",
+                            "\u001C"
+                    )
+            );
+        }
+    }
+
+    private static String unicodeWhiteSpaceBoundary() {
+        return Stream.of(
+                        0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x0020, 0x0085, 0x00A0, 0x1680,
+                        0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008,
+                        0x2009, 0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000
+                )
+                .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append)
+                .toString();
     }
 
     private static AccountEntity account() {

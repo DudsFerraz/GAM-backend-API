@@ -4,6 +4,7 @@ import br.org.gam.api.event.domain.EventStatus;
 import br.org.gam.api.event.domain.EventType;
 import br.org.gam.api.shared.activitylog.events.AccountRoleAddedActivity;
 import br.org.gam.api.shared.activitylog.events.AccountRoleRemovedActivity;
+import br.org.gam.api.shared.activitylog.events.AccountRegisteredActivity;
 import br.org.gam.api.shared.activitylog.events.DeveloperMaintenanceActivity;
 import br.org.gam.api.shared.activitylog.events.EventCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.EventChangedActivity;
@@ -15,7 +16,6 @@ import br.org.gam.api.shared.activitylog.events.MemberRegisteredActivity;
 import br.org.gam.api.shared.activitylog.events.MembershipSolicitationActivity;
 import br.org.gam.api.rbac.role.application.RoleEntityLoader;
 import br.org.gam.api.rbac.role.domain.SystemRole;
-import br.org.gam.api.shared.activitylog.events.MissaCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.OratorioCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.PresenceRegisteredActivity;
 import br.org.gam.api.shared.activitylog.events.PresenceRemovedActivity;
@@ -159,13 +159,25 @@ public class ActivityEvents {
     }
 
     public void accountRoleAdded(UUID accountRoleId, UUID accountId, UUID roleId, String roleName, String reason) {
-        applicationEventPublisher.publishEvent(
-                new AccountRoleAddedActivity(accountRoleId, accountId, roleId, roleName, reason));
+        applicationEventPublisher.publishEvent(new AccountRoleAddedActivity(
+                accountRoleId, accountId, roleId, roleName, reason, accountRoleActorKind(roleName)
+        ));
+    }
+
+    public void accountRegistered(UUID accountId) {
+        applicationEventPublisher.publishEvent(new AccountRegisteredActivity(accountId));
     }
 
     public void accountRoleRemoved(UUID accountRoleId, UUID accountId, UUID roleId, String roleName, String reason) {
-        applicationEventPublisher.publishEvent(
-                new AccountRoleRemovedActivity(accountRoleId, accountId, roleId, roleName, reason));
+        applicationEventPublisher.publishEvent(new AccountRoleRemovedActivity(
+                accountRoleId, accountId, roleId, roleName, reason, accountRoleActorKind(roleName)
+        ));
+    }
+
+    private ActivityActorKind accountRoleActorKind(String roleName) {
+        return SystemRole.SUDO.getCode().equals(roleName)
+                ? ActivityActorKind.DEVELOPER
+                : ActivityActorKind.ACCOUNT;
     }
 
     public void eventCreated(UUID eventId, String title, EventType eventType, EventStatus status, UUID gamLocationId,
@@ -182,7 +194,7 @@ public class ActivityEvents {
     }
 
     public void missaCreated(UUID missaId, UUID eventId) {
-        applicationEventPublisher.publishEvent(new MissaCreatedActivity(missaId, eventId));
+        // Missa auditing remains deferred until its owning Requirement Specification registers an action.
     }
 
     public void oratorioCreated(UUID oratorioId, UUID eventId) {

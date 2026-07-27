@@ -95,7 +95,7 @@ public class OratorianoRecords {
                     entity.getId(),
                     null,
                     "Oratoriano registered",
-                    Map.of("oratorianoId", entity.getId())
+                    Map.of()
             );
         }
         return toRDTO(entity);
@@ -168,7 +168,7 @@ public class OratorianoRecords {
                 id,
                 reason,
                 "Oratoriano ordinary profile corrected",
-                Map.of("oratorianoId", id, "changedFields", List.copyOf(changedFields))
+                Map.of("changedFields", List.copyOf(changedFields))
         );
         return toRDTO(entity);
     }
@@ -226,7 +226,7 @@ public class OratorianoRecords {
                 id,
                 reason,
                 "Oratoriano deleted",
-                Map.of("oratorianoId", id)
+                Map.of()
         );
     }
 
@@ -257,7 +257,7 @@ public class OratorianoRecords {
                 id,
                 reason,
                 "Oratoriano restored",
-                Map.of("oratorianoId", id)
+                Map.of()
         );
     }
 

@@ -238,15 +238,14 @@ class PersistenceAuditingContractIT extends PostgreSQLIntegrationTest {
         Timestamp occurredAt = Timestamp.from(Instant.parse("2026-04-03T02:01:00Z"));
         jdbcTemplate.update(
                 "INSERT INTO activity_logs "
-                        + "(id, occurred_at, actor_account_id, action, target_type, target_id, reason) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        + "(id, occurred_at, actor_kind, actor_account_id, action, "
+                        + "target_type, target_id, reason, metadata) "
+                        + "VALUES (?, ?, 'ACCOUNT', ?, 'GAM_LOCATION_CREATED', "
+                        + "'GAM_LOCATION', ?, NULL, '{}'::jsonb)",
                 activityId,
                 occurredAt,
                 actor.getId(),
-                "PERSISTENCE_CONTRACT",
-                "ACCOUNT",
-                targetId,
-                "Preserve immutable activity attribution"
+                targetId
         );
 
         jdbcTemplate.update("DELETE FROM accounts WHERE id = ?", actor.getId());

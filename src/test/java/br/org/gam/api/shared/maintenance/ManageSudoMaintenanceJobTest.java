@@ -11,6 +11,8 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mock;
@@ -151,6 +153,32 @@ class ManageSudoMaintenanceJobTest {
 
         verify(accountEntityLoader).requiredByEmail(GamEmail.of(email));
         verify(manageSudoRole).removeSudo(accountId, "Remove recovery access");
+    }
+
+    @Test
+    @ResourceLock(Resources.SYSTEM_PROPERTIES)
+    @DisplayName("REQ-ACCOUNT-ROLE-009/010 - unavailable Developer attribution -> email lookup and role management do not run")
+    void unavailableDeveloperAttributionShouldFailBeforeEmailLookupOrRoleManagement() {
+        ManageSudoMaintenanceJob job = newJob();
+        String previousUserName = System.getProperty("user.name");
+        System.setProperty("user.name", "");
+        try {
+            assertThatThrownBy(() -> job.run(arguments(
+                    "remove-sudo",
+                    "Remove recovery access",
+                    null,
+                    "account@example.com"
+            ))).isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("A trusted Developer actor reference is required.");
+
+            verifyNoInteractions(accountEntityLoader, manageSudoRole);
+        } finally {
+            if (previousUserName == null) {
+                System.clearProperty("user.name");
+            } else {
+                System.setProperty("user.name", previousUserName);
+            }
+        }
     }
 
     @Test

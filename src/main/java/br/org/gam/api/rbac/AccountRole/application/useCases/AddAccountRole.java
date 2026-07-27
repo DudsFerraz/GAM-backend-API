@@ -12,8 +12,8 @@ import br.org.gam.api.rbac.role.persistence.RoleEntity;
 import br.org.gam.api.rbac.application.RbacSafetyPolicy;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.shared.exception.ConflictException;
-import br.org.gam.api.shared.exception.InvalidCommandException;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
+import br.org.gam.api.shared.validation.RequiredReason;
 import jakarta.transaction.Transactional;
 import java.util.UUID;
 import java.util.HashSet;
@@ -88,15 +88,6 @@ public class AddAccountRole {
     }
 
     private String requiredAuditReason(String reason) {
-        if (reason == null) {
-            throw InvalidCommandException.reason("Account role changes require an audit reason.");
-        }
-
-        String normalizedReason = reason.strip();
-        if (normalizedReason.isEmpty()
-                || normalizedReason.codePointCount(0, normalizedReason.length()) > 2_000) {
-            throw InvalidCommandException.reason("Account role changes require an audit reason.");
-        }
-        return normalizedReason;
+        return RequiredReason.normalize(reason, "Account role changes require an audit reason.");
     }
 }
