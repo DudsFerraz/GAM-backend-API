@@ -238,7 +238,7 @@ These routes shall manage only type `GENERIC`. Targeting any other type shall re
 
 ### REQ-EVENT-013: Status-command reason and activity contract
 
-Cancellation and reopening reasons shall be trimmed and contain 1 to 2,000 characters. Missing, null, blank, oversized, or structurally invalid reasons shall return `400 Bad Request` before mutation.
+Cancellation and reopening reasons shall use the Unicode whitespace normalization and 1-to-2,000-code-point limits in `REQ-ACTIVITY-008`. Missing, null, blank, oversized, or structurally invalid reasons shall return `400 Bad Request` before mutation.
 
 Successful status commands shall emit exactly one activity in the same transaction:
 
@@ -275,7 +275,7 @@ Editing shall require `EVENT_MANAGE` and visibility under the Event's current au
 
 When the replacement selects a non-null audience permission, the caller shall also hold that new exact permission. A caller that can view and manage the current Event but lacks the new audience permission shall receive `403 Forbidden` without mutation.
 
-The optional update `reason`, when supplied, shall follow the normalized 1-to-2,000-character rule. A reason shall be mandatory when normalized `requiredPermissionId` changes, including public-to-restricted, restricted-to-public, and one restricted audience to another. Other changes shall not require a reason.
+The optional update `reason`, when supplied, shall follow the Unicode whitespace normalization and 1-to-2,000-code-point limits in `REQ-ACTIVITY-008`. A reason shall be mandatory when normalized `requiredPermissionId` changes, including public-to-restricted, restricted-to-public, and one restricted audience to another. For other changed updates, the reason shall be optional.
 
 A changed update shall return `200 OK`, the complete Event representation, and one transactional `EVENT_UPDATED` activity. Metadata shall list the normalized mutable field names that changed; when date changes alter effective status, metadata shall also contain `fromStatus` and `toStatus`. The activity shall store the normalized reason when supplied.
 
@@ -334,9 +334,29 @@ Removed Presences shall not block Event deletion. Their historical records, acti
 
 Deletion shall require `EVENT_MANAGE`, current audience visibility, and a JSON body containing a normalized 1-to-2,000-character `reason`. Missing permission shall return `403`; missing visibility, a missing Event, or an already soft-deleted Event shall return `404 RESOURCE_NOT_FOUND`.
 
-Successful deletion shall return `204 No Content` and emit one `EVENT_DELETED` activity in the same transaction. The activity shall target the Event UUID, store the required reason, and include `type`, prior effective `status`, and `gamLocationId` metadata. It shall not copy the Event title or description. Activity failure shall roll back deletion.
+Successful deletion shall return `204 No Content` and emit one `EVENT_DELETED` activity in the same transaction. The activity shall target the Event UUID, store the required reason, and include `type`, prior effective `status` as `fromStatus`, and `gamLocationId` metadata. It shall not copy the Event title or description. Activity failure shall roll back deletion.
 
 A soft-deleted Event shall be excluded from common get and search. It shall continue to count as a historical GamLocation reference under `REQ-GAM-LOCATION-010`. Restoration and hard deletion remain developer-maintenance concerns.
+
+---
+
+### REQ-EVENT-020: Closed Generic Event activity contract
+
+Every activity emitted by the Generic Event workflows in this specification shall use a resource target with top-level `targetType` equal to `EVENT`, top-level `targetId` equal to the affected Event UUID, and no `targetScope`.
+
+The reason mode and exact closed metadata schema shall be:
+
+| Action | Reason mode | Exact metadata schema |
+| --- | --- | --- |
+| `EVENT_CREATED` | `NONE` | `type`: Event type; `status`: initial effective status; `gamLocationId`: GamLocation UUID; `requiredPermissionId`: Permission UUID or `null`. |
+| `EVENT_UPDATED` | `CONDITIONAL`: `REQUIRED` when normalized `requiredPermissionId` changes; `OPTIONAL` for every other changed update | `changedFields`: non-empty array of distinct stable mutable-field names; plus `fromStatus` and `toStatus`, both present only when a date change alters effective status. |
+| `EVENT_CANCELLED` | `REQUIRED` | `fromStatus`: prior effective status; `toStatus`: resulting effective status. |
+| `EVENT_LOCKED` | `NONE` | `fromStatus`: prior effective status; `toStatus`: resulting effective status. |
+| `EVENT_FINALIZED` | `NONE` | `fromStatus`: prior effective status; `toStatus`: resulting effective status. |
+| `EVENT_REOPENED` | `REQUIRED` | `fromStatus`: prior effective status; `toStatus`: resulting effective status. |
+| `EVENT_DELETED` | `REQUIRED` | `type`: Event type; `fromStatus`: prior effective status; `gamLocationId`: GamLocation UUID. |
+
+The stable mutable-field names allowed in `EVENT_UPDATED.changedFields` are exactly `title`, `description`, `gamLocationId`, `requiredPermissionId`, `beginDate`, and `endDate`. Their array order shall follow that order, independent of request-field order. No Event activity metadata shall copy title, description, reason, actor, target Event UUID, occurrence time, or request identifier.
 
 ## Acceptance scenarios
 
@@ -431,6 +451,21 @@ Scenario: Audience-changing update requires a reason and new visibility
   When the caller replaces requiredPermissionId with EVENT_GET_COORD and supplies a valid reason
   Then the response is 200 OK
   And one EVENT_UPDATED activity stores the reason
+
+Scenario: Other changed updates allow an optional reason
+  Given a visible editable Generic Event exists
+  And the caller has EVENT_MANAGE
+  When the caller changes only the title and omits the reason
+  Then the response is 200 OK
+  And one EVENT_UPDATED activity has a null reason
+  And its metadata contains exactly changedFields with the single value title
+
+Scenario: Status metadata appears only as a pair
+  Given a visible editable Generic Event is SCHEDULED
+  And the caller has EVENT_MANAGE
+  When the caller changes endDate so the Event becomes COMPLETED
+  Then one EVENT_UPDATED activity contains changedFields, fromStatus, and toStatus
+  And an update that does not alter effective status contains neither fromStatus nor toStatus
 
 Scenario: Locked Event cannot be rescheduled
   Given a visible Generic Event is LOCKED

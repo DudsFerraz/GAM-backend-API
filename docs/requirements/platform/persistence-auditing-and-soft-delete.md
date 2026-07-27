@@ -294,7 +294,16 @@ The system shall not create a generic activity entry for every database write. O
 
 Any developer-controlled restoration or physical deletion of a soft-deletable domain record shall require an explicit reason and append an immutable maintenance activity in the same transaction. The maintenance command or interface shape shall remain outside this specification.
 
-Any Developer inspection that deliberately bypasses ordinary deleted-row filtering shall require an explicit reason and a trusted Developer actor reference. Its immutable maintenance activity shall identify the inspected domain resource type through a scope target and shall commit before deleted records are disclosed.
+Any Developer inspection that deliberately bypasses ordinary deleted-row filtering shall require an explicit reason and a trusted Developer actor reference. Each invocation shall inspect one registered domain resource type and shall emit one `DEVELOPER_VIEWED_SOFT_DELETED_RECORDS` activity with:
+
+- `actorKind` equal to `DEVELOPER` and the trusted Developer reference in top-level `actorReference`;
+- the inspected domain resource type in top-level `targetType`;
+- no `targetId`;
+- top-level `targetScope` equal to the exact stable value `SOFT_DELETED_RECORDS`;
+- a `REQUIRED` top-level reason normalized under `REQ-ACTIVITY-008`; and
+- metadata containing exactly `count`, whose value is a non-negative integer equal to the number of soft-deleted records disclosed.
+
+The activity shall not contain a database table name or other persistence identifier. An inspection that finds zero records shall still record `count` as `0`. The activity shall commit before any matching deleted records are disclosed; if activity validation or persistence fails, no deleted record shall be disclosed.
 
 Restoration and physical-deletion maintenance activities shall target the actual domain resource type and real UUID rather than a database table or generic maintenance record. Actor, target, reason, metadata, and append-only behavior shall follow the Activity Audit Log Requirement Specification.
 
@@ -393,7 +402,19 @@ Scenario: Exceptional maintenance requires accountability
 Scenario: Inspect soft-deleted records with a reason
   Given a Developer is authorized to inspect one domain resource type outside ordinary deleted-row filtering
   When the Developer supplies a valid reason and trusted actor reference
-  Then a scope-targeted maintenance activity commits before any deleted record is disclosed
+  Then one DEVELOPER_VIEWED_SOFT_DELETED_RECORDS activity commits before any deleted record is disclosed
+  And its targetType is the inspected domain resource type
+  And its targetScope is SOFT_DELETED_RECORDS
+  And it has no targetId
+  And its metadata contains exactly the non-negative count of disclosed records
+  And it contains no database table name
+
+Scenario: Empty deleted-record inspection remains accountable
+  Given a Developer is authorized to inspect one domain resource type outside ordinary deleted-row filtering
+  And that resource type has no soft-deleted records
+  When the Developer supplies a valid reason and trusted actor reference
+  Then one DEVELOPER_VIEWED_SOFT_DELETED_RECORDS activity commits with count 0
+  And no deleted record is disclosed
 ```
 
 ## Diagrams

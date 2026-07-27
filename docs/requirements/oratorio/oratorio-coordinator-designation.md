@@ -41,9 +41,13 @@ Granting shall require a consistent active-Member projection without an active `
 
 ### REQ-ORATORIO-COORD-003: Required reason and activity
 
-Manual grant and revoke operations shall require a normalized reason containing 1 to 2,000 characters.
+Manual grant and revoke operations shall require a reason using the Unicode whitespace normalization and 1-to-2,000-code-point limits in `REQ-ACTIVITY-008`.
 
-A successful grant shall emit one `ORATORIO_COORDINATOR_GRANTED` activity. A successful revoke shall emit one `ORATORIO_COORDINATOR_REVOKED` activity. Each activity shall target the affected Member and identify the linked Account, Role, transition, actor, and reason without emitting duplicate low-level Account-role activities.
+A successful grant shall emit one `ORATORIO_COORDINATOR_GRANTED` activity. A successful revoke shall emit one `ORATORIO_COORDINATOR_REVOKED` activity.
+
+Each activity shall use a resource target with top-level `targetType` equal to `MEMBER`, top-level `targetId` equal to the affected Member UUID, and no `targetScope`. It shall use the authenticated Account in the top-level actor fields, the required normalized reason in top-level `reason`, and HTTP correlation in top-level `requestId`.
+
+Its metadata shall contain exactly `accountId`, equal to the linked Account UUID, and `roleId`, equal to the ORATORIO_COORD Role UUID. Metadata shall not repeat the Member UUID, transition, action, actor, reason, occurrence time, or request identifier; the target and action already identify the affected Member and grant or revoke transition. The workflow shall not emit duplicate low-level Account-role activities.
 
 The Role mutation and activity shall commit atomically.
 

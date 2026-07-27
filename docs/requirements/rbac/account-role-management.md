@@ -201,9 +201,9 @@ Invalid examples:
 
 ### REQ-ACCOUNT-ROLE-005: Required and bounded audit reason
 
-The `reason` field shall be required for direct Account-role add and drop requests and for SUDO maintenance assignment and removal commands. The system shall trim leading and trailing whitespace before validation and audit logging.
+The `reason` field shall be required for direct Account-role add and drop requests and for SUDO maintenance assignment and removal commands. It shall use the Unicode whitespace normalization in `REQ-ACTIVITY-008` before validation and audit logging.
 
-After trimming, `reason` shall contain between 1 and 2,000 characters. For direct HTTP requests, a null, empty, whitespace-only, or over-2,000-character reason shall return `400 Bad Request`. For SUDO maintenance commands, the same invalid values shall reject the command before Account or Role loading, data mutation, or activity-event publication.
+After normalization, `reason` shall contain between 1 and 2,000 Unicode code points. For direct HTTP requests, a null, empty, whitespace-only, or over-2,000-code-point reason shall return `400 Bad Request`. For SUDO maintenance commands, the same invalid values shall reject the command before Account or Role loading, data mutation, or activity-event publication.
 
 The maximum is an application-level request limit. The current `activity_logs.reason` database column is `TEXT` and therefore does not define a smaller numeric column limit.
 
@@ -293,7 +293,9 @@ The system shall make SUDO assignment and removal available only through the ded
 
 The HTTP Account-role API and ordinary application workflows shall reject SUDO assignment and removal with a forbidden-operation outcome. The dedicated maintenance workflow shall support only the `assign-sudo` and `remove-sudo` actions.
 
-The maintenance workflow shall establish a trusted, stable, non-secret Developer actor reference according to `REQ-ACTIVITY-006`. It shall reject the command before mutation when that reference is unavailable. The reference shall not be taken from the Account selector, reason, activity metadata, or another arbitrary command value.
+After command-shape, selector-syntax, and reason validation succeeds, the maintenance workflow shall establish a trusted, stable, non-secret Developer actor reference according to `REQ-ACTIVITY-006`. It shall do so before loading the selected Account, SUDO Role, or Account-role assignment and before any mutation or activity publication.
+
+If the reference is unavailable or invalid, the workflow shall stop with the unexpected application or configuration failure outcome and exit code `1`. It shall perform no Account, Role, or assignment lookup, no mutation, and no activity publication. The reference shall not be taken from the Account selector, reason, activity metadata, or another arbitrary command value.
 
 Rationale:
 SUDO grants unrestricted system access and must not be manageable through ordinary authenticated administration or an accidental general-purpose application path.
@@ -458,8 +460,9 @@ When an invocation contains more than one defect, validation and outcome precede
 1. required maintenance profile/job, supported action, supported options, and single-value option cardinality;
 2. exactly one Account selector and valid selector syntax;
 3. normalized audit-reason validation;
-4. active Account resolution; and
-5. action-specific state: duplicate assignment, missing assignment, and last-SUDO protection.
+4. trusted Developer actor-reference resolution;
+5. active Account and SUDO Role resolution; and
+6. action-specific assignment state: duplicate assignment, missing assignment, and last-SUDO protection.
 
 No later lookup or mutation shall run after an earlier-precedence failure.
 
@@ -650,6 +653,14 @@ Scenario: Successful SUDO maintenance has an observable outcome
   Then the command prints SUDO_MAINTENANCE_OK with the action and Account UUID
   And the process exits with code 0
   And the activity actor is DEVELOPER with the trusted Developer actor reference
+
+Scenario: Missing Developer attribution fails before lookup
+  Given a SUDO maintenance command has valid shape, selector syntax, and reason
+  And the trusted Developer actor reference is unavailable
+  When the maintenance command runs
+  Then the process exits with code 1 for an unexpected application or configuration failure
+  And no Account, Role, or assignment lookup occurs
+  And no mutation or activity event occurs
 
 Scenario: Expected SUDO maintenance failure has a stable error outcome
   Given a valid assign-sudo command targets an Account that already has active SUDO

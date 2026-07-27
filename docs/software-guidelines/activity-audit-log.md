@@ -88,9 +88,9 @@ Expose the four cross-domain reason modes in one reusable policy type:
 - `REQUIRED`; and
 - `CONDITIONAL`.
 
-The action's owning feature requirement assigns the mode and, for `CONDITIONAL`, supplies the condition. Do not derive reason policy from naming conventions such as `_DELETED`.
+The action's owning feature requirement assigns the mode and, for `CONDITIONAL`, supplies the condition and the `NONE`, `OPTIONAL`, or `REQUIRED` mode selected by each outcome. Do not derive reason policy from naming conventions such as `_DELETED`.
 
-Normalize every supplied reason once by trimming surrounding Unicode whitespace and measuring 1 through 2,000 Unicode code points. Reuse that normalized value when the workflow also stores it in domain state.
+Normalize every supplied reason once by removing only leading and trailing code points with the Unicode `White_Space` property, preserving internal whitespace, and measuring 1 through 2,000 Unicode code points afterward. Cover the complete property, including no-break space, narrow no-break space, and ideographic space; do not use an ASCII-only trim or measure UTF-16 code units, bytes, or grapheme clusters. Reuse that normalized value when the workflow also stores it in domain state.
 
 Do not invent fallback reasons.
 

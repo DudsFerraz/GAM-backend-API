@@ -248,6 +248,10 @@ Baseline `COORD` and `ORATORIO_COORD` shall receive all four. Baseline `MEMBER` 
 
 Every form-detail read, print-snapshot creation, generated-PDF rendering/download, and signed-attachment download shall emit a sensitive-read audit containing actor Account, Oratoriano UUID, form UUID, action, and timestamp. Print operations shall also identify the print-snapshot UUID. The audit shall never copy sensitive field values or bytes.
 
+For a form-detail read, generated-PDF rendering/download, or signed-attachment download, the required activity shall commit before any protected form details, PDF bytes, or attachment bytes are returned. If activity validation or persistence fails, the operation shall return none of that protected content.
+
+Print-snapshot creation and its activity shall commit atomically before the created snapshot response or rendered content is returned. If its activity cannot commit, snapshot creation shall roll back and no protected response or content shall be returned.
+
 Ordinary Oratorio, attendance, Oratoriano search, and metadata-history reads shall not emit sensitive-read audits.
 
 ---
@@ -365,14 +369,19 @@ Scenario: Draft deletion removes draft-owned artifacts from ordinary access
 Scenario: Sensitive download is audited
   Given an authorized user downloads a signed attachment
   When the bytes are returned
-  Then one sensitive-read audit identifies the actor and target UUIDs
+  Then one sensitive-read audit has already committed and identifies the actor and target UUIDs
   And no sensitive values or bytes are copied into the audit
 
 Scenario: Prefilled PDF rendering is audited
   Given an authorized user renders a prefilled print snapshot
   When the PDF is returned
-  Then one sensitive-read audit identifies the actor, form, Oratoriano, and print snapshot
+  Then one sensitive-read audit has already committed and identifies the actor, form, Oratoriano, and print snapshot
   And no form values or PDF bytes are copied into the audit
+
+Scenario: Sensitive content is withheld when auditing fails
+  Given an authorized user requests form detail, generated PDF bytes, or signed-attachment bytes
+  When the required sensitive-read activity cannot commit
+  Then no protected form details, PDF bytes, or attachment bytes are returned
 
 Scenario: Revocation does not roll back the ordinary profile
   Given a completed form synchronized profile fields

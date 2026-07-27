@@ -170,9 +170,11 @@ Every registered action's owning Requirement Specification shall assign one reas
 | `NONE` | A reason shall not be accepted or persisted. |
 | `OPTIONAL` | A reason may be omitted; a supplied reason shall normalize successfully. |
 | `REQUIRED` | A reason shall be supplied and normalize successfully. |
-| `CONDITIONAL` | The owner shall define the exact condition under which the reason is required or absent. |
+| `CONDITIONAL` | The owner shall define the exact condition and the `NONE`, `OPTIONAL`, or `REQUIRED` mode selected by each outcome of that condition. |
 
-Every non-null reason shall be normalized by trimming surrounding Unicode whitespace and shall contain from 1 through 2,000 Unicode code points after trimming. Blank or overlong values shall be rejected whenever a reason is supplied.
+Every non-null reason shall be normalized by removing only leading and trailing code points with the Unicode `White_Space` property. This includes, among the code points defined by that property, ordinary space, tab and line-separator characters, no-break space, narrow no-break space, and ideographic space. Internal code points, including internal Unicode whitespace, shall remain unchanged.
+
+After that normalization, the reason shall contain from 1 through 2,000 Unicode code points. Blank or overlong values shall be rejected whenever a reason is supplied. Implementations shall not substitute an ASCII-only trim operation or count UTF-16 code units, bytes, or grapheme clusters.
 
 The system shall persist the normalized reason once. When the same reason also belongs to a domain record, the workflow shall reuse the same normalized value rather than independently normalizing divergent copies.
 

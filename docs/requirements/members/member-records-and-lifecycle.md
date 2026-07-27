@@ -509,7 +509,7 @@ Coordinator revoke shall require an active Coordinator with active `MEMBER`, act
 
 Granting Coordinator designation when COORD is already active, revoking when COORD is absent, or granting to an inactive Member shall return `409 Conflict`. Any other inconsistent `MEMBER`/`VISITOR`/`COORD` projection shall also return `409 Conflict`; the Coordinator routes shall not repair inconsistent data.
 
-The `reason` field shall be required. The system shall trim leading and trailing whitespace and require between 1 and 2,000 characters after trimming. A missing, null, empty, whitespace-only, or over-2,000-character reason shall return `400 Bad Request` before Member, Account, Role, assignment, or activity-log loading for mutation.
+The `reason` field shall be required and shall use the Unicode whitespace normalization and 1-to-2,000-code-point limits in `REQ-ACTIVITY-008`. A missing, null, empty, whitespace-only, or over-2,000-code-point normalized reason shall return `400 Bad Request` before Member, Account, Role, assignment, or activity-log loading for mutation.
 
 Each successful transition shall emit exactly one high-level activity event:
 
@@ -518,7 +518,11 @@ Each successful transition shall emit exactly one high-level activity event:
 | Coordinator grant | `COORDINATOR_GRANTED` |
 | Coordinator revoke | `COORDINATOR_REVOKED` |
 
-The event target type and identifier shall be the affected `MEMBER` and Member UUID. The event shall capture the actor Account, linked Account identifier, COORD Role identifier, Role change, normalized reason, and request metadata according to the activity-audit policy. The business mutation and activity-log row shall commit together. The workflow shall not emit `ACCOUNT_ROLE_ADDED` or `ACCOUNT_ROLE_REMOVED`. Failed transitions shall emit no activity event.
+The event shall use a resource target with top-level `targetType` equal to `MEMBER`, top-level `targetId` equal to the affected Member UUID, and no `targetScope`. It shall use the authenticated Account in the top-level actor fields, the required normalized reason in top-level `reason`, and HTTP correlation in top-level `requestId`.
+
+Its metadata shall contain exactly `accountId`, equal to the linked Account UUID, and `roleId`, equal to the COORD Role UUID. Metadata shall not repeat the Member UUID, transition, action, actor, reason, occurrence time, or request identifier; the target and action already identify the affected Member and grant or revoke transition.
+
+The business mutation and activity-log row shall commit together. The workflow shall not emit `ACCOUNT_ROLE_ADDED` or `ACCOUNT_ROLE_REMOVED`. Failed transitions shall emit no activity event.
 
 Rationale:
 Coordinator changes are security-sensitive Member lifecycle decisions whose human intent and atomic authorization effect must be explicit.
