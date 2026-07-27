@@ -1,7 +1,7 @@
 # Requirement: API Error and Authorization Contract
 
 ## Status
-Draft
+Accepted
 
 ## Context
 GAM API clients need predictable error responses without depending on backend

@@ -405,6 +405,7 @@ Scenario: Detect removal of a contract added after the initial baseline
 * [Web Delivery and Frontend Contract](web-delivery-and-frontend-contract.md)
 * [Browser Session and Frontend Integration](../authentication/browser-session-and-frontend-integration.md)
 * [Authentication and Account Registration](../authentication/authentication-and-registration.md)
+* [API Error and Authorization Contract](api-error-and-authorization-contract.md)
 * [Search and Filter Framework](search-and-filter-framework.md)
 
 ## Related videos

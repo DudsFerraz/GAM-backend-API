@@ -447,7 +447,6 @@ sequenceDiagram
 ## Open questions
 
 * Should stored refresh-token secrets be hashed at rest instead of stored as raw UUID v4 values?
-* What exact generic HTTP status and error code should refresh-token failures use?
 
 ## Out of scope
 
@@ -470,6 +469,7 @@ sequenceDiagram
 
 * [Browser Session and Frontend Integration](browser-session-and-frontend-integration.md)
 * [Cross-Site Refresh Cookie Compatibility](cross-site-refresh-cookie-compatibility.md) — superseded historical requirements.
+* [API Error and Authorization Contract](../platform/api-error-and-authorization-contract.md)
 * [Activity Audit Log](../platform/activity-audit-log.md)
 
 ## Related videos
