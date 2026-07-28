@@ -35,6 +35,8 @@ This document is not a Requirement Specification. It defines canonical terms, di
 | **Presence**       | The persisted historical fact that a Member's attendance at an Event was confirmed. At most one active Presence may exist for one Event and Member pair.                                    | None                 | RSVP, planned attendance         |
 | **Generic Event**  | An Event created through the common Event workflow because it requires no specialized Oratorio, Missa, or other type-specific data.                                                          | None                 | Generic activity                 |
 | **UUID**           | The convention that persisted GAM resources use UUID values as public and internal identifiers.                                                                                              | id                   | Numeric ID, database sequence ID |
+| **system reference data** | Application-owned persisted records that an Accepted Requirement Specification declares mandatory in every applicable runtime environment and identifies through stable domain keys. | None | Seed data when ownership or environment is unclear |
+| **database enum mirror** | A PostgreSQL enum type that constrains a persisted closed value catalog and exactly mirrors the catalog owned by an Accepted Requirement Specification. | None | Database-owned enum catalog |
 | **lifecycle-owned Role** | A system Role whose assignment is controlled exclusively by its owning Member-domain workflow. The current catalog contains `MEMBER`, `VISITOR`, `COORD`, and `ORATORIO_COORD`. | None | None |
 | **Proxy** | GAM's public HTTP entry point that terminates TLS, serves the static frontend, routes `/api` requests to the private backend, and preserves trustworthy public request information. | None | Caddy or Nginx when no product has been selected |
 | **Canonical Public Origin** | The one configured scheme, host, and effective port from which the GAM browser frontend and public API are served. | public origin | domain when scheme or port also matters |
@@ -65,6 +67,8 @@ This document is not a Requirement Specification. It defines canonical terms, di
 - Removing a **Presence** ends its active identity without erasing its preserved historical row; the same Member and Event may later receive a new Presence with a new UUID.
 - A **Generic Event** is an **Event** whose type is `GENERIC`.
 - **UUID** is used to identify persisted resources such as Accounts, Members, Oratorianos, Events, Presences, GamLocations, Roles, and Permissions.
+- **system reference data** is distinct from user-managed domain data, one-time data transformations, and development or demonstration fixtures.
+- A **database enum mirror** follows its owning Accepted Requirement Specification; the database type does not define or expand the domain catalog.
 - The **Proxy** serves the frontend and API from the **Canonical Public Origin** while keeping backend and database application ports private.
 - **row audit metadata** records low-level persisted state, while an **activity entry** records meaningful business and security intent, reason, and minimized non-sensitive context.
 
