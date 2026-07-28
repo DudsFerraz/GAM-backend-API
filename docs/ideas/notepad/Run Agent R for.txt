@@ -1,0 +1,54 @@
+Run Agent R for:
+
+1-
+$gam-review
+
+Primary authoritative artifact:
+docs/requirements/platform/api-error-and-authorization-contract.mdStatus: Accepted
+Requirements: REQ-API-ERROR-001 through REQ-API-ERROR-012
+Contains the authoritative inline decision-flow diagram
+Open questions: None
+
+Related Accepted Requirement Specifications to validate:
+docs/requirements/platform/openapi-and-frontend-api-documentation.md
+docs/requirements/platform/search-and-filter-framework.md
+docs/requirements/authentication/authentication-and-registration.md
+docs/requirements/authentication/browser-session-and-frontend-integration.md
+docs/requirements/accounts/account-records.md
+docs/requirements/members/member-records-and-lifecycle.md
+docs/requirements/members/membership-solicitations.md
+docs/requirements/rbac/account-role-management.md
+docs/requirements/rbac/rbac-catalog.md
+
+2-
+$gam-review
+
+Authoritative Accepted Requirement Specifications:
+docs/requirements/gam-locations/system-gam-location-catalog.md — primary specification
+docs/requirements/gam-locations/gam-location-records.md
+docs/requirements/events/event-records-and-generic-lifecycle.md
+docs/requirements/oratorio/oratorio-occurrences-and-planning.md
+docs/requirements/platform/database-reference-data-and-enum-mirrors.md
+Related Accepted ADRs:
+docs/decisions/0021-use-flyway-repeatable-migrations-for-system-reference-data.md
+docs/decisions/0009-enforce-active-gam-location-duplicate-identity-in-persistence.md
+docs/decisions/0010-serialize-gam-location-mutation-and-event-linking.md
+
+3- 
+$gam-review
+
+The authoritative Accepted Requirement Specification is:
+docs/requirements/platform/development-fixture-policy-and-dataset.md
+Validate its related Requirement Specifications and these Accepted ADRs before issuing assignments:
+docs/decisions/0013-make-member-lifecycle-own-coordinator-designation.md
+docs/decisions/0014-make-member-lifecycle-own-oratorio-coordinator-designation.md
+docs/decisions/0015-compose-oratorio-permission-bundles-in-code.md
+docs/decisions/0016-store-signed-oratoriano-form-attachments-in-postgresql.md
+docs/decisions/0018-standardize-persistence-auditing-soft-deletion-and-relationship-enforcement.md
+docs/decisions/0021-use-flyway-repeatable-migrations-for-system-reference-data.md
+docs/decisions/0022-rebuild-the-pre-production-flyway-baseline.md
+
+The implementation scope includes the callback, development-only configuration, safe local credential input, fixture-maintenance documentation, and focused verification required by the Accepted specification.
+The fixture must provide stable and repeatable realistic personas, lifecycle states, sacrificial resources, and successful starting paths for all 87 documented user-facing endpoints. It must never execute outside an explicitly enabled local development environment and must not commit a usable password or password hash.
+
+the prior credential, audit-restoration, immutable-form artifact/provenance, relationship-preservation, and locked-target concerns appear resolved in the current SQL/tests. I have one provisional actionable issue: the Oratorio fixture has only three COMPLETED occurrences, but the accepted matrix needs distinct completed targets for lock, finalize-from-completed, attendance, and removed-attendance deletion; the current tests only enforce two locked targets. I am also checking complete system-location preflight behavior and remaining dataset families.
