@@ -19,6 +19,13 @@ Flyway exclusively manages schema creation and evolution.
 
 Once a versioned migration (`V__`) is merged and applied to a shared, staging, or production database, it is strictly immutable. Future schema adjustments or corrections must be introduced via new migrations.
 
+A coordinated pre-production baseline rebuild is the only exception. It must
+be authorized by an Accepted ADR, replace unreleased history in one change,
+and require every database with the replaced history to be destroyed and
+recreated. Flyway repair, checksum editing, or compatibility migrations must
+not be used to avoid that reset. The current authorized rebuild is
+[ADR-0022](../decisions/0022-rebuild-the-pre-production-flyway-baseline.md).
+
 ### 2.3. Single Coherent Responsibility
 
 A migration must express one logical database change. Do not bundle unrelated tables or mix schema creation with demo data.
