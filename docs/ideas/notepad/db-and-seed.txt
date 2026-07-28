@@ -1,0 +1,44 @@
+2. **Production GamLocation seeds**
+   - DBSM, DBA, and DBCA values.
+   - Stable identity and update/removal rules.
+   - Whether they are system-managed.
+   - São Mário’s role as the Oratorio default.
+   - The unresolved address and `displayName` questions.
+
+read docs\ideas\notepad\There should exist some seeded loca.txt
+
+There are probably some other data valuable to introduce as pre registered in prod, consider if a prod afterMigrate.sql would be useful, which info to include and why. If afterMigrate.sql for prod is undesirable what should be the approach?
+
+
+
+
+
+
+3. **Development fixture policy and dataset**
+   - Guarantee `dev-migration/afterMigrate.sql` is development-only.
+   - Safe local credentials.
+   - Realistic personas and lifecycle states.
+   - Coverage of manually testable workflows.
+   - Repeatability and fixture maintenance rules.
+
+rebuild afterMigrate.sql from scratch.
+I- assure and explicitly states that dev-migration.afterMigration.sql must only be executed in dev environment, creating powerful coord account with such weak passwords would be a clear vulnerability in prod.
+II- there are some clear issues that go against system current rules, such as giulia account password only having 6 digits. Others also probably exist
+III- afterMigrate should fulfill the database with useful content enough to devs manually test the system acting like real users. All endpoints users can perform must be considered
+
+
+
+
+
+
+4. **Pre-production migration-baseline rebuild**
+   - Decide how to consolidate V1–V31 into clean baseline migrations.
+   - Determine reset expectations for shared development databases.
+   - Preserve accepted schema invariants without retaining obsolete migration history.
+   - Likely produce an ADR or focused refactor plan rather than a business Requirement Specification.
+   - Do this last so the baseline is rebuilt only once after the other database decisions settle.
+
+rebuild database migrations from scratch, for example:
+V31 alters table accounts, that is not necessary, the original migration should be rebuild, as the system is not yet in production. read docs\software-guidelines\pre-production-development-state.md
+
+ 
