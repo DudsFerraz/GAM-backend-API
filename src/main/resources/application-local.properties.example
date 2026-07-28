@@ -7,8 +7,11 @@ jwt.secret-key=
 # Required browser-session origin. Use the HTTPS public origin outside the dev profile.
 GAM_PUBLIC_ORIGIN=
 
-# Dev fixture accounts seeded by db/dev-migration/afterMigrate.sql use this password.
-app.dev-fixtures.standard-password=123456
+# Copy this file to the ignored repository-root application-local.properties.
+# Generate the hash with: java scripts/NewDevelopmentFixturePasswordHash.java
+# Review docs/development-fixture.md before enabling the privileged fixture.
+gam.dev-fixture.execution-enabled=
+gam.dev-fixture.password-hash=
 
 spring.jpa.show-sql=
 spring.jpa.properties.hibernate.format_sql=
