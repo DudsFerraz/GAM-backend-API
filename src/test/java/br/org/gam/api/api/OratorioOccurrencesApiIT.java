@@ -60,7 +60,9 @@ class OratorioOccurrencesApiIT extends OratorioModuleApiTestSupport {
         assertThat(response.<String>path("event.type")).isEqualTo("ORATORIO");
         assertThat(response.<String>path("event.status")).isEqualTo("SCHEDULED");
         assertThat(response.<String>path("event.requiredPermission.code")).isEqualTo("EVENT_GET_MEMBER");
-        assertThat(response.<String>path("event.gamLocation.name")).containsIgnoringCase("São Mário");
+        assertThat(response.<String>path("event.gamLocation.code")).isEqualTo("DBSM");
+        assertThat(response.<Boolean>path("event.gamLocation.systemManaged")).isTrue();
+        assertThat(response.<String>path("event.gamLocation.name")).isEqualTo("Dom Bosco São Mário");
         assertThat(response.asString())
                 .contains(
                         "14:00", "15:30", "16:30", "17:00",
@@ -131,92 +133,6 @@ class OratorioOccurrencesApiIT extends OratorioModuleApiTestSupport {
             assertThat(activeOratorioCountFor(date)).isEqualTo(1);
             assertThat(activityCountForTarget(id)).isEqualTo(1);
         } finally {
-            executor.shutdownNow();
-        }
-    }
-
-    @Test
-    @DisplayName("REQ-GAM-LOCATION-013 - Oratorio creation and configured-location removal serialize")
-    void creationAndConfiguredLocationRemovalShouldSerialize() throws Exception {
-        AuthSession caller = sudoSession();
-        LocalDate date = LocalDate.of(2034, 3, 19);
-        UUID locationId = jdbcTemplate.queryForObject(
-                "SELECT id FROM gam_locations "
-                        + "WHERE identity_name = 'sao mario' AND deleted_at IS NULL",
-                UUID.class
-        );
-        Map<String, Object> originalLocationAudit = jdbcTemplate.queryForMap(
-                "SELECT updated_at, updated_by, deleted_at, deleted_by "
-                        + "FROM gam_locations WHERE id = ?",
-                locationId
-        );
-        UUID permissionId = permissionId("EVENT_GET_MEMBER");
-        ExecutorService executor = Executors.newFixedThreadPool(2);
-
-        try (Connection blocker = jdbcTemplate.getDataSource().getConnection();
-             PreparedStatement lockPermission = blocker.prepareStatement(
-                     "SELECT id FROM permissions WHERE id = ? FOR UPDATE"
-             )) {
-            blocker.setAutoCommit(false);
-            lockPermission.setObject(1, permissionId);
-            try (var ignored = lockPermission.executeQuery()) {
-                assertThat(ignored.next()).isTrue();
-            }
-
-            Future<ExtractableResponse<Response>> creation = executor.submit(() ->
-                    authenticatedJsonRequest(caller)
-                            .body(Map.of("date", date.toString()))
-                            .post(ORATORIOS)
-                            .then()
-                            .extract()
-            );
-            awaitWaitingQuery("INSERT INTO events", 1);
-
-            Future<ExtractableResponse<Response>> removal = executor.submit(() ->
-                    authenticatedJsonRequest(caller)
-                            .body(reasonPayload("Configured location was entered incorrectly"))
-                            .delete("/gam-locations/{id}", locationId)
-                            .then()
-                            .extract()
-            );
-            boolean removedBeforeCreationCouldCommit =
-                    awaitFutureCompletion(removal, 2, TimeUnit.SECONDS);
-
-            blocker.commit();
-            ExtractableResponse<Response> creationResponse =
-                    creation.get(10, TimeUnit.SECONDS);
-            ExtractableResponse<Response> removalResponse =
-                    removal.get(10, TimeUnit.SECONDS);
-
-            if (creationResponse.statusCode() == 201) {
-                trackOratorio(UUID.fromString(creationResponse.path("id")));
-            }
-            assertThat(removedBeforeCreationCouldCommit)
-                    .as("Removal must wait behind creation after creation selected the location")
-                    .isFalse();
-            assertThat(creationResponse.statusCode())
-                    .as(creationResponse.asString())
-                    .isEqualTo(201);
-            assertThat(removalResponse.statusCode())
-                    .as(removalResponse.asString())
-                    .isEqualTo(409);
-            assertThat(jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM events e JOIN gam_locations l "
-                            + "ON l.id = e.gam_location_id "
-                            + "WHERE e.id = ? AND l.deleted_at IS NOT NULL",
-                    Long.class,
-                    UUID.fromString(creationResponse.path("id"))
-            )).isZero();
-        } finally {
-            jdbcTemplate.update(
-                    "UPDATE gam_locations SET updated_at = ?, updated_by = ?, "
-                            + "deleted_at = ?, deleted_by = ? WHERE id = ?",
-                    originalLocationAudit.get("updated_at"),
-                    originalLocationAudit.get("updated_by"),
-                    originalLocationAudit.get("deleted_at"),
-                    originalLocationAudit.get("deleted_by"),
-                    locationId
-            );
             executor.shutdownNow();
         }
     }

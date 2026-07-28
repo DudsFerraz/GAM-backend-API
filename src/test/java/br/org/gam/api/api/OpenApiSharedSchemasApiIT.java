@@ -5,6 +5,7 @@ import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.IntegrationTest;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("API - OpenAPI shared schemas")
 class OpenApiSharedSchemasApiIT extends AbstractOpenApiDocumentationApiIT {
 
+    private static final Set<String> CURRENT_SYSTEM_GAM_LOCATION_CODES = Set.of(
+            "DBSM", "DBA", "DBCA"
+    );
     private static final int[] UNICODE_WHITE_SPACE_CODE_POINTS = {
             0x0009, 0x000A, 0x000B, 0x000C, 0x000D,
             0x0020, 0x0085, 0x00A0, 0x1680,
@@ -359,11 +363,14 @@ class OpenApiSharedSchemasApiIT extends AbstractOpenApiDocumentationApiIT {
         assertThat(required).allSatisfy(value -> assertThat(value).isInstanceOf(String.class));
         assertThat(required.stream().map(String.class::cast).toList())
                 .containsExactlyInAnyOrder(
-                        "id", "name", "street", "city", "state", "postalCode",
-                        "countryCode", "latitude", "longitude"
+                        "id", "code", "systemManaged", "name", "street", "city", "state",
+                        "postalCode", "countryCode", "latitude", "longitude"
                 );
 
         Map<String, Object> gamLocationProperties = object(gamLocation, "properties");
+        assertNullType(object(gamLocationProperties, "code"));
+        assertThat(object(gamLocationProperties, "systemManaged"))
+                .containsEntry("type", "boolean");
         assertNullType(object(gamLocationProperties, "street"));
         assertNullType(object(gamLocationProperties, "postalCode"));
         assertNullType(object(gamLocationProperties, "latitude"));
@@ -551,6 +558,92 @@ class OpenApiSharedSchemasApiIT extends AbstractOpenApiDocumentationApiIT {
         assertConflictCode(object(object(paths, "/gam-locations"), "post"), "GAM_LOCATION_ALREADY_EXISTS");
         assertConflictCode(object(object(paths, "/gam-locations/{id}"), "put"), "GAM_LOCATION_ALREADY_EXISTS");
         assertConflictCode(object(object(paths, "/gam-locations/{id}"), "delete"), "GAM_LOCATION_IN_USE");
+    }
+
+    @Test
+    @DisplayName("REQ-GAM-LOCATION-001 and REQ-GAM-LOCATION-CATALOG-002 - create/update success examples -> ordinary ownership representation")
+    void gamLocationMutationSuccessExamplesShouldRepresentOrdinaryRecords() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> paths = object(contract, "paths");
+        Map<String, Object> create = object(object(paths, "/gam-locations"), "post");
+        Map<String, Object> update = object(object(paths, "/gam-locations/{id}"), "put");
+
+        assertThat(responseExampleValues(create, "201"))
+                .as("createGamLocation ordinary success example")
+                .anySatisfy(this::assertOrdinaryGamLocationExample);
+        assertThat(responseExampleValues(update, "200"))
+                .as("updateGamLocation ordinary success example")
+                .anySatisfy(this::assertOrdinaryGamLocationExample);
+    }
+
+    @Test
+    @DisplayName("REQ-GAM-LOCATION-CATALOG-002 and REQ-OPENAPI-004 - direct and embedded GamLocation success examples -> valid ownership pairing")
+    void gamLocationSuccessExamplesShouldUseValidOwnershipPairings() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> paths = object(contract, "paths");
+        Map<String, List<Map<String, Object>>> representations = Map.of(
+                "direct GamLocation",
+                responseExampleValues(
+                        object(object(paths, "/gam-locations/{id}"), "get"),
+                        "200"
+                ),
+                "listed GamLocation",
+                pagedGamLocationExamples(
+                        object(object(paths, "/gam-locations"), "get"),
+                        "200"
+                ),
+                "Event.gamLocation",
+                responseExampleValues(
+                        object(object(paths, "/events/{id}"), "get"),
+                        "200"
+                ).stream().map(example -> object(example, "gamLocation")).toList(),
+                "Oratorio.event.gamLocation",
+                responseExampleValues(
+                        object(object(paths, "/oratorios/{oratorioId}"), "get"),
+                        "200"
+                ).stream()
+                        .map(example -> object(object(example, "event"), "gamLocation"))
+                        .toList()
+        );
+        SoftAssertions softly = new SoftAssertions();
+
+        representations.forEach((label, examples) -> {
+            softly.assertThat(examples)
+                    .as("%s success examples", label)
+                    .isNotEmpty();
+            examples.forEach(example ->
+                    assertValidGamLocationOwnershipPairing(softly, label, example)
+            );
+        });
+
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-GAM-LOCATION-CATALOG-004 and REQ-OPENAPI-004 - system update/removal -> documented FORBIDDEN_OPERATION response")
+    void systemGamLocationMutationOperationsShouldDocumentForbiddenOperation() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> paths = object(contract, "paths");
+        SoftAssertions softly = new SoftAssertions();
+
+        for (Map.Entry<String, Map<String, Object>> operation : Map.of(
+                "updateGamLocation", object(object(paths, "/gam-locations/{id}"), "put"),
+                "removeGamLocation", object(object(paths, "/gam-locations/{id}"), "delete")
+        ).entrySet()) {
+            Map<String, Object> forbidden = object(
+                    object(operation.getValue(), "responses"),
+                    "403"
+            );
+            softly.assertThat(String.valueOf(forbidden.get("description")))
+                    .as("%s 403 description", operation.getKey())
+                    .contains("FORBIDDEN")
+                    .contains("FORBIDDEN_OPERATION");
+            softly.assertThat(responseExampleCodes(forbidden))
+                    .as("%s 403 example codes", operation.getKey())
+                    .contains("FORBIDDEN", "FORBIDDEN_OPERATION");
+        }
+
+        softly.assertAll();
     }
 
     @Test
@@ -938,5 +1031,88 @@ class OpenApiSharedSchemasApiIT extends AbstractOpenApiDocumentationApiIT {
         Map<String, Object> mediaType = first(content.values());
         Map<String, Object> example = object(mediaType, "example");
         assertThat(example).containsEntry("code", expectedCode);
+    }
+
+    private void assertOrdinaryGamLocationExample(Map<String, Object> example) {
+        assertThat(example)
+                .containsEntry("code", null)
+                .containsEntry("systemManaged", false);
+    }
+
+    private void assertValidGamLocationOwnershipPairing(
+            SoftAssertions softly,
+            String label,
+            Map<String, Object> example
+    ) {
+        softly.assertThat(example)
+                .as("%s ownership fields", label)
+                .containsKeys("code", "systemManaged");
+        Object code = example.get("code");
+        Object systemManaged = example.get("systemManaged");
+        softly.assertThat(systemManaged)
+                .as("%s systemManaged", label)
+                .isInstanceOf(Boolean.class);
+
+        if (Boolean.TRUE.equals(systemManaged)) {
+            softly.assertThat(code)
+                    .as("%s system code", label)
+                    .isIn(CURRENT_SYSTEM_GAM_LOCATION_CODES.toArray());
+        } else {
+            softly.assertThat(code)
+                    .as("%s ordinary code", label)
+                    .isNull();
+        }
+    }
+
+    private List<Map<String, Object>> responseExampleValues(
+            Map<String, Object> operation,
+            String status
+    ) {
+        Map<String, Object> response = object(object(operation, "responses"), status);
+        Map<String, Object> mediaType = first(object(response, "content").values());
+        return exampleValues(mediaType);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> pagedGamLocationExamples(
+            Map<String, Object> operation,
+            String status
+    ) {
+        List<Map<String, Object>> values = new ArrayList<>();
+        for (Map<String, Object> example : responseExampleValues(operation, status)) {
+            Object items = example.get("items");
+            assertThat(items).as("paged GamLocation example items").isInstanceOf(List.class);
+            for (Object item : (List<?>) items) {
+                assertThat(item).as("paged GamLocation example item").isInstanceOf(Map.class);
+                values.add((Map<String, Object>) item);
+            }
+        }
+        return values;
+    }
+
+    private Set<String> responseExampleCodes(Map<String, Object> response) {
+        Map<String, Object> mediaType = first(object(response, "content").values());
+        return exampleValues(mediaType).stream()
+                .map(example -> example.get("code"))
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> exampleValues(Map<String, Object> mediaType) {
+        List<Map<String, Object>> values = new ArrayList<>();
+        if (mediaType.get("example") instanceof Map<?, ?> example) {
+            values.add((Map<String, Object>) example);
+        }
+        if (mediaType.get("examples") instanceof Map<?, ?> examples) {
+            for (Object wrapper : examples.values()) {
+                if (wrapper instanceof Map<?, ?> exampleWrapper
+                        && exampleWrapper.get("value") instanceof Map<?, ?> value) {
+                    values.add((Map<String, Object>) value);
+                }
+            }
+        }
+        return values;
     }
 }

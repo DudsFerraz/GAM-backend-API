@@ -1,6 +1,7 @@
 package br.org.gam.api.gamLocation.application.useCases;
 
 import br.org.gam.api.gamLocation.application.GamLocationEntityLoader;
+import br.org.gam.api.gamLocation.application.GamLocationMutationPolicy;
 import br.org.gam.api.gamLocation.persistence.GamLocationRepository;
 import br.org.gam.api.gamLocation.persistence.GamLocationEntity;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
@@ -28,6 +29,7 @@ public class RemoveGamLocation {
     public void remove(UUID id, RemoveGamLocationDTO dto) {
         String reason = RequiredReason.normalize(dto.reason(), "GamLocation removal requires an audit reason.");
         GamLocationEntity entity = loader.requiredByIdForUpdate(id);
+        GamLocationMutationPolicy.requireUserManaged(entity);
         long referenceCount = repository.countEventReferencesIncludingDeleted(id);
         if (referenceCount > 0) {
             throw ConflictException.resource(

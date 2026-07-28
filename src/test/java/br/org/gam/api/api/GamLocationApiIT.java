@@ -42,7 +42,37 @@ class GamLocationApiIT extends MemberApiTestSupport {
     private static final String GAM_LOCATION_PATH = "/gam-locations";
     private static final String VALID_REMOVAL_REASON = "Venue is no longer available";
     private static final Set<String> GAM_LOCATION_FIELDS = Set.of(
-            "id", "name", "street", "city", "state", "postalCode", "countryCode", "latitude", "longitude"
+            "id", "code", "systemManaged", "name", "street", "city", "state",
+            "postalCode", "countryCode", "latitude", "longitude"
+    );
+    private static final List<SystemLocationExpectation> SYSTEM_LOCATION_CATALOG = List.of(
+            new SystemLocationExpectation(
+                    "DBSM",
+                    "Dom Bosco São Mário",
+                    "Av. Santa Rosa, 653 - Areião",
+                    "Piracicaba",
+                    "SP",
+                    "13414-038",
+                    "BR"
+            ),
+            new SystemLocationExpectation(
+                    "DBA",
+                    "Dom Bosco Assunção",
+                    "Rua Boa Morte, 1835 - Centro",
+                    "Piracicaba",
+                    "SP",
+                    "13400-140",
+                    "BR"
+            ),
+            new SystemLocationExpectation(
+                    "DBCA",
+                    "Dom Bosco Cidade Alta",
+                    "Rua Alfredo Guedes, 1199 - Bairro Alto",
+                    "Piracicaba",
+                    "SP",
+                    "13419-080",
+                    "BR"
+            )
     );
 
     @Autowired
@@ -147,6 +177,8 @@ class GamLocationApiIT extends MemberApiTestSupport {
         assertThat(response.jsonPath().getMap("$"))
                 .containsOnlyKeys(GAM_LOCATION_FIELDS.toArray());
         assertThat(response.jsonPath().getMap("$")).containsEntry("id", id.toString());
+        assertThat(response.<Object>path("code")).isNull();
+        assertThat(response.<Boolean>path("systemManaged")).isFalse();
         assertThat(response.<String>path("name")).isEqualTo("Colégio Dom Bosco — Quadra");
         assertThat(response.<String>path("street")).isEqualTo("Rua São José, 123");
         assertThat(response.<String>path("city")).isEqualTo("Campinas");
@@ -162,6 +194,76 @@ class GamLocationApiIT extends MemberApiTestSupport {
                 .containsEntry("target_id", id)
                 .containsEntry("reason", null);
         assertThat(activity.get("metadata").toString()).isEqualTo("{}");
+    }
+
+    @Test
+    @DisplayName("REQ-GAM-LOCATION-CATALOG-001 and REQ-GAM-LOCATION-CATALOG-003 - list -> exact current system catalog with ownership metadata")
+    void currentSystemCatalogShouldBeListedWithExactApplicationOwnedMetadata() {
+        AuthSession caller = newSessionWithPermissions("GAM_LOCATION_GET");
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .queryParam("size", 100)
+                .get(GAM_LOCATION_PATH)
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        List<Map<String, Object>> systemLocations = response
+                .<List<Map<String, Object>>>path("items")
+                .stream()
+                .filter(location -> Boolean.TRUE.equals(location.get("systemManaged")))
+                .toList();
+        assertThat(systemLocations).hasSize(SYSTEM_LOCATION_CATALOG.size());
+        assertThat(systemLocations)
+                .extracting(location -> location.get("code"))
+                .containsExactlyInAnyOrder("DBSM", "DBA", "DBCA");
+
+        for (SystemLocationExpectation expected : SYSTEM_LOCATION_CATALOG) {
+            Map<String, Object> actual = systemLocations.stream()
+                    .filter(location -> expected.code().equals(location.get("code")))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(actual).containsOnlyKeys(GAM_LOCATION_FIELDS);
+            assertThat(actual)
+                    .containsEntry("code", expected.code())
+                    .containsEntry("systemManaged", true)
+                    .containsEntry("name", expected.name())
+                    .containsEntry("street", expected.street())
+                    .containsEntry("city", expected.city())
+                    .containsEntry("state", expected.state())
+                    .containsEntry("postalCode", expected.postalCode())
+                    .containsEntry("countryCode", expected.countryCode());
+            assertThat(actual.get("latitude")).isNull();
+            assertThat(actual.get("longitude")).isNull();
+        }
+    }
+
+    @Test
+    @DisplayName("REQ-GAM-LOCATION-CATALOG-004 - current system record update and removal -> forbidden, unchanged, and unaudited")
+    void productMutationShouldNotChangeOrAuditCurrentSystemLocation() {
+        AuthSession caller = newSessionWithPermissions("GAM_LOCATION_GET", "GAM_LOCATION_MANAGE");
+        Map<String, Object> before = currentSystemLocation(caller, "DBSM");
+        UUID id = UUID.fromString(before.get("id").toString());
+        clearActivities();
+
+        ExtractableResponse<Response> updateResponse = authenticatedJsonRequest(caller)
+                .body(validPayload("Attempted system location replacement"))
+                .put(GAM_LOCATION_PATH + "/{id}", id)
+                .then()
+                .extract();
+        ExtractableResponse<Response> removalResponse = authenticatedJsonRequest(caller)
+                .body(reasonPayload(VALID_REMOVAL_REASON))
+                .delete(GAM_LOCATION_PATH + "/{id}", id)
+                .then()
+                .extract();
+
+        assertThat(updateResponse.statusCode()).isEqualTo(403);
+        assertThat(updateResponse.<String>path("code")).isEqualTo("FORBIDDEN_OPERATION");
+        assertThat(removalResponse.statusCode()).isEqualTo(403);
+        assertThat(removalResponse.<String>path("code")).isEqualTo("FORBIDDEN_OPERATION");
+        assertThat(currentSystemLocation(caller, "DBSM")).isEqualTo(before);
+        assertThat(activityCount("GAM_LOCATION_UPDATED")).isZero();
+        assertThat(activityCount("GAM_LOCATION_REMOVED")).isZero();
     }
 
     @Test
@@ -294,7 +396,7 @@ class GamLocationApiIT extends MemberApiTestSupport {
     }
 
     @Test
-    @DisplayName("REQ-GAM-LOCATION-005 - create and update bodies with unknown properties -> HTTP 400")
+    @DisplayName("REQ-GAM-LOCATION-005 and REQ-GAM-LOCATION-CATALOG-003 - read-only or unknown request properties -> HTTP 400")
     void unknownPropertiesShouldBeRejected() {
         AuthSession caller = newSessionWithPermissions(
                 "GAM_LOCATION_CREATE", "GAM_LOCATION_MANAGE"
@@ -303,12 +405,24 @@ class GamLocationApiIT extends MemberApiTestSupport {
         createPayload.put("id", UUID.randomUUID());
 
         assertStatus(authenticatedJsonRequest(caller).body(createPayload).post(GAM_LOCATION_PATH), 400);
+        assertStatus(authenticatedJsonRequest(caller)
+                .body(withValue(validPayload("System code create"), "code", "DBSM"))
+                .post(GAM_LOCATION_PATH), 400);
+        assertStatus(authenticatedJsonRequest(caller)
+                .body(withValue(validPayload("System ownership create"), "systemManaged", true))
+                .post(GAM_LOCATION_PATH), 400);
 
         UUID id = createGamLocation(caller, "Unknown property update");
         Map<String, Object> updatePayload = validPayload("Unknown property update");
         updatePayload.put("events", List.of());
 
         assertStatus(authenticatedJsonRequest(caller).body(updatePayload)
+                .put(GAM_LOCATION_PATH + "/{id}", id), 400);
+        assertStatus(authenticatedJsonRequest(caller)
+                .body(withValue(validPayload("System code update"), "code", "DBA"))
+                .put(GAM_LOCATION_PATH + "/{id}", id), 400);
+        assertStatus(authenticatedJsonRequest(caller)
+                .body(withValue(validPayload("System ownership update"), "systemManaged", true))
                 .put(GAM_LOCATION_PATH + "/{id}", id), 400);
         assertThat(activityCount("GAM_LOCATION_UPDATED")).isZero();
     }
@@ -338,6 +452,44 @@ class GamLocationApiIT extends MemberApiTestSupport {
         assertThat(response.<String>path("code")).isEqualTo("GAM_LOCATION_ALREADY_EXISTS");
         assertThat(response.asString()).contains(existingId.toString());
         assertThat(activityCount("GAM_LOCATION_CREATED")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("REQ-GAM-LOCATION-CATALOG-006 and REQ-GAM-LOCATION-007 - ordinary create matching a retired system row -> duplicate conflict")
+    void retiredSystemLocationIdentityShouldRemainReservedFromOrdinaryCreation() {
+        AuthSession caller = newSessionWithPermissions(
+                "GAM_LOCATION_CREATE", "GAM_LOCATION_GET"
+        );
+        SystemLocationExpectation retired = SYSTEM_LOCATION_CATALOG.stream()
+                .filter(location -> "DBA".equals(location.code()))
+                .findFirst()
+                .orElseThrow();
+        UUID retiredId = UUID.fromString(currentSystemLocation(caller, retired.code())
+                .get("id").toString());
+        gamLocationJdbcTemplate.update(
+                "UPDATE gam_locations SET catalog_current = FALSE WHERE id = ?",
+                retiredId
+        );
+        clearActivities();
+
+        try {
+            ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                    .body(systemLocationPayload(retired))
+                    .post(GAM_LOCATION_PATH)
+                    .then()
+                    .extract();
+
+            assertThat(response.statusCode()).isEqualTo(409);
+            assertThat(response.<String>path("code"))
+                    .isEqualTo("GAM_LOCATION_ALREADY_EXISTS");
+            assertThat(response.asString()).contains(retiredId.toString());
+            assertThat(activityCount("GAM_LOCATION_CREATED")).isZero();
+        } finally {
+            gamLocationJdbcTemplate.update(
+                    "UPDATE gam_locations SET catalog_current = TRUE WHERE id = ?",
+                    retiredId
+            );
+        }
     }
 
     @Test
@@ -766,7 +918,7 @@ class GamLocationApiIT extends MemberApiTestSupport {
     }
 
     @Test
-    @DisplayName("REQ-GAM-LOCATION-013 and ADR-0010 - concurrent Event linking and removal -> no invalid committed reference")
+    @DisplayName("REQ-GAM-LOCATION-013 and ADR-0010 - concurrent Event linking and user-managed location removal -> no invalid committed reference")
     void concurrentEventLinkingAndRemovalShouldSerialize() throws Exception {
         AuthSession caller = newSessionWithPermissions(
                 "GAM_LOCATION_CREATE", "GAM_LOCATION_GET", "GAM_LOCATION_MANAGE", "EVENT_CREATE"
@@ -887,6 +1039,25 @@ class GamLocationApiIT extends MemberApiTestSupport {
         UUID id = UUID.fromString(response.path("id"));
         createdGamLocationIds.add(id);
         return id;
+    }
+
+    private Map<String, Object> currentSystemLocation(AuthSession caller, String code) {
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .queryParam("size", 100)
+                .get(GAM_LOCATION_PATH)
+                .then()
+                .extract();
+        assertThat(response.statusCode()).isEqualTo(200);
+        Map<String, Object> location = response
+                .<List<Map<String, Object>>>path("items")
+                .stream()
+                .filter(candidate -> code.equals(candidate.get("code")))
+                .findFirst()
+                .orElse(null);
+        assertThat(location)
+                .as("Expected current system GamLocation with code %s", code)
+                .isNotNull();
+        return location;
     }
 
     private UUID createGenericEvent(AuthSession caller, UUID locationId, String title) {
@@ -1016,6 +1187,21 @@ class GamLocationApiIT extends MemberApiTestSupport {
         return payload;
     }
 
+    private static Map<String, Object> systemLocationPayload(
+            SystemLocationExpectation location
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("name", location.name());
+        payload.put("street", location.street());
+        payload.put("city", location.city());
+        payload.put("state", location.state());
+        payload.put("postalCode", location.postalCode());
+        payload.put("countryCode", location.countryCode());
+        payload.put("latitude", null);
+        payload.put("longitude", null);
+        return payload;
+    }
+
     private static Map<String, Object> withValue(Map<String, Object> source, String key, Object value) {
         Map<String, Object> copy = new LinkedHashMap<>(source);
         copy.put(key, value);
@@ -1045,5 +1231,16 @@ class GamLocationApiIT extends MemberApiTestSupport {
                 tableName
         );
         return Boolean.TRUE.equals(exists);
+    }
+
+    private record SystemLocationExpectation(
+            String code,
+            String name,
+            String street,
+            String city,
+            String state,
+            String postalCode,
+            String countryCode
+    ) {
     }
 }

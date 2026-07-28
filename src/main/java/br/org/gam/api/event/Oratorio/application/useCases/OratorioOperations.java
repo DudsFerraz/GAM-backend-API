@@ -23,7 +23,7 @@ import br.org.gam.api.event.oratorio.persistence.OratorioEntity;
 import br.org.gam.api.event.oratorio.persistence.OratorioRepository;
 import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.event.persistence.EventRepository;
-import br.org.gam.api.gamLocation.application.GamLocationNormalizer;
+import br.org.gam.api.gamLocation.application.ValidateSystemGamLocationCatalog;
 import br.org.gam.api.gamLocation.persistence.GamLocationEntity;
 import br.org.gam.api.gamLocation.persistence.GamLocationRepository;
 import br.org.gam.api.member.application.MemberEntityLoader;
@@ -60,7 +60,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -89,7 +88,7 @@ public class OratorioOperations {
     private final AuditorAware<UUID> auditorAware;
     private final ActivityEvents activityEvents;
     private final Clock clock;
-    private final String configuredLocationIdentity;
+    private final ValidateSystemGamLocationCatalog systemLocationCatalog;
 
     public OratorioOperations(
             OratorioRepository oratorioRepository,
@@ -107,7 +106,7 @@ public class OratorioOperations {
             AuditorAware<UUID> auditorAware,
             ActivityEvents activityEvents,
             Clock clock,
-            @Value("${gam.oratorio.location-name}") String configuredLocationName
+            ValidateSystemGamLocationCatalog systemLocationCatalog
     ) {
         this.oratorioRepository = oratorioRepository;
         this.eventRepository = eventRepository;
@@ -124,7 +123,7 @@ public class OratorioOperations {
         this.auditorAware = auditorAware;
         this.activityEvents = activityEvents;
         this.clock = clock;
-        this.configuredLocationIdentity = GamLocationNormalizer.canonical(configuredLocationName);
+        this.systemLocationCatalog = systemLocationCatalog;
     }
 
     @Transactional
@@ -133,14 +132,16 @@ public class OratorioOperations {
         if (oratorioRepository.existsByLocalDate(date)) {
             throw duplicateDate(date);
         }
-        GamLocationEntity location = locationRepository.findActiveByIdentityNameForUpdate(
-                        configuredLocationIdentity
+        UUID configuredLocationId = systemLocationCatalog.oratorioLocationId();
+        GamLocationEntity location = locationRepository.findCurrentSystemByIdAndCodeForUpdate(
+                        configuredLocationId,
+                        systemLocationCatalog.oratorioLocationCode()
                 )
                 .orElseThrow(() -> ConflictException.resource(
                         "ORATORIO_LOCATION_UNAVAILABLE",
                         "GamLocation",
-                        configuredLocationIdentity,
-                        "The configured active São Mário GamLocation is unavailable."
+                        configuredLocationId,
+                        "The configured current system GamLocation is unavailable."
                 ));
         PermissionEntity audience = permissionRepository.findByCode(PermissionEnum.Code.EVENT_GET_MEMBER)
                 .orElseThrow(() -> NotFoundException.resource(

@@ -24,6 +24,15 @@ public class GamLocationEntity extends FullAuditableEntity {
     @Column(name = "id")
     private UUID id;
 
+    @Column(name = "code", length = 32, updatable = false)
+    private String code;
+
+    @Column(name = "system_managed", nullable = false, updatable = false)
+    private boolean systemManaged;
+
+    @Column(name = "catalog_current", nullable = false, updatable = false)
+    private boolean catalogCurrent;
+
     @Column(name = "name", nullable = false, length = 255)
     private String name;
 

@@ -152,8 +152,8 @@ public class OpenApiConfig {
         Schema<?> location = components.getSchemas().get("GamLocationRDTO");
         if (location != null) {
             location.setRequired(List.of(
-                    "id", "name", "street", "city", "state", "postalCode",
-                    "countryCode", "latitude", "longitude"
+                    "id", "code", "systemManaged", "name", "street", "city", "state",
+                    "postalCode", "countryCode", "latitude", "longitude"
             ));
         }
     }
@@ -625,7 +625,18 @@ public class OpenApiConfig {
             operation.getResponses().putIfAbsent("400", errorResponse(400, "INVALID_REQUEST", "Invalid request"));
         }
         operation.getResponses().putIfAbsent("401", errorResponse(401, "UNAUTHORIZED", "Authentication is required."));
-        operation.getResponses().putIfAbsent("403", errorResponse(403, "FORBIDDEN", "The authenticated account is not allowed to perform this operation."));
+        if (Set.of("updateGamLocation", "removeGamLocation").contains(operation.getOperationId())) {
+            operation.getResponses().put("403", gamLocationMutationForbiddenResponse());
+        } else {
+            operation.getResponses().putIfAbsent(
+                    "403",
+                    errorResponse(
+                            403,
+                            "FORBIDDEN",
+                            "The authenticated account is not allowed to perform this operation."
+                    )
+            );
+        }
         operation.getResponses().putIfAbsent("404", errorResponse(404, "NOT_FOUND", "The requested resource was not found."));
         ConflictDocumentation conflict = conflictDocumentation(operation.getOperationId());
         operation.getResponses().putIfAbsent(
@@ -678,6 +689,38 @@ public class OpenApiConfig {
         );
         return new ApiResponse()
                 .description("Possible codes: MALFORMED_JSON, VALIDATION_ERROR, INVALID_SEARCH_FILTER.")
+                .content(new Content().addMediaType("application/json", mediaType));
+    }
+
+    private ApiResponse gamLocationMutationForbiddenResponse() {
+        MediaType mediaType = new MediaType()
+                .schema(new Schema<>().$ref("#/components/schemas/ApiErrorDTO"));
+        mediaType.addExamples(
+                "missingPermission",
+                new Example().summary("The authenticated account lacks GAM_LOCATION_MANAGE")
+                        .value(errorExample(
+                                403,
+                                "FORBIDDEN",
+                                "The authenticated account is not allowed to perform this operation."
+                        ))
+        );
+        mediaType.addExamples(
+                "systemManagedLocation",
+                new Example().summary("System-managed GamLocation mutation is forbidden")
+                        .value(errorExample(
+                                403,
+                                "FORBIDDEN_OPERATION",
+                                "System-managed GamLocations cannot be changed through product workflows.",
+                                Map.of(
+                                        "resource",
+                                        "GamLocation",
+                                        "identifier",
+                                        "019f6343-321a-7c90-a096-a551e8f88eb4"
+                                )
+                        ))
+        );
+        return new ApiResponse()
+                .description("Possible codes: FORBIDDEN, FORBIDDEN_OPERATION.")
                 .content(new Content().addMediaType("application/json", mediaType));
     }
 
@@ -873,6 +916,30 @@ public class OpenApiConfig {
             }
         });
         addStructuredSearchRequestExample(operation);
+        correctGamLocationMutationSuccessExample(operation);
+    }
+
+    private void correctGamLocationMutationSuccessExample(
+            io.swagger.v3.oas.models.Operation operation
+    ) {
+        String status = switch (operation.getOperationId()) {
+            case "createGamLocation" -> "201";
+            case "updateGamLocation" -> "200";
+            default -> null;
+        };
+        if (status == null) {
+            return;
+        }
+
+        ApiResponse response = operation.getResponses().get(status);
+        if (response == null || response.getContent() == null) {
+            return;
+        }
+        for (MediaType mediaType : response.getContent().values()) {
+            if (mediaType.getExample() instanceof Map<?, ?> example) {
+                mediaType.setExample(ordinaryGamLocationExample(example));
+            }
+        }
     }
 
     private void addStructuredSearchRequestExample(io.swagger.v3.oas.models.Operation operation) {
@@ -922,6 +989,9 @@ public class OpenApiConfig {
             Schema<?> referencedSchema = openApi.getComponents().getSchemas().get(schemaName);
             Object example = exampleForSchema(openApi, referencedSchema, propertyName, resolvingReferences);
             resolvingReferences.remove(reference);
+            if ("GamLocationRDTO".equals(schemaName) && example instanceof Map<?, ?> gamLocation) {
+                return ordinaryGamLocationExample(gamLocation);
+            }
             return example;
         }
         if (schema.getExample() != null) {
@@ -951,6 +1021,14 @@ public class OpenApiConfig {
             return true;
         }
         return stringExample(schema, propertyName);
+    }
+
+    private Map<String, Object> ordinaryGamLocationExample(Map<?, ?> gamLocation) {
+        Map<String, Object> ordinaryLocation = new LinkedHashMap<>();
+        gamLocation.forEach((key, value) -> ordinaryLocation.put(String.valueOf(key), value));
+        ordinaryLocation.put("code", null);
+        ordinaryLocation.put("systemManaged", false);
+        return ordinaryLocation;
     }
 
     private boolean hasType(Schema<?> schema, String type) {

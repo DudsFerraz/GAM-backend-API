@@ -4,19 +4,21 @@ import br.org.gam.api.shared.persistence.BaseRepository;
 import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface GamLocationRepository extends BaseRepository<GamLocationEntity, UUID> {
 
-    Optional<GamLocationEntity> findByIdentityName(String identityName);
-
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select location from GamLocationEntity location where location.identityName = :identityName")
-    Optional<GamLocationEntity> findActiveByIdentityNameForUpdate(
-            @Param("identityName") String identityName
-    );
+    @Override
+    @Query("""
+            select location from GamLocationEntity location
+            where location.systemManaged = false
+               or location.catalogCurrent = true
+            """)
+    Page<GamLocationEntity> findAll(Pageable pageable);
 
     @Query("""
             select location from GamLocationEntity location
@@ -61,6 +63,19 @@ public interface GamLocationRepository extends BaseRepository<GamLocationEntity,
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select location from GamLocationEntity location where location.id = :id")
     Optional<GamLocationEntity> findActiveByIdForUpdate(@Param("id") UUID id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select location from GamLocationEntity location
+            where location.id = :id
+              and location.code = :code
+              and location.systemManaged = true
+              and location.catalogCurrent = true
+            """)
+    Optional<GamLocationEntity> findCurrentSystemByIdAndCodeForUpdate(
+            @Param("id") UUID id,
+            @Param("code") String code
+    );
 
     @Query(value = "select count(*) from events where gam_location_id = :locationId", nativeQuery = true)
     long countEventReferencesIncludingDeleted(@Param("locationId") UUID locationId);

@@ -107,6 +107,62 @@ class EventRecordsLifecycleApiIT extends MemberApiTestSupport {
                 .doesNotContain("Encontro de Oração", "Texto com espaços internos");
     }
 
+    @Test
+    @DisplayName("REQ-GAM-LOCATION-CATALOG-003/007 and REQ-EVENT-002/004 - retired system location -> hidden directly but embedded in historical Event")
+    void retiredSystemLocationShouldRemainEmbeddedInHistoricalEvent() {
+        AuthSession caller = newSessionWithPermissions("EVENT_CREATE", "GAM_LOCATION_GET");
+        UUID locationId = jdbcTemplate.queryForObject(
+                "SELECT id FROM gam_locations WHERE code = 'DBA'",
+                UUID.class
+        );
+        Map<String, Object> payload = eventPayload(
+                "Historical system-location Event",
+                locationId,
+                null,
+                Instant.now().minusSeconds(7_200),
+                Instant.now().minusSeconds(3_600)
+        );
+        ExtractableResponse<Response> creation = authenticatedJsonRequest(caller)
+                .body(payload)
+                .post(EVENTS)
+                .then()
+                .statusCode(201)
+                .extract();
+        UUID eventId = UUID.fromString(creation.path("id"));
+        trackEvent(eventId);
+
+        try {
+            jdbcTemplate.update(
+                    "UPDATE gam_locations SET catalog_current = FALSE WHERE id = ?",
+                    locationId
+            );
+
+            ExtractableResponse<Response> historicalEvent = authenticatedJsonRequest(caller)
+                    .get(EVENTS + "/" + eventId)
+                    .then()
+                    .statusCode(200)
+                    .extract();
+            assertThat(historicalEvent.<String>path("gamLocation.id"))
+                    .isEqualTo(locationId.toString());
+            assertThat(historicalEvent.<String>path("gamLocation.code")).isEqualTo("DBA");
+            assertThat(historicalEvent.<Boolean>path("gamLocation.systemManaged")).isTrue();
+            assertThat(historicalEvent.<String>path("gamLocation.name"))
+                    .isEqualTo("Dom Bosco Assunção");
+
+            ExtractableResponse<Response> directLocation = authenticatedJsonRequest(caller)
+                    .get("/gam-locations/" + locationId)
+                    .then()
+                    .extract();
+            assertThat(directLocation.statusCode()).isEqualTo(404);
+            assertThat(directLocation.<String>path("code")).isEqualTo("RESOURCE_NOT_FOUND");
+        } finally {
+            jdbcTemplate.update(
+                    "UPDATE gam_locations SET catalog_current = TRUE WHERE id = ?",
+                    locationId
+            );
+        }
+    }
+
     @ParameterizedTest(name = "{0}")
     @MethodSource("invalidCreationPayloads")
     @DisplayName("REQ-EVENT-003 - invalid creation equivalence classes -> HTTP 400 and no Event activity")

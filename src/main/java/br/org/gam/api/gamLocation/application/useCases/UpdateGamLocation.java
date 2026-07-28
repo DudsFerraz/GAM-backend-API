@@ -3,6 +3,7 @@ package br.org.gam.api.gamLocation.application.useCases;
 import br.org.gam.api.gamLocation.application.GamLocationEntityLoader;
 import br.org.gam.api.gamLocation.application.GamLocationDuplicateLookup;
 import br.org.gam.api.gamLocation.application.GamLocationMapper;
+import br.org.gam.api.gamLocation.application.GamLocationMutationPolicy;
 import br.org.gam.api.gamLocation.application.GamLocationNormalizer;
 import br.org.gam.api.gamLocation.application.GamLocationRDTO;
 import br.org.gam.api.gamLocation.persistence.GamLocationRepository;
@@ -43,6 +44,7 @@ public class UpdateGamLocation {
                 dto.latitude(), dto.longitude()
         );
         GamLocationEntity entity = loader.requiredByIdForUpdate(id);
+        GamLocationMutationPolicy.requireUserManaged(entity);
 
         List<String> changedFields = changedFields(entity, values);
         if (changedFields.isEmpty()) {

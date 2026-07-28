@@ -15,12 +15,22 @@ public class GamLocationEntityLoader {
     }
 
     public GamLocationEntity requiredById(UUID id) {
-        return repository.findById(id)
+        GamLocationEntity entity = repository.findById(id)
                 .orElseThrow(() -> NotFoundException.resource("GamLocation", id));
+        requireCurrent(entity, id);
+        return entity;
     }
 
     public GamLocationEntity requiredByIdForUpdate(UUID id) {
-        return repository.findActiveByIdForUpdate(id)
+        GamLocationEntity entity = repository.findActiveByIdForUpdate(id)
                 .orElseThrow(() -> NotFoundException.resource("GamLocation", id));
+        requireCurrent(entity, id);
+        return entity;
+    }
+
+    private void requireCurrent(GamLocationEntity entity, UUID id) {
+        if (entity.isSystemManaged() && !entity.isCatalogCurrent()) {
+            throw NotFoundException.resource("GamLocation", id);
+        }
     }
 }
