@@ -1,5 +1,6 @@
 package br.org.gam.api.rbac;
 
+import br.org.gam.api.GamApiApplication;
 import br.org.gam.api.db.migration.R__SeedPermissionsAndRoles;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.IntegrationTest;
@@ -18,10 +19,14 @@ import org.flywaydb.core.api.migration.Context;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.SpringApplication;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -112,6 +117,9 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
     @Autowired
     private DataSource dataSource;
 
+    @Autowired
+    private Environment environment;
+
     @AfterEach
     void restoreCatalogAfterMutation() throws Exception {
         invokeSeed();
@@ -144,11 +152,18 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
     }
 
     @Test
-    @DisplayName("REQ-RBAC-004 - repeated seed preserves identifiers and creates no duplicate active rows")
+    @DisplayName("REQ-DATA-003 and REQ-RBAC-004 - converged seed is a complete observable no-op")
     void repeatedSeedShouldPreserveIdentifiersAndAvoidDuplicateRows() throws Exception {
         Map<String, UUID> roleIdsBefore = activeIdsByName("roles", "name");
         Map<String, UUID> permissionIdsBefore = activeIdsByName("permissions", "code");
         long activeRolePermissionCountBefore = activeRolePermissionCount();
+        Instant roleUpdatedAtBefore = updatedAt("roles", activeId("roles", "name", "COORD"));
+        Instant permissionUpdatedAtBefore =
+                updatedAt("permissions", activeId("permissions", "code", "PERMISSION_GET"));
+        long activityCountBefore = rowCount("activity_logs");
+        long accountCountBefore = rowCount("accounts");
+        long accountRoleCountBefore = rowCount("account_roles");
+        long refreshTokenCountBefore = rowCount("refresh_tokens");
 
         invokeSeed();
 
@@ -156,11 +171,210 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
         assertThat(activeIdsByName("permissions", "code")).containsExactlyInAnyOrderEntriesOf(permissionIdsBefore);
         assertThat(activeRolePermissionCount()).isEqualTo(activeRolePermissionCountBefore);
         assertThat(duplicateActiveRolePermissionPairs()).isEmpty();
+        assertThat(updatedAt("roles", activeId("roles", "name", "COORD"))).isEqualTo(roleUpdatedAtBefore);
+        assertThat(updatedAt("permissions", activeId("permissions", "code", "PERMISSION_GET")))
+                .isEqualTo(permissionUpdatedAtBefore);
+        assertThat(rowCount("activity_logs")).isEqualTo(activityCountBefore);
+        assertThat(rowCount("accounts")).isEqualTo(accountCountBefore);
+        assertThat(rowCount("account_roles")).isEqualTo(accountRoleCountBefore);
+        assertThat(rowCount("refresh_tokens")).isEqualTo(refreshTokenCountBefore);
     }
 
     @Test
-    @DisplayName("REQ-RBAC-004 - soft-deleted baseline link is recreated once as an active link")
-    void softDeletedBaselineLinkShouldBeRecreatedOnceAsActiveLink() throws Exception {
+    @DisplayName("REQ-DATA-002 - repeatable seed exposes a stable deterministic registry checksum")
+    void repeatableSeedShouldExposeStableRegistryChecksum() {
+        Integer firstChecksum = new R__SeedPermissionsAndRoles().getChecksum();
+        Integer secondChecksum = new R__SeedPermissionsAndRoles().getChecksum();
+
+        assertThat(firstChecksum)
+                .as("the complete accepted registry must participate in Flyway repeatable scheduling")
+                .isNotNull()
+                .isEqualTo(secondChecksum);
+    }
+
+    @Test
+    @DisplayName("REQ-DATA-004 - reserved-key collision fails before any catalog mutation")
+    void customReservedKeyCollisionShouldFailBeforeMutation() {
+        UUID coordId = activeId("roles", "name", "COORD");
+        UUID permissionGetId = activeId("permissions", "code", "PERMISSION_GET");
+        String acceptedRoleDescription = activeText("roles", "description", "name", "COORD");
+        String acceptedPermissionLabel = activeText("permissions", "label", "code", "PERMISSION_GET");
+        Instant collisionTimestamp = Instant.parse("2024-01-02T03:04:05Z");
+
+        try {
+            jdbcTemplate.update(
+                    "UPDATE roles SET description = ?, system_managed = FALSE, updated_at = ? WHERE id = ?",
+                    "User-managed collision",
+                    Timestamp.from(collisionTimestamp),
+                    coordId
+            );
+            jdbcTemplate.update(
+                    "UPDATE permissions SET label = ?, updated_at = ? WHERE id = ?",
+                    "Unreconciled metadata",
+                    Timestamp.from(collisionTimestamp),
+                    permissionGetId
+            );
+
+            Throwable failure = catchThrowable(this::invokeSeed);
+
+            assertThat(failure)
+                    .as("a user-managed record under a reserved stable key must block synchronization")
+                    .isNotNull();
+            assertThat(activeText("roles", "description", "name", "COORD"))
+                    .isEqualTo("User-managed collision");
+            assertThat(systemManaged("roles", coordId)).isFalse();
+            assertThat(activeText("permissions", "label", "code", "PERMISSION_GET"))
+                    .isEqualTo("Unreconciled metadata");
+            assertThat(updatedAt("permissions", permissionGetId)).isEqualTo(collisionTimestamp);
+        } finally {
+            jdbcTemplate.update(
+                    "UPDATE roles SET description = ?, system_managed = TRUE WHERE id = ?",
+                    acceptedRoleDescription,
+                    coordId
+            );
+            jdbcTemplate.update(
+                    "UPDATE permissions SET label = ? WHERE id = ?",
+                    acceptedPermissionLabel,
+                    permissionGetId
+            );
+        }
+    }
+
+    @Test
+    @DisplayName("REQ-DATA-006 - unexplained mandatory-link drift blocks application restart")
+    void missingMandatoryLinkShouldBlockApplicationRestart() {
+        UUID roleId = activeId("roles", "name", "COORD");
+        UUID permissionId = activeId("permissions", "code", "PERMISSION_GET");
+        UUID originalLinkId = activeRolePermissionId(roleId, permissionId);
+        ConfigurableApplicationContext restartedContext = null;
+        Throwable startupFailure = null;
+
+        try {
+            try (ConfigurableApplicationContext baselineContext = startApplication()) {
+                assertThat(baselineContext.isActive())
+                        .as("the control restart must succeed before persisted drift is introduced")
+                        .isTrue();
+            }
+
+            jdbcTemplate.update(
+                    "UPDATE role_permissions SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    originalLinkId
+            );
+
+            try {
+                restartedContext = startApplication();
+            } catch (Throwable failure) {
+                startupFailure = failure;
+            }
+            assertThat(deletedAt("role_permissions", originalLinkId))
+                    .as("startup validation must remain read-only")
+                    .isNotNull();
+        } finally {
+            if (restartedContext != null) {
+                restartedContext.close();
+            }
+            jdbcTemplate.update(
+                    "DELETE FROM role_permissions WHERE role_id = ? AND permission_id = ? AND id <> ?",
+                    roleId,
+                    permissionId,
+                    originalLinkId
+            );
+            jdbcTemplate.update(
+                    "UPDATE role_permissions SET deleted_at = NULL WHERE id = ?",
+                    originalLinkId
+            );
+        }
+
+        assertThat(startupFailure)
+                .as("read-only startup validation must reject persisted drift without silently repairing it")
+                .isNotNull();
+    }
+
+    @Test
+    @DisplayName("REQ-DATA-006 - soft-deleted reserved-key collision blocks application restart")
+    void softDeletedReservedKeyCollisionShouldBlockApplicationRestart() {
+        UUID collisionId = UUID.randomUUID();
+        Timestamp persistedAt = Timestamp.from(Instant.parse("2024-01-02T03:04:05Z"));
+        ConfigurableApplicationContext restartedContext = null;
+        Throwable startupFailure = null;
+
+        try {
+            jdbcTemplate.update(
+                    "INSERT INTO roles "
+                            + "(id, name, description, system_managed, created_at, updated_at, deleted_at) "
+                            + "VALUES (?, ?, ?, FALSE, ?, ?, ?)",
+                    collisionId,
+                    "COORD",
+                    "Soft-deleted user-managed collision",
+                    persistedAt,
+                    persistedAt,
+                    persistedAt
+            );
+
+            try {
+                restartedContext = startApplication();
+            } catch (Throwable failure) {
+                startupFailure = failure;
+            }
+            assertThat(deletedAt("roles", collisionId))
+                    .as("startup validation must not repair or remove the colliding record")
+                    .isNotNull();
+        } finally {
+            if (restartedContext != null) {
+                restartedContext.close();
+            }
+            jdbcTemplate.update("DELETE FROM roles WHERE id = ?", collisionId);
+        }
+
+        assertThat(startupFailure)
+                .as("startup must inspect active and soft-deleted matches for every reserved stable key")
+                .isNotNull();
+    }
+
+    @Test
+    @DisplayName("REQ-DATA-006 - duplicate persisted required link blocks application restart")
+    void duplicatePersistedRequiredLinkShouldBlockApplicationRestart() {
+        UUID roleId = activeId("roles", "name", "COORD");
+        UUID permissionId = activeId("permissions", "code", "EVENT_GET_MEMBER");
+        UUID duplicateLinkId = UUID.randomUUID();
+        Timestamp persistedAt = Timestamp.from(Instant.parse("2024-01-02T03:04:05Z"));
+        ConfigurableApplicationContext restartedContext = null;
+        Throwable startupFailure = null;
+
+        try {
+            jdbcTemplate.update(
+                    "INSERT INTO role_permissions "
+                            + "(id, role_id, permission_id, created_at, deleted_at) VALUES (?, ?, ?, ?, ?)",
+                    duplicateLinkId,
+                    roleId,
+                    permissionId,
+                    persistedAt,
+                    persistedAt
+            );
+
+            try {
+                restartedContext = startApplication();
+            } catch (Throwable failure) {
+                startupFailure = failure;
+            }
+            assertThat(deletedAt("role_permissions", duplicateLinkId))
+                    .as("startup validation must not repair or remove the duplicate relationship")
+                    .isNotNull();
+        } finally {
+            if (restartedContext != null) {
+                restartedContext.close();
+            }
+            jdbcTemplate.update("DELETE FROM role_permissions WHERE id = ?", duplicateLinkId);
+        }
+
+        assertThat(startupFailure)
+                .as("startup must inspect active and soft-deleted matches for every required relationship")
+                .isNotNull();
+    }
+
+    @Test
+    @DisplayName("REQ-DATA-003 and REQ-RBAC-004 - soft-deleted baseline link identity is restored once")
+    void softDeletedBaselineLinkShouldReuseItsIdentityWhenRestored() throws Exception {
         UUID roleId = activeId("roles", "name", "COORD");
         UUID permissionId = activeId("permissions", "code", "EVENT_GET_MEMBER");
         UUID originalLinkId = activeRolePermissionId(roleId, permissionId);
@@ -176,14 +390,13 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
             List<UUID> repairedLinks = activeRolePermissionIds(roleId, permissionId);
             assertThat(repairedLinks)
                     .hasSize(1)
-                    .doesNotContain(originalLinkId);
-            UUID repairedLinkId = repairedLinks.getFirst();
-            assertThat(deletedAt("role_permissions", originalLinkId)).isNotNull();
+                    .containsExactly(originalLinkId);
+            assertThat(deletedAt("role_permissions", originalLinkId)).isNull();
 
             invokeSeed();
 
             assertThat(activeRolePermissionIds(roleId, permissionId))
-                    .containsExactly(repairedLinkId);
+                    .containsExactly(originalLinkId);
         } finally {
             jdbcTemplate.update(
                     "DELETE FROM role_permissions WHERE role_id = ? AND permission_id = ? AND id <> ?",
@@ -195,6 +408,36 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
                     "UPDATE role_permissions SET deleted_at = NULL WHERE id = ?",
                     originalLinkId
             );
+        }
+    }
+
+    @Test
+    @DisplayName("REQ-DATA-004 and REQ-RBAC-004 - duplicate persisted baseline link is a collision")
+    void duplicatePersistedBaselineLinkShouldBlockSynchronization() {
+        UUID roleId = activeId("roles", "name", "COORD");
+        UUID permissionId = activeId("permissions", "code", "EVENT_GET_MEMBER");
+        UUID duplicateLinkId = UUID.randomUUID();
+
+        try {
+            jdbcTemplate.update(
+                    "INSERT INTO role_permissions "
+                            + "(id, role_id, permission_id, created_at, deleted_at) VALUES (?, ?, ?, ?, ?)",
+                    duplicateLinkId,
+                    roleId,
+                    permissionId,
+                    Timestamp.from(Instant.parse("2024-01-02T03:04:05Z")),
+                    Timestamp.from(Instant.parse("2024-01-03T03:04:05Z"))
+            );
+
+            Throwable failure = catchThrowable(this::invokeSeed);
+
+            assertThat(failure)
+                    .as("multiple persisted matches for one required relationship must block synchronization")
+                    .isNotNull();
+            assertThat(activeRolePermissionIds(roleId, permissionId)).hasSize(1);
+            assertThat(deletedAt("role_permissions", duplicateLinkId)).isNotNull();
+        } finally {
+            jdbcTemplate.update("DELETE FROM role_permissions WHERE id = ?", duplicateLinkId);
         }
     }
 
@@ -399,6 +642,44 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
                 "SELECT deleted_at FROM " + table + " WHERE id = ?",
                 java.time.Instant.class,
                 id
+        );
+    }
+
+    private Instant updatedAt(String table, UUID id) {
+        return jdbcTemplate.queryForObject(
+                "SELECT updated_at FROM " + table + " WHERE id = ?",
+                Instant.class,
+                id
+        );
+    }
+
+    private boolean systemManaged(String table, UUID id) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "SELECT system_managed FROM " + table + " WHERE id = ?",
+                Boolean.class,
+                id
+        ));
+    }
+
+    private long rowCount(String table) {
+        return Objects.requireNonNull(
+                jdbcTemplate.queryForObject("SELECT COUNT(*) FROM " + table, Long.class),
+                "Expected row count for " + table
+        );
+    }
+
+    private String requiredProperty(String name) {
+        return Objects.requireNonNull(environment.getProperty(name), "Missing test property " + name);
+    }
+
+    private ConfigurableApplicationContext startApplication() {
+        SpringApplication application = new SpringApplication(GamApiApplication.class);
+        application.setAdditionalProfiles("test");
+        return application.run(
+                "--server.port=0",
+                "--spring.datasource.url=" + requiredProperty("spring.datasource.url"),
+                "--spring.datasource.username=" + requiredProperty("spring.datasource.username"),
+                "--spring.datasource.password=" + requiredProperty("spring.datasource.password")
         );
     }
 
