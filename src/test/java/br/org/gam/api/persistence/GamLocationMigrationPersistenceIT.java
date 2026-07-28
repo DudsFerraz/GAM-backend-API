@@ -27,6 +27,9 @@ import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
+import org.springframework.security.crypto.password.Pbkdf2PasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -37,6 +40,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @PersistenceTest
 @DisplayName("Persistence - GamLocation schema migration")
 class GamLocationMigrationPersistenceIT {
+
+    private static final String DEVELOPMENT_FIXTURE_PASSWORD = UUID.randomUUID().toString();
+    private static final String DEVELOPMENT_FIXTURE_PASSWORD_HASH = passwordEncoder().encode(
+            DEVELOPMENT_FIXTURE_PASSWORD
+    );
 
     private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
             DockerImageName.parse("postgres:18-alpine")
@@ -499,12 +507,33 @@ class GamLocationMigrationPersistenceIT {
                 .schemas(schema)
                 .defaultSchema(schema)
                 .createSchemas(true)
-                .locations(locations)
-                .javaMigrations(new R__SeedPermissionsAndRoles());
+                .locations(locations);
+        boolean includesDevelopmentFixtures = false;
+        for (String location : locations) {
+            includesDevelopmentFixtures |= location.equals("classpath:db/dev-migration");
+        }
+        if (includesDevelopmentFixtures) {
+            configuration.javaMigrations(
+                    new R__SeedPermissionsAndRoles(),
+                    new R__SynchronizeSystemGamLocations()
+            ).placeholders(Map.of(
+                    "gamDevFixtureExecutionEnabled", "true",
+                    "gamDevFixturePasswordHash", DEVELOPMENT_FIXTURE_PASSWORD_HASH
+            ));
+        } else {
+            configuration.javaMigrations(new R__SeedPermissionsAndRoles());
+        }
         if (target != null) {
             configuration.target(MigrationVersion.fromVersion(target));
         }
         return configuration.load();
+    }
+
+    private static PasswordEncoder passwordEncoder() {
+        return new DelegatingPasswordEncoder(
+                "pbkdf2",
+                Map.of("pbkdf2", Pbkdf2PasswordEncoder.defaultsForSpringSecurity_v5_8())
+        );
     }
 
     private Flyway migrateSystemCatalog(String schema) {

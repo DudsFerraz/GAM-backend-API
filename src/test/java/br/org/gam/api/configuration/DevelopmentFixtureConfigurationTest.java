@@ -140,7 +140,9 @@ class DevelopmentFixtureConfigurationTest {
                         "NEVER ADD THIS LOCATION TO PRODUCTION",
                         "${gamDevFixtureExecutionEnabled}",
                         "${gamDevFixturePasswordHash}",
-                        "01950000-0010-7000-8000-000000000001",
+                        "code = 'DBSM'",
+                        "system_managed",
+                        "catalog_current",
                         "dev.sudo@example.com",
                         "renata.custom-role@example.com"
                 )
@@ -190,7 +192,7 @@ class DevelopmentFixtureConfigurationTest {
                         "gam.dev-fixture.execution-enabled",
                         "gam.dev-fixture.password-hash",
                         "01950000-0001-7000-8000-000000000001",
-                        "01950000-0010-7000-8000-000000000001",
+                        "the current `DBSM` system catalog row",
                         "focused fixture verification"
                 )
                 .doesNotContain("123456")

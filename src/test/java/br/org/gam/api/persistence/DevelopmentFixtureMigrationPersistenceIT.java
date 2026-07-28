@@ -1,7 +1,7 @@
 package br.org.gam.api.persistence;
 
-import br.org.gam.api.db.migration.R__SeedOratorioGamLocation;
 import br.org.gam.api.db.migration.R__SeedPermissionsAndRoles;
+import br.org.gam.api.db.migration.R__SynchronizeSystemGamLocations;
 import br.org.gam.api.security.SecurityConfig;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.IntegrationTest;
@@ -401,7 +401,12 @@ class DevelopmentFixtureMigrationPersistenceIT {
     void lateManifestCollisionShouldRollbackAllFixtureMutation() {
         String schema = uniqueSchema("dev_fixture_late_collision");
         migrate(schema, Map.of(), false).migrate();
-        UUID systemLocationId = UUID.fromString("01950000-0010-7000-8000-000000000001");
+        UUID systemLocationId = jdbcTemplate.queryForObject(
+                "SELECT id FROM " + schema + ".gam_locations "
+                        + "WHERE code = 'DBSM' AND system_managed "
+                        + "AND catalog_current AND deleted_at IS NULL",
+                UUID.class
+        );
         Timestamp begin = Timestamp.from(Instant.parse("2031-04-05T17:00:00Z"));
         Timestamp end = Timestamp.from(Instant.parse("2031-04-05T20:00:00Z"));
         Timestamp now = Timestamp.from(Instant.parse("2026-07-28T12:00:00Z"));
@@ -466,18 +471,18 @@ class DevelopmentFixtureMigrationPersistenceIT {
     }
 
     @Test
-    @DisplayName("REQ-DEV-FIXTURE-004 - missing production-safe prerequisite -> fail before fixture mutation")
-    void missingProductionSafePrerequisiteShouldFailBeforeFixtureMutation() {
+    @DisplayName("REQ-DEV-FIXTURE-004 - missing current system location -> fail before fixture mutation")
+    void missingCurrentSystemLocationShouldFailBeforeFixtureMutation() {
         String schema = uniqueSchema("dev_fixture_missing_reference");
         migrate(schema, Map.of(), false).migrate();
         jdbcTemplate.update(
-                "DELETE FROM " + schema + ".gam_locations WHERE id = ?",
-                UUID.fromString("01950000-0010-7000-8000-000000000001")
+                "DELETE FROM " + schema + ".gam_locations "
+                        + "WHERE code = 'DBSM' AND system_managed AND catalog_current"
         );
 
         assertThatThrownBy(() -> migrate(schema, validConfiguration(), true).migrate())
                 .isInstanceOf(FlywayException.class)
-                .hasMessageContaining("production-safe Oratorio GamLocation");
+                .hasMessageContaining("current DBSM system GamLocation");
         assertThat(canonicalAccountCount(schema)).isZero();
     }
 
@@ -1967,7 +1972,7 @@ class DevelopmentFixtureMigrationPersistenceIT {
                         : new String[]{"classpath:db/migration"})
                 .javaMigrations(
                         new R__SeedPermissionsAndRoles(),
-                        new R__SeedOratorioGamLocation()
+                        new R__SynchronizeSystemGamLocations()
                 )
                 .placeholders(placeholders);
         return configuration.load();

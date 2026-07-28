@@ -327,14 +327,18 @@ BEGIN
     WHERE code = 'GAM_LOCATION_GET' AND system_managed AND deleted_at IS NULL;
 
     IF (SELECT count(*) FROM gam_locations
-        WHERE id = '01950000-0010-7000-8000-000000000001'::uuid
+        WHERE code = 'DBSM'
+          AND system_managed
+          AND catalog_current
           AND deleted_at IS NULL) <> 1 THEN
         RAISE EXCEPTION
-            'Development fixture requires the production-safe Oratorio GamLocation';
+            'Development fixture requires the current DBSM system GamLocation';
     END IF;
     SELECT id INTO v_system_oratorio_location
     FROM gam_locations
-    WHERE id = '01950000-0010-7000-8000-000000000001'::uuid
+    WHERE code = 'DBSM'
+      AND system_managed
+      AND catalog_current
       AND deleted_at IS NULL;
 
     -- Accounts: twelve named personas, one historical solicitation identity,

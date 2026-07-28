@@ -85,8 +85,8 @@ lifecycles, print snapshots, and one visibly synthetic valid PDF.
 
 The callback validates all required system Roles, Permissions, and the
 production-safe Oratorio GamLocation before changing fixture rows. It resolves
-DBSM through the system catalog UUID
-`01950000-0010-7000-8000-000000000001`, never through its mutable name. A
+the current `DBSM` system catalog row by code, `system_managed`, and
+`catalog_current`, never through its mutable name or a legacy fixed UUID. A
 manifest UUID or canonical key collision fails the complete callback
 transaction; do not change the callback to adopt a similarly named local row.
 
