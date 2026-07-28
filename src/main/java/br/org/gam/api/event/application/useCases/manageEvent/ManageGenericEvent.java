@@ -21,6 +21,7 @@ import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.shared.exception.ConflictException;
 import br.org.gam.api.shared.exception.InvalidCommandException;
 import br.org.gam.api.shared.exception.NotFoundException;
+import br.org.gam.api.shared.exception.RequestValidationException;
 import br.org.gam.api.shared.validation.RequiredReason;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -63,9 +64,9 @@ public class ManageGenericEvent {
     @Transactional
     public EventRDTO replace(UUID eventId, EventReplacementDTO dto) {
         Instant evaluationInstant = Instant.now();
-        Event.validateDates(dto.beginDate(), dto.endDate());
-        String title = Event.normalizeTitle(dto.title());
-        String description = Event.normalizeDescription(dto.description());
+        validateDateRelationship(dto.beginDate(), dto.endDate());
+        String title = validatedTitle(dto.title());
+        String description = validatedDescription(dto.description());
         String reason = dto.reason() == null ? null
                 : RequiredReason.normalize(dto.reason(), "An Event update reason must contain 1 to 2000 characters.");
 
@@ -120,6 +121,30 @@ public class ManageGenericEvent {
                 ActivityAction.EVENT_UPDATED, eventId, reason, "Event updated", metadata
         );
         return eventMapper.entityToRDTO(entity, evaluationInstant);
+    }
+
+    private void validateDateRelationship(Instant beginDate, Instant endDate) {
+        try {
+            Event.validateDates(beginDate, endDate);
+        } catch (IllegalArgumentException exception) {
+            throw new RequestValidationException("body", "$", "RELATION");
+        }
+    }
+
+    private String validatedTitle(String title) {
+        try {
+            return Event.normalizeTitle(title);
+        } catch (IllegalArgumentException exception) {
+            throw new RequestValidationException("body", "/title", "SIZE");
+        }
+    }
+
+    private String validatedDescription(String description) {
+        try {
+            return Event.normalizeDescription(description);
+        } catch (IllegalArgumentException exception) {
+            throw new RequestValidationException("body", "/description", "SIZE");
+        }
     }
 
     @Transactional

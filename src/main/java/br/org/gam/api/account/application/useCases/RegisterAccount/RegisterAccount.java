@@ -6,6 +6,7 @@ import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.account.persistence.AccountRepository;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.shared.exception.ConflictException;
+import br.org.gam.api.shared.exception.RequestValidationException;
 import jakarta.transaction.Transactional;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -41,8 +42,11 @@ public class RegisterAccount {
         }
 
         String displayName = dto.displayName().trim();
-        if (displayName.isEmpty() || displayName.length() > 50) {
-            throw new IllegalArgumentException("Display name must be between 1 and 50 characters after trimming.");
+        if (displayName.isEmpty()) {
+            throw new RequestValidationException("body", "/displayName", "NOT_BLANK");
+        }
+        if (displayName.length() > 50) {
+            throw new RequestValidationException("body", "/displayName", "SIZE");
         }
 
         String hashedPassword = passwordEncoder.encode(dto.password());

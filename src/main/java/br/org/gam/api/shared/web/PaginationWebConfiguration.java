@@ -1,5 +1,7 @@
 package br.org.gam.api.shared.web;
 
+import br.org.gam.api.shared.exception.RequestValidationException;
+import br.org.gam.api.shared.exception.RequestParameterTypeException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
@@ -37,9 +39,26 @@ public class PaginationWebConfiguration implements WebMvcConfigurer {
                 @NonNull HttpServletResponse response,
                 @NonNull Object handler
         ) {
+            validatePage(request);
             validatePageSize(request);
             validateSort(request);
             return true;
+        }
+
+        private void validatePage(HttpServletRequest request) {
+            String page = request.getParameter("page");
+            if (page == null) {
+                return;
+            }
+
+            try {
+                int parsedPage = Integer.parseInt(page);
+                if (parsedPage < 0) {
+                    throw new RequestValidationException("query", "page", "RANGE");
+                }
+            } catch (NumberFormatException exception) {
+                throw new RequestParameterTypeException("query", "page", "INTEGER");
+            }
         }
 
         private void validatePageSize(HttpServletRequest request) {
@@ -49,11 +68,12 @@ public class PaginationWebConfiguration implements WebMvcConfigurer {
             }
 
             try {
-                if (Integer.parseInt(size) > MAX_PAGE_SIZE) {
-                    throw new IllegalArgumentException("Page size must not exceed 100.");
+                int parsedSize = Integer.parseInt(size);
+                if (parsedSize < 1 || parsedSize > MAX_PAGE_SIZE) {
+                    throw new RequestValidationException("query", "size", "RANGE");
                 }
             } catch (NumberFormatException exception) {
-                throw new IllegalArgumentException("Page size must be a whole number.");
+                throw new RequestParameterTypeException("query", "size", "INTEGER");
             }
         }
 
@@ -68,7 +88,7 @@ public class PaginationWebConfiguration implements WebMvcConfigurer {
                 String[] parts = sort.split(",", -1);
                 if (parts.length != 2 || !allowedFields.contains(parts[0])
                         || !("asc".equalsIgnoreCase(parts[1]) || "desc".equalsIgnoreCase(parts[1]))) {
-                    throw new IllegalArgumentException("Invalid sort parameter.");
+                    throw new RequestValidationException("query", "sort", "ALLOWED_VALUE");
                 }
             }
         }

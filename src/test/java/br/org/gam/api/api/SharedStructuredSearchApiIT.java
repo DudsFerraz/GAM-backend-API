@@ -99,14 +99,20 @@ class SharedStructuredSearchApiIT extends MemberApiTestSupport {
                     .then()
                     .extract();
 
-            assertError(response, 400, "MALFORMED_JSON");
+            assertMalformedJson(response, "UNKNOWN_FIELD", null);
+            assertThat(response.asString()).as(route).doesNotContain("comparationMethod");
         }
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("malformedRequestCases")
     @DisplayName("REQ-SEARCH-002/009 - invalid JSON shape or unknown property -> MALFORMED_JSON")
-    void malformedSharedRequestShouldUseMalformedJson(String scenario, Object body) {
+    void malformedSharedRequestShouldUseMalformedJson(
+            String scenario,
+            Object body,
+            String reason,
+            String field
+    ) {
         AuthSession caller = newSession("SUDO");
 
         ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
@@ -115,8 +121,10 @@ class SharedStructuredSearchApiIT extends MemberApiTestSupport {
                 .then()
                 .extract();
 
-        assertThat(response.statusCode()).as(scenario + ": " + response.asString()).isEqualTo(400);
-        assertThat(response.<String>path("code")).as(scenario).isEqualTo("MALFORMED_JSON");
+        assertMalformedJson(response, reason, field);
+        assertThat(response.asString())
+                .as(scenario)
+                .doesNotContain("predicate", "internalPath", "accounts.id");
     }
 
     @ParameterizedTest(name = "{0}")
@@ -146,15 +154,13 @@ class SharedStructuredSearchApiIT extends MemberApiTestSupport {
                 .extract();
 
         assertError(response, 400, "MALFORMED_JSON");
-        Map<String, Object> details = response.path("details");
-        String message = response.path("message");
-        boolean identifiesFilterIndex = Integer.valueOf(1).equals(
-                details == null ? null : details.get("filterIndex")
-        )
-                || message.contains("filters[1]");
-        assertThat(identifiesFilterIndex)
-                .as("%s must safely identify malformed filter index 1: %s", scenario, response.asString())
-                .isTrue();
+        assertThat(response.<Map<String, Object>>path("details"))
+                .as(scenario)
+                .containsExactlyInAnyOrderEntriesOf(Map.of(
+                        "reason", "TYPE_MISMATCH",
+                        "location", "body",
+                        "field", "/filters/1/" + property
+                ));
         assertThat(response.asString())
                 .as(scenario)
                 .doesNotContain(
@@ -171,8 +177,8 @@ class SharedStructuredSearchApiIT extends MemberApiTestSupport {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("malformedFilterIndexBoundaryCases")
-    @DisplayName("REQ-SEARCH-002/009 - malformed required strings preserve boundary filter indexes safely")
-    void malformedRequiredStringShouldPreserveBoundaryFilterIndex(
+    @DisplayName("REQ-API-ERROR-005 and REQ-SEARCH-002/009 - malformed required strings expose public boundary pointers")
+    void malformedRequiredStringShouldExposePublicBoundaryPointer(
             String scenario,
             int malformedIndex,
             String property,
@@ -197,9 +203,12 @@ class SharedStructuredSearchApiIT extends MemberApiTestSupport {
 
         assertError(response, 400, "MALFORMED_JSON");
         assertThat(response.<Map<String, Object>>path("details"))
-                .containsExactly(Map.entry("filterIndex", malformedIndex));
-        assertThat(response.<String>path("message"))
-                .contains("filters[" + malformedIndex + "]." + property);
+                .as(scenario)
+                .containsExactlyInAnyOrderEntriesOf(Map.of(
+                        "reason", "TYPE_MISMATCH",
+                        "location", "body",
+                        "field", "/filters/" + malformedIndex + "/" + property
+                ));
         assertThat(response.asString())
                 .as(scenario)
                 .doesNotContain(
@@ -278,7 +287,7 @@ class SharedStructuredSearchApiIT extends MemberApiTestSupport {
                 .then()
                 .extract();
 
-        assertError(response, 400, "MALFORMED_JSON");
+        assertMalformedJson(response, "TYPE_MISMATCH", null);
     }
 
     @ParameterizedTest(name = "{0}")
@@ -725,11 +734,21 @@ class SharedStructuredSearchApiIT extends MemberApiTestSupport {
         filterWithUnknownProperty.put("internalPath", "accounts.id");
 
         return Stream.of(
-                Arguments.of("invalid JSON syntax", "{\"filters\":["),
-                Arguments.of("request is an array", List.of()),
-                Arguments.of("filters has the wrong JSON type", Map.of("filters", "all")),
-                Arguments.of("unknown request property", unknownRequestProperty),
-                Arguments.of("unknown filter property", request(List.of(filterWithUnknownProperty)))
+                Arguments.of("invalid JSON syntax", "{\"filters\":[", "SYNTAX_ERROR", null),
+                Arguments.of("request is an array", List.of(), "TYPE_MISMATCH", null),
+                Arguments.of(
+                        "filters has the wrong JSON type",
+                        Map.of("filters", "all"),
+                        "TYPE_MISMATCH",
+                        "/filters"
+                ),
+                Arguments.of("unknown request property", unknownRequestProperty, "UNKNOWN_FIELD", null),
+                Arguments.of(
+                        "unknown filter property",
+                        request(List.of(filterWithUnknownProperty)),
+                        "UNKNOWN_FIELD",
+                        null
+                )
         );
     }
 
@@ -924,6 +943,23 @@ class SharedStructuredSearchApiIT extends MemberApiTestSupport {
     ) {
         assertThat(response.statusCode()).as(response.asString()).isEqualTo(expectedStatus);
         assertThat(response.<String>path("code")).as(response.asString()).isEqualTo(expectedCode);
+    }
+
+    private static void assertMalformedJson(
+            ExtractableResponse<Response> response,
+            String reason,
+            String field
+    ) {
+        Map<String, Object> expectedDetails = new LinkedHashMap<>();
+        expectedDetails.put("reason", reason);
+        expectedDetails.put("location", "body");
+        if (field != null) {
+            expectedDetails.put("field", field);
+        }
+
+        assertError(response, 400, "MALFORMED_JSON");
+        assertThat(response.<Map<String, Object>>path("details"))
+                .containsExactlyInAnyOrderEntriesOf(expectedDetails);
     }
 
     private static void assertSemanticError(

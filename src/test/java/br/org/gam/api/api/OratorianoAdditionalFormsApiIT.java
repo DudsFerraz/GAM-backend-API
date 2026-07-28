@@ -1350,6 +1350,57 @@ class OratorianoAdditionalFormsApiIT extends OratorioModuleApiTestSupport {
                 .body("surname", org.hamcrest.Matchers.equalTo("Silva"));
     }
 
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidPublicCompletionFields")
+    @DisplayName("REQ-ORATORIANO-FORM-003/004 and REQ-API-ERROR-002/003/004 - invalid public completion field -> exact validation violation")
+    void invalidPublicCompletionFieldShouldUseExactValidationViolation(
+            String scenario,
+            String expectedField,
+            String expectedCode
+    ) {
+        setCurrentInstant(Instant.parse("2026-07-25T15:00:00Z"));
+        AuthSession caller = sudoSession();
+        UUID oratorianoId = createOratoriano(caller, "Ana", "Silva");
+        UUID formId = draftId(createDraft(caller, oratorianoId, "DIRECT_SYSTEM_ENTRY"));
+        Map<String, Object> payload = invalidPublicCompletionFieldPayload(scenario);
+        authenticatedJsonRequest(caller)
+                .body(payload)
+                .put(formPath(oratorianoId, formId))
+                .then()
+                .statusCode(200);
+        SnapshotPdf snapshot = createSnapshotAndRender(caller, oratorianoId, formId);
+        replaceAttachments(
+                caller,
+                oratorianoId,
+                formId,
+                List.of(new TestAttachment("signed.pdf", "application/pdf", snapshot.bytes()))
+        );
+        clearActivities();
+
+        ExtractableResponse<Response> completion = authenticatedJsonRequest(caller)
+                .body(completionRequest(formId, false))
+                .patch(formPath(oratorianoId, formId) + "/complete")
+                .then()
+                .extract();
+
+        assertThat(completion.statusCode()).as(completion.asString()).isEqualTo(400);
+        assertThat(completion.<String>path("code")).isEqualTo("VALIDATION_ERROR");
+        assertThat(completion.<Map<String, Object>>path("details")).containsOnlyKeys("violations");
+        assertThat(completion.<List<Map<String, Object>>>path("details.violations"))
+                .singleElement()
+                .satisfies(violation -> {
+                    assertThat(violation)
+                            .containsOnlyKeys("location", "field", "code", "message")
+                            .containsEntry("location", "body")
+                            .containsEntry("field", expectedField)
+                            .containsEntry("code", expectedCode);
+                    assertThat(violation.get("message")).isInstanceOf(String.class);
+                    assertThat(String.valueOf(violation.get("message"))).isNotBlank();
+                });
+        assertThat(formStatus(formId)).isEqualTo("DRAFT");
+        assertThat(activityLogCount()).isZero();
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"YES", "NOT_INFORMED"})
     @DisplayName("REQ-ORATORIANO-FORM-008 - accepted structured health answers -> valid completion")
@@ -2491,6 +2542,30 @@ class OratorianoAdditionalFormsApiIT extends OratorioModuleApiTestSupport {
         return payload;
     }
 
+    private Map<String, Object> invalidPublicCompletionFieldPayload(String scenario) {
+        Map<String, Object> payload = validAdultSelfFormPayload();
+        switch (scenario) {
+            case "missing birth date" -> payload.remove("birthDate");
+            case "blank address line" -> replaceAddressField(payload, "addressLine", " \n\t ");
+            case "oversized city" -> replaceAddressField(payload, "city", "c".repeat(256));
+            case "invalid CEP" -> replaceAddressField(payload, "cep", "not-a-cep");
+            default -> throw new IllegalArgumentException("Unknown scenario: " + scenario);
+        }
+        return payload;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void replaceAddressField(
+            Map<String, Object> payload,
+            String field,
+            String value
+    ) {
+        Map<String, Object> address =
+                new LinkedHashMap<>((Map<String, Object>) payload.get("address"));
+        address.put(field, value);
+        payload.put("address", address);
+    }
+
     private Map<String, Object> validHealthPayload() {
         Map<String, Object> question = Map.of("answer", "NO");
         Map<String, Object> health = new LinkedHashMap<>();
@@ -2715,6 +2790,15 @@ class OratorianoAdditionalFormsApiIT extends OratorioModuleApiTestSupport {
         return Stream.of(
                 Arguments.of("signed attachment replacement", "attachment"),
                 Arguments.of("print-snapshot creation", "snapshot")
+        );
+    }
+
+    private static Stream<Arguments> invalidPublicCompletionFields() {
+        return Stream.of(
+                Arguments.of("missing birth date", "/birthDate", "REQUIRED"),
+                Arguments.of("blank address line", "/address/addressLine", "NOT_BLANK"),
+                Arguments.of("oversized city", "/address/city", "SIZE"),
+                Arguments.of("invalid CEP", "/address/cep", "FORMAT")
         );
     }
 

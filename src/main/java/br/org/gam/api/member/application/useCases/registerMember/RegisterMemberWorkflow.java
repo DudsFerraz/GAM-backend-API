@@ -10,7 +10,7 @@ import br.org.gam.api.member.solicitation.domain.MembershipSolicitationStatus;
 import br.org.gam.api.member.solicitation.persistence.MembershipSolicitationRepository;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.shared.exception.ConflictException;
-import br.org.gam.api.shared.validation.RequiredReason;
+import br.org.gam.api.shared.exception.RequestValidationException;
 import jakarta.transaction.Transactional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -40,7 +40,7 @@ public class RegisterMemberWorkflow {
 
     @Transactional
     public MemberRDTO register(RegisterMemberDTO dto) {
-        String reason = RequiredReason.normalize(dto.reason(), "Member registration requires an audit reason.");
+        String reason = normalizeRegistrationReason(dto.reason());
         boolean solicitationWasPending = hasPendingSolicitation(dto.accountId());
         accountEntityLoader.requiredByIdForUpdate(dto.accountId());
         if (solicitationWasPending || hasPendingSolicitation(dto.accountId())) {
@@ -58,6 +58,20 @@ public class RegisterMemberWorkflow {
                 member.getId(), member.getAccount().getId(), roles.roleAddedId(), roles.roleRemovedId(), reason
         );
         return memberMapper.entityToRDTO(member);
+    }
+
+    private String normalizeRegistrationReason(String rawReason) {
+        if (rawReason == null) {
+            throw new RequestValidationException("body", "/reason", "REQUIRED");
+        }
+        String reason = rawReason.strip();
+        if (reason.isEmpty()) {
+            throw new RequestValidationException("body", "/reason", "NOT_BLANK");
+        }
+        if (reason.codePointCount(0, reason.length()) > 2_000) {
+            throw new RequestValidationException("body", "/reason", "SIZE");
+        }
+        return reason;
     }
 
     private boolean hasPendingSolicitation(UUID accountId) {

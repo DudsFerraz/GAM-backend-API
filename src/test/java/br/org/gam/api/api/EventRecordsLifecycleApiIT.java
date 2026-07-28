@@ -640,8 +640,14 @@ class EventRecordsLifecycleApiIT extends MemberApiTestSupport {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("invalidReasonBodies")
-    @DisplayName("REQ-EVENT-013 - invalid cancellation and reopening reasons -> HTTP 400 before mutation")
-    void invalidLifecycleReasonShouldBeRejected(String scenario, Map<String, Object> body) {
+    @DisplayName("REQ-API-ERROR-002/003/004/005 and REQ-EVENT-013 - invalid cancellation reasons -> structured HTTP 400 before mutation")
+    void invalidLifecycleReasonShouldBeRejected(
+            String scenario,
+            Map<String, Object> body,
+            String expectedTopLevelCode,
+            String expectedViolationCode,
+            String rejectedValue
+    ) {
         AuthSession caller = newSessionWithPermissions(
                 "GAM_LOCATION_CREATE", "EVENT_CREATE", "EVENT_MANAGE"
         );
@@ -652,6 +658,28 @@ class EventRecordsLifecycleApiIT extends MemberApiTestSupport {
                 .body(body).patch(EVENTS + "/{id}/cancel", eventId).then().extract();
 
         assertThat(response.statusCode()).as(scenario).isEqualTo(400);
+        assertThat(response.<String>path("code")).as(scenario).isEqualTo(expectedTopLevelCode);
+        assertThat(response.<String>path("message"))
+                .as(scenario + " safe top-level message")
+                .isNotBlank()
+                .doesNotContain("InvalidCommandException", "RequiredReason");
+        assertThat(response.header("Cache-Control")).containsIgnoringCase("no-store");
+        if (expectedViolationCode != null) {
+            assertSingleValidationViolation(
+                    response,
+                    "body",
+                    "/reason",
+                    expectedViolationCode,
+                    rejectedValue
+            );
+        } else {
+            assertThat(response.jsonPath().getMap("details"))
+                    .containsExactlyInAnyOrderEntriesOf(Map.of(
+                            "reason", "UNKNOWN_FIELD",
+                            "location", "body"
+                    ));
+            assertThat(response.asString()).doesNotContain(rejectedValue);
+        }
         assertThat(eventStoredStatus(eventId)).isEqualTo("SCHEDULED");
         assertThat(activityCountForTarget(eventId)).isZero();
     }
@@ -1205,12 +1233,43 @@ class EventRecordsLifecycleApiIT extends MemberApiTestSupport {
     }
 
     private static Stream<Arguments> invalidReasonBodies() {
+        String oversizedReason = "reason-secret-".repeat(155);
         return Stream.of(
-                Arguments.of("missing reason", Map.of()),
-                Arguments.of("null reason", nullableReason(null)),
-                Arguments.of("blank reason", Map.of("reason", "   ")),
-                Arguments.of("reason above 2,000 characters", Map.of("reason", "x".repeat(2_001))),
-                Arguments.of("unknown property", Map.of("reason", "valid", "unexpected", true))
+                Arguments.of(
+                        "missing reason",
+                        Map.of(),
+                        "VALIDATION_ERROR",
+                        "REQUIRED",
+                        null
+                ),
+                Arguments.of(
+                        "null reason",
+                        nullableReason(null),
+                        "VALIDATION_ERROR",
+                        "REQUIRED",
+                        null
+                ),
+                Arguments.of(
+                        "blank reason",
+                        Map.of("reason", "   "),
+                        "VALIDATION_ERROR",
+                        "NOT_BLANK",
+                        null
+                ),
+                Arguments.of(
+                        "reason above 2,000 characters",
+                        Map.of("reason", oversizedReason),
+                        "VALIDATION_ERROR",
+                        "SIZE",
+                        oversizedReason
+                ),
+                Arguments.of(
+                        "unknown property",
+                        Map.of("reason", "valid", "unexpectedReasonProperty", true),
+                        "MALFORMED_JSON",
+                        null,
+                        "unexpectedReasonProperty"
+                )
         );
     }
 
@@ -1236,6 +1295,28 @@ class EventRecordsLifecycleApiIT extends MemberApiTestSupport {
                         2_000
                 )
         );
+    }
+
+    private void assertSingleValidationViolation(
+            ExtractableResponse<Response> response,
+            String location,
+            String field,
+            String code,
+            String rejectedValue
+    ) {
+        assertThat(response.jsonPath().getMap("details")).containsOnlyKeys("violations");
+        List<Map<String, Object>> violations = response.jsonPath().getList("details.violations");
+        assertThat(violations).singleElement().satisfies(violation -> {
+            assertThat(violation)
+                    .containsOnlyKeys("location", "field", "code", "message")
+                    .containsEntry("location", location)
+                    .containsEntry("field", field)
+                    .containsEntry("code", code);
+            assertThat(String.valueOf(violation.get("message"))).isNotBlank();
+        });
+        if (rejectedValue != null) {
+            assertThat(response.asString()).doesNotContain(rejectedValue);
+        }
     }
 
     private static Stream<Arguments> presenceObservationMetadataCases() {

@@ -213,18 +213,36 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("invalidReasons")
-    @DisplayName("REQ-MEMBER-006 and REQ-MEMBER-011 - invalid direct-registration reason -> HTTP 400 without mutation")
-    void invalidDirectRegistrationReasonShouldReturnBadRequest(String label, String reason) {
+    @DisplayName("REQ-MEMBER-006, REQ-MEMBER-011, and REQ-API-ERROR-002/003/004 - invalid direct-registration reason -> public validation violation without mutation")
+    void invalidDirectRegistrationReasonShouldReturnBadRequest(
+            String label,
+            String reason,
+            String expectedViolationCode
+    ) {
         AuthSession coordinator = newSession("COORD");
         UUID targetId = newAccount("Invalid registration reason target");
         clearActivities();
 
-        authenticatedJsonRequest(coordinator)
+        ExtractableResponse<Response> response = authenticatedJsonRequest(coordinator)
                 .body(memberPayload(targetId, LocalDate.now().minusYears(20), reason))
                 .post("/members")
                 .then()
-                .statusCode(400)
-                .body("status", equalTo(400));
+                .extract();
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(400);
+        assertThat(response.<String>path("code")).isEqualTo("VALIDATION_ERROR");
+        assertThat(response.<Map<String, Object>>path("details")).containsOnlyKeys("violations");
+        assertThat(response.<List<Map<String, Object>>>path("details.violations"))
+                .singleElement()
+                .satisfies(violation -> {
+                    assertThat(violation)
+                            .containsOnlyKeys("location", "field", "code", "message")
+                            .containsEntry("location", "body")
+                            .containsEntry("field", "/reason")
+                            .containsEntry("code", expectedViolationCode);
+                    assertThat(violation.get("message")).isInstanceOf(String.class);
+                    assertThat(String.valueOf(violation.get("message"))).isNotBlank();
+                });
 
         assertThat(memberCount(targetId)).isZero();
         assertThat(allLifecycleActivityCount()).isZero();
@@ -861,10 +879,10 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
 
     private static Stream<Arguments> invalidReasons() {
         return Stream.of(
-                Arguments.of("EP - null", null),
-                Arguments.of("EP - empty", ""),
-                Arguments.of("EP - whitespace", " \n\t "),
-                Arguments.of("BVA - 2,001 characters", "r".repeat(2_001))
+                Arguments.of("EP - null", null, "REQUIRED"),
+                Arguments.of("EP - empty", "", "NOT_BLANK"),
+                Arguments.of("EP - whitespace", " \n\t ", "NOT_BLANK"),
+                Arguments.of("BVA - 2,001 characters", "r".repeat(2_001), "SIZE")
         );
     }
 

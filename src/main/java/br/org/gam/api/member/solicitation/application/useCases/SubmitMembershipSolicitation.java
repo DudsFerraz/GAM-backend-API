@@ -12,6 +12,7 @@ import br.org.gam.api.member.solicitation.persistence.MembershipSolicitationRepo
 import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.shared.domain.GamName;
 import br.org.gam.api.shared.exception.ConflictException;
+import br.org.gam.api.shared.exception.RequestValidationException;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
 import br.org.gam.api.shared.validation.RequiredReason;
 import jakarta.transaction.Transactional;
@@ -46,8 +47,8 @@ public class SubmitMembershipSolicitation {
         String justification = RequiredReason.normalize(
                 dto.justification(), "Membership solicitation justification is required."
         );
-        Member.validateEligibility(dto.birthDate(), LocalDate.now());
-        GamName name = new GamName(dto.firstName(), dto.surname());
+        validateEligibility(dto.birthDate());
+        GamName name = validatedName(dto.firstName(), dto.surname());
 
         UUID accountId = auditorAware.getCurrentAuditor()
                 .orElseThrow(() -> new IllegalStateException("Authenticated Account is required."));
@@ -75,5 +76,29 @@ public class SubmitMembershipSolicitation {
         MembershipSolicitationEntity saved = solicitationRepo.saveAndFlush(solicitation);
         activityEvents.membershipSolicitationSubmitted(saved.getId(), accountId);
         return mapper.entityToRDTO(saved);
+    }
+
+    private void validateEligibility(LocalDate birthDate) {
+        try {
+            Member.validateEligibility(birthDate, LocalDate.now());
+        } catch (IllegalArgumentException exception) {
+            throw new RequestValidationException("body", "/birthDate", "RANGE");
+        }
+    }
+
+    private GamName validatedName(String firstName, String surname) {
+        try {
+            return new GamName(firstName, surname);
+        } catch (IllegalArgumentException exception) {
+            String field = exception.getMessage() != null && exception.getMessage().startsWith("surname")
+                    ? "/surname"
+                    : "/firstName";
+            String code = exception.getMessage() != null
+                    && (exception.getMessage().contains("exceed")
+                    || exception.getMessage().contains("at least"))
+                    ? "SIZE"
+                    : "FORMAT";
+            throw new RequestValidationException("body", field, code);
+        }
     }
 }

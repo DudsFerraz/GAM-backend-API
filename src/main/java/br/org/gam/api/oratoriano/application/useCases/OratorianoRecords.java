@@ -15,7 +15,9 @@ import br.org.gam.api.shared.domain.GamName;
 import br.org.gam.api.shared.exception.ConflictException;
 import br.org.gam.api.shared.exception.InvalidCommandException;
 import br.org.gam.api.shared.exception.NotFoundException;
+import br.org.gam.api.shared.exception.RequestValidationException;
 import br.org.gam.api.shared.phonenumber.GamPhoneNumber;
+import br.org.gam.api.shared.phonenumber.InvalidPhoneNumberException;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
 import br.org.gam.api.shared.specification.SearchDTO;
 import br.org.gam.api.shared.validation.RequiredReason;
@@ -116,7 +118,12 @@ public class OratorianoRecords {
         if (birthDate != null && birthDate.isAfter(LocalDate.now(clock.withZone(SAO_PAULO)))) {
             throw InvalidCommandException.reason("birthDate cannot be in the future.");
         }
-        GamPhoneNumber phone = dto.phoneNumber() == null ? null : GamPhoneNumber.fromString(dto.phoneNumber());
+        GamPhoneNumber phone;
+        try {
+            phone = dto.phoneNumber() == null ? null : GamPhoneNumber.fromString(dto.phoneNumber());
+        } catch (InvalidPhoneNumberException exception) {
+            throw new RequestValidationException("body", "/phoneNumber", "FORMAT");
+        }
 
         List<String> changedFields = new ArrayList<>();
         boolean nameChanged = !Objects.equals(entity.getName(), name);
@@ -175,7 +182,7 @@ public class OratorianoRecords {
 
     @Transactional
     public void delete(UUID id, String rawReason) {
-        String reason = RequiredReason.normalize(rawReason, "Oratoriano deletion requires an audit reason.");
+        String reason = normalizeDeletionReason(rawReason);
         OratorianoEntity entity = repository.findActiveByIdForUpdate(id)
                 .orElseThrow(() -> NotFoundException.resource("Oratoriano", id));
         Integer immutableForms = jdbcTemplate.queryForObject(
@@ -330,10 +337,10 @@ public class OratorianoRecords {
     public AttendanceSummaryRDTO attendanceSummary(UUID id, Integer year, Integer month) {
         repository.findById(id).orElseThrow(() -> NotFoundException.resource("Oratoriano", id));
         if (month != null && year == null) {
-            throw InvalidCommandException.reason("Attendance month requires an attendance year.");
+            throw new RequestValidationException("query", "$", "RELATION");
         }
         if (month != null && (month < 1 || month > 12)) {
-            throw InvalidCommandException.reason("Attendance month must be between 1 and 12.");
+            throw new RequestValidationException("query", "month", "RANGE");
         }
         List<LocalDate> dates = activeAttendanceDates(id);
         long yearAttendances = year == null
@@ -406,6 +413,20 @@ public class OratorianoRecords {
 
     public static String humanEquivalentNameKey(GamName name) {
         return comparisonKey(name.getFullName());
+    }
+
+    private String normalizeDeletionReason(String rawReason) {
+        if (rawReason == null) {
+            throw new RequestValidationException("body", "/reason", "REQUIRED");
+        }
+        String reason = rawReason.strip();
+        if (reason.isEmpty()) {
+            throw new RequestValidationException("body", "/reason", "NOT_BLANK");
+        }
+        if (reason.codePointCount(0, reason.length()) > 2_000) {
+            throw new RequestValidationException("body", "/reason", "SIZE");
+        }
+        return reason;
     }
 
     private static List<String> pairSortTokens(List<String> tokens) {

@@ -26,6 +26,7 @@ import br.org.gam.api.shared.activitylog.ActivityTargetType;
 import br.org.gam.api.shared.exception.ConflictException;
 import br.org.gam.api.shared.exception.InvalidCommandException;
 import br.org.gam.api.shared.exception.NotFoundException;
+import br.org.gam.api.shared.exception.RequestValidationException;
 import br.org.gam.api.shared.domain.GamCPF;
 import br.org.gam.api.shared.domain.GamEmail;
 import br.org.gam.api.shared.domain.GamName;
@@ -732,7 +733,10 @@ public class OratorianoForms {
             String firstName = requiredText(draft.firstName(), "firstName", 32);
             String surname = requiredText(draft.surname(), "surname", 64);
             GamName name = new GamName(firstName, surname);
-            LocalDate birthDate = Objects.requireNonNull(draft.birthDate(), "birthDate");
+            LocalDate birthDate = draft.birthDate();
+            if (birthDate == null) {
+                throw new RequestValidationException("body", "/birthDate", "REQUIRED");
+            }
             LocalDate signedOn = Objects.requireNonNull(draft.signedOn(), "signedOn");
             if (!signedOn.equals(row.signedOn())
                     || birthDate.isAfter(signedOn)
@@ -812,7 +816,8 @@ public class OratorianoForms {
                     })
             );
         } catch (RuntimeException exception) {
-            if (exception instanceof InvalidCommandException) {
+            if (exception instanceof InvalidCommandException
+                    || exception instanceof RequestValidationException) {
                 throw exception;
             }
             throw incomplete();
@@ -823,13 +828,17 @@ public class OratorianoForms {
         if (address == null) {
             throw new IllegalArgumentException("address is required");
         }
-        String addressLine = requiredText(address.addressLine(), "addressLine", 255);
+        String addressLine = requiredCompletionText(
+                address.addressLine(),
+                "/address/addressLine",
+                255
+        );
         String addressNumber = requiredText(address.addressNumber(), "addressNumber", 100);
         String neighborhood = requiredText(address.neighborhood(), "neighborhood", 255);
-        String city = requiredText(address.city(), "city", 255);
-        String cep = requiredText(address.cep(), "cep", 9);
+        String city = requiredCompletionText(address.city(), "/address/city", 255);
+        String cep = requiredCompletionText(address.cep(), "/address/cep", 9);
         if (!cep.matches("[0-9]{8}|[0-9]{5}-[0-9]{3}")) {
-            throw new IllegalArgumentException("invalid CEP");
+            throw new RequestValidationException("body", "/address/cep", "FORMAT");
         }
         return new AddressDTO(
                 addressLine,
@@ -838,6 +847,20 @@ public class OratorianoForms {
                 cep.replace("-", ""),
                 city
         );
+    }
+
+    private String requiredCompletionText(String value, String field, int maxLength) {
+        if (value == null) {
+            throw new RequestValidationException("body", field, "REQUIRED");
+        }
+        String normalized = value.strip();
+        if (normalized.isEmpty()) {
+            throw new RequestValidationException("body", field, "NOT_BLANK");
+        }
+        if (normalized.codePointCount(0, normalized.length()) > maxLength) {
+            throw new RequestValidationException("body", field, "SIZE");
+        }
+        return normalized;
     }
 
     private ResponsibleDTO canonicalResponsible(

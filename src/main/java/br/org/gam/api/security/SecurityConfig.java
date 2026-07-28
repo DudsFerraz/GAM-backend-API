@@ -1,5 +1,7 @@
 package br.org.gam.api.security;
 
+import br.org.gam.api.rbac.permission.domain.PermissionEnum;
+import br.org.gam.api.security.application.DelegatedAccessDeniedHandler;
 import br.org.gam.api.security.application.DelegatedAuthenticationEntryPoint;
 import br.org.gam.api.security.jwt.JwtAuthFilter;
 import java.util.Map;
@@ -27,6 +29,7 @@ import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.expression.WebExpressionAuthorizationManager;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 
 @EnableMethodSecurity
@@ -44,8 +47,11 @@ public class SecurityConfig {
     private final UserDetailsService userDetailsService;
 
     private final DelegatedAuthenticationEntryPoint authEntryPoint;
-
-    public SecurityConfig(JwtAuthFilter jwtAuthFilter, UserDetailsService userDetailsService, DelegatedAuthenticationEntryPoint authEntryPoint) {
+    public SecurityConfig(
+            JwtAuthFilter jwtAuthFilter,
+            UserDetailsService userDetailsService,
+            DelegatedAuthenticationEntryPoint authEntryPoint
+    ) {
         this.jwtAuthFilter = jwtAuthFilter;
         this.userDetailsService = userDetailsService;
         this.authEntryPoint = authEntryPoint;
@@ -63,6 +69,7 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             CanonicalOriginFilter canonicalOriginFilter,
+            DelegatedAccessDeniedHandler accessDeniedHandler,
             @Value("${app.auth.cookie.secure:true}") boolean cookieSecure
     ) throws Exception {
         CookieCsrfTokenRepository csrfTokenRepository = CookieCsrfTokenRepository.withHttpOnlyFalse();
@@ -88,10 +95,201 @@ public class SecurityConfig {
                                 "/auth/csrf", "/auth/login", "/auth/register", "/auth/refresh", "/auth/logout"
                         ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/events/*").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/accounts/search")
+                        .hasAuthority(PermissionEnum.Code.ACCOUNT_SEARCH)
+                        .requestMatchers(HttpMethod.POST, "/members/search")
+                        .hasAuthority(PermissionEnum.Code.MEMBER_SEARCH)
+                        .requestMatchers(HttpMethod.POST, "/members")
+                        .hasAuthority(PermissionEnum.Code.MEMBER_MANAGE)
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/members/*/coordinator/grant",
+                                "/members/*/coordinator/revoke"
+                        )
+                        .hasAuthority(PermissionEnum.Code.COORDINATOR_MANAGE)
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/members/*/oratorio-coordinator/grant",
+                                "/members/*/oratorio-coordinator/revoke"
+                        )
+                        .hasAuthority(PermissionEnum.Code.ORATORIO_COORD_MANAGE)
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/members/*/activate",
+                                "/members/*/deactivate"
+                        )
+                        .hasAuthority(PermissionEnum.Code.MEMBER_ACTIVATION)
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/membership-solicitations/*/approve",
+                                "/membership-solicitations/*/reject"
+                        )
+                        .hasAuthority(PermissionEnum.Code.MEMBER_MANAGE)
+                        .requestMatchers(HttpMethod.POST, "/accounts/*/roles")
+                        .hasAuthority(PermissionEnum.Code.ACCOUNT_ROLE_MANAGE)
+                        .requestMatchers(HttpMethod.PATCH, "/accounts/*/roles/*/drop")
+                        .hasAuthority(PermissionEnum.Code.ACCOUNT_ROLE_MANAGE)
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/accounts/*/roles",
+                                "/accounts/*/role-assignments/*"
+                        )
+                        .hasAuthority(PermissionEnum.Code.ACCOUNT_GET)
+                        .requestMatchers(HttpMethod.GET, "/roles/*/permissions")
+                        .access(new WebExpressionAuthorizationManager(
+                                "hasAuthority('" + PermissionEnum.Code.ROLE_GET + "') and hasAuthority('"
+                                        + PermissionEnum.Code.PERMISSION_GET + "')"
+                        ))
+                        .requestMatchers(HttpMethod.GET, "/roles", "/roles/*")
+                        .hasAuthority(PermissionEnum.Code.ROLE_GET)
+                        .requestMatchers(HttpMethod.GET, "/permissions/*")
+                        .hasAuthority(PermissionEnum.Code.PERMISSION_GET)
+                        .requestMatchers(HttpMethod.POST, "/events/search")
+                        .hasAuthority(PermissionEnum.Code.EVENT_SEARCH)
+                        .requestMatchers(HttpMethod.POST, "/events")
+                        .hasAuthority(PermissionEnum.Code.EVENT_CREATE)
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/events/*"
+                        )
+                        .hasAuthority(PermissionEnum.Code.EVENT_MANAGE)
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/events/*/lock",
+                                "/events/*/finalize",
+                                "/events/*/reopen",
+                                "/events/*/cancel"
+                        )
+                        .hasAuthority(PermissionEnum.Code.EVENT_MANAGE)
+                        .requestMatchers(HttpMethod.DELETE, "/events/*")
+                        .hasAuthority(PermissionEnum.Code.EVENT_MANAGE)
+                        .requestMatchers(HttpMethod.POST, "/events/*/presences")
+                        .hasAuthority(PermissionEnum.Code.PRESENCE_REGISTER)
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/events/*/presences",
+                                "/events/*/presences/*"
+                        )
+                        .hasAuthority(PermissionEnum.Code.EVENT_GET_PRESENCES)
+                        .requestMatchers(HttpMethod.PATCH, "/events/*/presences/*")
+                        .hasAuthority(PermissionEnum.Code.PRESENCE_EDIT)
+                        .requestMatchers(HttpMethod.DELETE, "/events/*/presences/*")
+                        .hasAuthority(PermissionEnum.Code.PRESENCE_REMOVE)
+                        .requestMatchers(HttpMethod.POST, "/gam-locations")
+                        .hasAuthority(PermissionEnum.Code.GAM_LOCATION_CREATE)
+                        .requestMatchers(HttpMethod.GET, "/gam-locations", "/gam-locations/*")
+                        .hasAuthority(PermissionEnum.Code.GAM_LOCATION_GET)
+                        .requestMatchers(HttpMethod.PUT, "/gam-locations/*")
+                        .hasAuthority(PermissionEnum.Code.GAM_LOCATION_MANAGE)
+                        .requestMatchers(HttpMethod.DELETE, "/gam-locations/*")
+                        .hasAuthority(PermissionEnum.Code.GAM_LOCATION_MANAGE)
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/oratorios/*/attendance/oratorianos/register-and-mark"
+                        )
+                        .access(new WebExpressionAuthorizationManager(
+                                "hasAuthority('" + PermissionEnum.Code.ORATORIO_ATTENDANCE_MANAGE
+                                        + "') and hasAuthority('" + PermissionEnum.Code.ORATORIANO_REGISTER + "')"
+                        ))
+                        .requestMatchers(HttpMethod.POST, "/oratorios")
+                        .hasAuthority(PermissionEnum.Code.ORATORIO_CREATE)
+                        .requestMatchers(HttpMethod.GET, "/oratorios/*")
+                        .hasAuthority(PermissionEnum.Code.ORATORIO_GET)
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/oratorios/*/attendance/members",
+                                "/oratorios/*/attendance/oratorianos",
+                                "/oratorios/*/attendance/present"
+                        )
+                        .hasAuthority(PermissionEnum.Code.ORATORIO_ATTENDANCE_GET)
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/oratorios/*/planning",
+                                "/oratorios/*/teams/*/members/*"
+                        )
+                        .hasAuthority(PermissionEnum.Code.ORATORIO_MANAGE)
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/oratorios/*/attendance/members/*",
+                                "/oratorios/*/attendance/oratorianos/*"
+                        )
+                        .hasAuthority(PermissionEnum.Code.ORATORIO_ATTENDANCE_MANAGE)
+                        .requestMatchers(
+                                HttpMethod.DELETE,
+                                "/oratorios/*",
+                                "/oratorios/*/teams/*/members/*"
+                        )
+                        .hasAuthority(PermissionEnum.Code.ORATORIO_MANAGE)
+                        .requestMatchers(
+                                HttpMethod.DELETE,
+                                "/oratorios/*/attendance/members/*",
+                                "/oratorios/*/attendance/oratorianos/*"
+                        )
+                        .hasAuthority(PermissionEnum.Code.ORATORIO_ATTENDANCE_MANAGE)
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/oratorios/*/lock",
+                                "/oratorios/*/finalize",
+                                "/oratorios/*/reopen",
+                                "/oratorios/*/cancel"
+                        )
+                        .hasAuthority(PermissionEnum.Code.ORATORIO_MANAGE)
+                        .requestMatchers(HttpMethod.POST, "/oratorianos/search")
+                        .hasAuthority(PermissionEnum.Code.ORATORIANO_GET)
+                        .requestMatchers(HttpMethod.POST, "/oratorianos")
+                        .hasAuthority(PermissionEnum.Code.ORATORIANO_REGISTER)
+                        .requestMatchers(HttpMethod.POST, "/oratorianos/*/forms")
+                        .hasAuthority(PermissionEnum.Code.ORATORIANO_FORM_MANAGE)
+                        .requestMatchers(HttpMethod.POST, "/oratorianos/*/forms/*/print-snapshots")
+                        .hasAuthority(PermissionEnum.Code.ORATORIANO_FORM_PDF_GENERATE)
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/oratorianos/*/forms/*/print-snapshots/*/pdf"
+                        )
+                        .hasAuthority(PermissionEnum.Code.ORATORIANO_FORM_PDF_GENERATE)
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/oratorianos/*/forms/*/signed-attachments/*"
+                        )
+                        .hasAuthority(PermissionEnum.Code.ORATORIANO_FORM_ATTACHMENT_GET)
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/oratorianos/*/forms",
+                                "/oratorianos/*/forms/*"
+                        )
+                        .hasAuthority(PermissionEnum.Code.ORATORIANO_FORM_GET)
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/oratorianos/*",
+                                "/oratorianos/*/attendances",
+                                "/oratorianos/*/attendance-summary"
+                        )
+                        .hasAuthority(PermissionEnum.Code.ORATORIANO_GET)
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/oratorianos/*/forms/*",
+                                "/oratorianos/*/forms/*/signed-attachments"
+                        )
+                        .hasAuthority(PermissionEnum.Code.ORATORIANO_FORM_MANAGE)
+                        .requestMatchers(HttpMethod.PUT, "/oratorianos/*")
+                        .hasAuthority(PermissionEnum.Code.ORATORIANO_MANAGE)
+                        .requestMatchers(HttpMethod.DELETE, "/oratorianos/*/forms/*")
+                        .hasAuthority(PermissionEnum.Code.ORATORIANO_FORM_MANAGE)
+                        .requestMatchers(HttpMethod.DELETE, "/oratorianos/*")
+                        .hasAuthority(PermissionEnum.Code.ORATORIANO_MANAGE)
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/oratorianos/*/forms/*/complete",
+                                "/oratorianos/*/forms/*/revoke"
+                        )
+                        .hasAuthority(PermissionEnum.Code.ORATORIANO_FORM_MANAGE)
+                        .requestMatchers(HttpMethod.PATCH, "/oratorianos/*/restore")
+                        .hasAuthority(PermissionEnum.Code.ORATORIANO_MANAGE)
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(exception -> exception
-                        .authenticationEntryPoint(authEntryPoint))
+                        .authenticationEntryPoint(authEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider())
                 .addFilterAfter(canonicalOriginFilter, CsrfFilter.class)

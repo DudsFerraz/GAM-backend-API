@@ -15,6 +15,7 @@ import br.org.gam.api.security.SecurityUtils;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.shared.exception.InvalidCommandException;
 import br.org.gam.api.shared.exception.NotFoundException;
+import br.org.gam.api.shared.exception.RequestValidationException;
 import java.time.Instant;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
@@ -58,12 +59,15 @@ public class CreateEvent {
 
     @Transactional
     public EventRDTO create(CreateGenericEventDTO dto) {
+        validateDateRelationship(dto.beginDate(), dto.endDate());
+        String title = validatedTitle(dto.title());
+        String description = validatedDescription(dto.description());
         Instant evaluationInstant = Instant.now();
         GamLocationEntity eventLocation = gamLocationEntityLoader.requiredByIdForUpdate(dto.gamLocationId());
         PermissionEntity requiredPermission = resolveGenericAudiencePermission(dto.requiredPermissionId());
 
         Event newEvent = Event.register(
-                dto.title(), dto.description(), dto.beginDate(), dto.endDate(), EventType.GENERIC, evaluationInstant
+                title, description, dto.beginDate(), dto.endDate(), EventType.GENERIC, evaluationInstant
         );
         EventEntity newEventEntity = eventMapper.domainToEntity(newEvent);
         newEventEntity.setLocation(eventLocation);
@@ -101,6 +105,9 @@ public class CreateEvent {
 
     @Transactional
     public CreateEventRDTO create(CreateEventDTO dto, boolean audit) {
+        validateDateRelationship(dto.beginDate(), dto.endDate());
+        String title = validatedTitle(dto.title());
+        String description = validatedDescription(dto.description());
 
         GamLocationEntity eventLocation = gamLocationEntityLoader.requiredByIdForUpdate(dto.gamLocationId());
         PermissionEntity requiredPermission = dto.requiredPermissionId() == null
@@ -108,7 +115,7 @@ public class CreateEvent {
                 : getPermissionInstance.requiredById(dto.requiredPermissionId());
 
         Event newEvent = Event.register(
-                dto.title(), dto.description(), dto.beginDate(), dto.endDate(),
+                title, description, dto.beginDate(), dto.endDate(),
                 dto.type() == null ? EventType.GENERIC : dto.type()
         );
 
@@ -130,6 +137,28 @@ public class CreateEvent {
         }
 
         return eventMapper.entityToCreateEventRDTO(savedEventEntity);
+    }
+
+    private void validateDateRelationship(Instant beginDate, Instant endDate) {
+        if (!endDate.isAfter(beginDate)) {
+            throw new RequestValidationException("body", "$", "RELATION");
+        }
+    }
+
+    private String validatedTitle(String title) {
+        try {
+            return Event.normalizeTitle(title);
+        } catch (IllegalArgumentException exception) {
+            throw new RequestValidationException("body", "/title", "SIZE");
+        }
+    }
+
+    private String validatedDescription(String description) {
+        try {
+            return Event.normalizeDescription(description);
+        } catch (IllegalArgumentException exception) {
+            throw new RequestValidationException("body", "/description", "SIZE");
+        }
     }
 
 }

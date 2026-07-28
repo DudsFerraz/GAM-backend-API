@@ -170,6 +170,23 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
     }
 
     @Test
+    @DisplayName("REQ-API-ERROR-002/003/004 and REQ-GAM-PHONE-004 - invalid Oratoriano phone -> public phoneNumber FORMAT violation")
+    void invalidPhoneShouldUseStructuredValidationViolation() {
+        AuthSession caller = sudoSession();
+        UUID id = createOratoriano(caller, "Marina", "Souza");
+        clearActivities();
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .body(oratorianoReplacementPayload("Marina", "Souza", null, "abc", null))
+                .put(ORATORIANOS + "/{id}", id)
+                .then()
+                .extract();
+
+        assertSingleValidationViolation(response, "body", "/phoneNumber", "FORMAT", "abc");
+        assertThat(activityCountForTarget(id)).isZero();
+    }
+
+    @Test
     @DisplayName("REQ-ORATORIANO-005 and REQ-ORATORIANO-011 - normalized no-op -> no mutation activity")
     void normalizedNoOpShouldNotEmitActivity() {
         AuthSession caller = sudoSession();
@@ -188,8 +205,13 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("invalidReasonCases")
-    @DisplayName("REQ-ORATORIANO-005, REQ-ORATORIANO-009 and REQ-ORATORIANO-010 - invalid bounded reason -> HTTP 400")
-    void invalidBoundedReasonsShouldBeRejected(String scenario, Map<String, Object> body) {
+    @DisplayName("REQ-API-ERROR-002/003/004 and REQ-ORATORIANO-009/010 - invalid bounded deletion reason -> structured validation")
+    void invalidBoundedReasonsShouldBeRejected(
+            String scenario,
+            Map<String, Object> body,
+            String expectedViolationCode,
+            String rejectedValue
+    ) {
         AuthSession caller = sudoSession();
         UUID id = createOratoriano(caller, "Paulo", "Mendes");
         clearActivities();
@@ -200,7 +222,13 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
                 .then()
                 .extract();
 
-        assertThat(response.statusCode()).as(scenario).isEqualTo(400);
+        assertSingleValidationViolation(
+                response,
+                "body",
+                "/reason",
+                expectedViolationCode,
+                rejectedValue
+        );
         assertThat(activityCountForTarget(id)).isZero();
         authenticatedJsonRequest(caller).get(ORATORIANOS + "/{id}", id).then().statusCode(200);
     }
@@ -532,7 +560,9 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
     void invalidAttendanceSummaryDimensionsShouldBeRejected(
             String scenario,
             Integer year,
-            Integer month
+            Integer month,
+            String expectedField,
+            String expectedViolationCode
     ) {
         AuthSession caller = sudoSession();
         UUID oratorianoId = createOratoriano(caller, "Invalid", "Summary");
@@ -549,8 +579,13 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
                 .then()
                 .extract();
 
-        assertThat(response.statusCode()).as(scenario + ": " + response.asString()).isEqualTo(400);
-        assertThat(response.<String>path("code")).as(scenario).isEqualTo("INVALID_COMMAND");
+        assertSingleValidationViolation(
+                response,
+                "query",
+                expectedField,
+                expectedViolationCode,
+                null
+        );
     }
 
     @Test
@@ -806,6 +841,39 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
         return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM oratorianos", Long.class);
     }
 
+    private void assertSingleValidationViolation(
+            ExtractableResponse<Response> response,
+            String location,
+            String field,
+            String code,
+            String rejectedValue
+    ) {
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.contentType()).startsWith("application/json");
+        assertThat(response.header("Cache-Control")).containsIgnoringCase("no-store");
+        assertThat(response.<String>path("code")).isEqualTo("VALIDATION_ERROR");
+        assertThat(response.<String>path("message"))
+                .isNotBlank()
+                .doesNotContain(
+                        "InvalidCommandException",
+                        "InvalidPhoneNumberException",
+                        "IllegalArgumentException"
+                );
+        assertThat(response.jsonPath().getMap("details")).containsOnlyKeys("violations");
+        List<Map<String, Object>> violations = response.jsonPath().getList("details.violations");
+        assertThat(violations).singleElement().satisfies(violation -> {
+            assertThat(violation)
+                    .containsOnlyKeys("location", "field", "code", "message")
+                    .containsEntry("location", location)
+                    .containsEntry("field", field)
+                    .containsEntry("code", code);
+            assertThat(String.valueOf(violation.get("message"))).isNotBlank();
+        });
+        if (rejectedValue != null && !rejectedValue.isBlank()) {
+            assertThat(response.asString()).doesNotContain(rejectedValue);
+        }
+    }
+
     private void markPresent(AuthSession caller, UUID oratorioId, UUID oratorianoId) {
         authenticatedJsonRequest(caller)
                 .put(
@@ -880,9 +948,9 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
 
     private static Stream<Arguments> invalidAttendanceSummaryDimensionCases() {
         return Stream.of(
-                Arguments.of("month without year", null, 1),
-                Arguments.of("month below January", 2026, 0),
-                Arguments.of("month above December", 2026, 13)
+                Arguments.of("month without year", null, 1, "$", "RELATION"),
+                Arguments.of("month below January", 2026, 0, "month", "RANGE"),
+                Arguments.of("month above December", 2026, 13, "month", "RANGE")
         );
     }
 
@@ -915,11 +983,17 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
     private static Stream<Arguments> invalidReasonCases() {
         Map<String, Object> nullReason = new HashMap<>();
         nullReason.put("reason", null);
+        String oversizedReason = "reason-secret-".repeat(155);
         return Stream.of(
-                Arguments.of("missing reason", Map.of()),
-                Arguments.of("null reason", nullReason),
-                Arguments.of("blank reason", Map.of("reason", "   ")),
-                Arguments.of("reason above 2,000 characters", Map.of("reason", "x".repeat(2_001)))
+                Arguments.of("missing reason", Map.of(), "REQUIRED", null),
+                Arguments.of("null reason", nullReason, "REQUIRED", null),
+                Arguments.of("blank reason", Map.of("reason", "   "), "NOT_BLANK", null),
+                Arguments.of(
+                        "reason above 2,000 characters",
+                        Map.of("reason", oversizedReason),
+                        "SIZE",
+                        oversizedReason
+                )
         );
     }
 

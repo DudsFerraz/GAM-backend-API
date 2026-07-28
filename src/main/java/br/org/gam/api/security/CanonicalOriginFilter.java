@@ -1,5 +1,6 @@
 package br.org.gam.api.security;
 
+import br.org.gam.api.security.application.RequestSecurityRejectedException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -10,7 +11,6 @@ import java.net.URISyntaxException;
 import java.util.Locale;
 import java.util.Set;
 import org.springframework.lang.NonNull;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 
@@ -48,7 +48,7 @@ final class CanonicalOriginFilter extends OncePerRequestFilter {
                     request,
                     response,
                     null,
-                    new AccessDeniedException("The request origin does not match the canonical public origin.")
+                    new RequestSecurityRejectedException()
             );
             return;
         }

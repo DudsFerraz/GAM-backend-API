@@ -20,7 +20,7 @@ public record GamEmail(String value) {
         }
 
         if (!hasPracticalSyntax(value)) {
-            throw new IllegalArgumentException("email has invalid syntax");
+            throw new InvalidEmailException("email has invalid syntax");
         }
     }
 

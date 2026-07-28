@@ -18,14 +18,14 @@ public record GamPhoneNumber(
 
     public GamPhoneNumber {
         if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("phone number cannot be null or blank");
+            throw new InvalidPhoneNumberException("phone number cannot be null or blank");
         }
 
         PhoneNumberUtil phoneUtil = PhoneNumberUtil.getInstance();
         try {
             PhoneNumber parsedNumber = phoneUtil.parse(value, DEFAULT_REGION);
             if (!value.startsWith("+") || !phoneUtil.isValidNumber(parsedNumber)) {
-                throw new IllegalArgumentException("phone number is not valid or dialable");
+                throw new InvalidPhoneNumberException("phone number is not valid or dialable");
             }
 
             String e164 = phoneUtil.format(parsedNumber, PhoneNumberUtil.PhoneNumberFormat.E164);
@@ -35,24 +35,24 @@ public record GamPhoneNumber(
                     || !Objects.equals(nationalFormat, national)
                     || countryCode != parsedNumber.getCountryCode()
                     || nationalNumber != parsedNumber.getNationalNumber()) {
-                throw new IllegalArgumentException("phone number metadata does not match canonical value");
+                throw new InvalidPhoneNumberException("phone number metadata does not match canonical value");
             }
         } catch (NumberParseException e) {
-            throw new IllegalArgumentException("phone number has invalid syntax", e);
+            throw new InvalidPhoneNumberException("phone number has invalid syntax", e);
         }
     }
 
     @JsonCreator
     public static GamPhoneNumber fromString(String rawInput) {
         if (rawInput == null || rawInput.isBlank()) {
-            throw new IllegalArgumentException("phone number cannot be null or blank");
+            throw new InvalidPhoneNumberException("phone number cannot be null or blank");
         }
 
         PhoneNumberUtil phoneUtil = PhoneNumberUtil.getInstance();
         try {
             PhoneNumber parsedNumber = phoneUtil.parse(rawInput, DEFAULT_REGION);
             if (!phoneUtil.isValidNumber(parsedNumber)) {
-                throw new IllegalArgumentException("phone number is not valid or dialable");
+                throw new InvalidPhoneNumberException("phone number is not valid or dialable");
             }
 
             String e164 = phoneUtil.format(parsedNumber, PhoneNumberUtil.PhoneNumberFormat.E164);
@@ -64,7 +64,7 @@ public record GamPhoneNumber(
                     parsedNumber.getNationalNumber()
             );
         } catch (NumberParseException e) {
-            throw new IllegalArgumentException("phone number has invalid syntax", e);
+            throw new InvalidPhoneNumberException("phone number has invalid syntax", e);
         }
     }
 

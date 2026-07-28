@@ -8,6 +8,7 @@ import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.persistence.MemberRepository;
 import br.org.gam.api.shared.domain.GamName;
 import br.org.gam.api.shared.exception.ConflictException;
+import br.org.gam.api.shared.exception.RequestValidationException;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
@@ -27,13 +28,14 @@ public class RegisterMember {
 
     @Transactional
     public RegisterMemberRDTO register(RegisterMemberDTO dto) {
+        GamName name = validatedName(dto.firstName(), dto.surname());
+        validateEligibility(dto);
+
         if (memberRepo.existsByAccountId(dto.accountId())){
             throw ConflictException.resource("Account", dto.accountId(), "A member is already linked to this account.");
         }
 
         Account relatedAccount = getAccountInstance.requiredById(dto.accountId());
-
-        GamName name = new GamName(dto.firstName(), dto.surname());
 
         Member newMember = Member.register(relatedAccount, name, dto.birthDate(), dto.phoneNumber());
 
@@ -41,5 +43,29 @@ public class RegisterMember {
         MemberEntity savedMemberEntity = memberRepo.save(newMemberEntity);
 
         return memberMapper.entityToRegisterMemberRDTO(savedMemberEntity);
+    }
+
+    private GamName validatedName(String firstName, String surname) {
+        try {
+            return new GamName(firstName, surname);
+        } catch (IllegalArgumentException exception) {
+            String field = exception.getMessage() != null && exception.getMessage().startsWith("surname")
+                    ? "/surname"
+                    : "/firstName";
+            String code = exception.getMessage() != null
+                    && (exception.getMessage().contains("exceed")
+                    || exception.getMessage().contains("at least"))
+                    ? "SIZE"
+                    : "FORMAT";
+            throw new RequestValidationException("body", field, code);
+        }
+    }
+
+    private void validateEligibility(RegisterMemberDTO dto) {
+        try {
+            Member.validateEligibility(dto.birthDate(), java.time.LocalDate.now());
+        } catch (IllegalArgumentException exception) {
+            throw new RequestValidationException("body", "/birthDate", "RANGE");
+        }
     }
 }
