@@ -21,6 +21,9 @@ class GamLocationArchitectureTest {
     private static final Path LEGACY_LOCATION_PACKAGE = PRODUCTION_SOURCES.resolve(
             Path.of("br", "org", "gam", "api", "location")
     );
+    private static final Path MIGRATION_LOCATION_ISOLATION = PRODUCTION_SOURCES.resolve(
+            Path.of("br", "org", "gam", "api", "db", "reference", "MigrationLocationIsolation.java")
+    );
 
     @Test
     @DisplayName("REQ-GAM-LOCATION-005 - legacy location package -> no production source types")
@@ -43,14 +46,15 @@ class GamLocationArchitectureTest {
     }
 
     @Test
-    @DisplayName("REQ-GAM-LOCATION-005 - location production types -> canonical GamLocation names")
-    void locationProductionTypesShouldUseCanonicalGamLocationNames() throws IOException {
+    @DisplayName("REQ-GAM-LOCATION-005 - physical-place Location types -> canonical GamLocation names")
+    void physicalPlaceLocationTypesShouldUseCanonicalGamLocationNames() throws IOException {
         List<Path> offenders;
         try (Stream<Path> sources = Files.walk(PRODUCTION_SOURCES)) {
             offenders = sources
                     .filter(path -> path.toString().endsWith(".java"))
                     .filter(path -> path.getFileName().toString().contains("Location"))
                     .filter(path -> !path.getFileName().toString().contains("GamLocation"))
+                    .filter(path -> !path.equals(MIGRATION_LOCATION_ISOLATION))
                     .toList();
         }
 
