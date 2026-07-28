@@ -42,9 +42,19 @@ The system shall derive:
 - end instant at 17:00 local time;
 - audience permission `EVENT_GET_MEMBER`;
 - Event type `ORATORIO`; and
-- the configured active São Mário GamLocation.
+- the current system `GamLocation` selected by
+  `gam.oratorio.location-code`.
 
-Creation shall fail atomically when the configured São Mário location is missing or inactive. The location shall be selected through configuration rather than a hard-coded database UUID.
+`gam.oratorio.location-code` shall default to `DBSM`, making São Mário the
+normal Oratorio location. An intentional deployment-wide override may select
+`DBA` or `DBCA`. The configured value shall resolve by immutable location code,
+not by mutable name or a hard-coded database UUID.
+
+Application startup shall fail before serving requests when the configured code
+is blank, unknown, retired, soft-deleted, or not system-managed. Creation shall
+also fail atomically if the validated configured location becomes unavailable
+before an occurrence commits. The complete catalog and configuration lifecycle
+is governed by `REQ-GAM-LOCATION-CATALOG-008`.
 
 Past, present, and future dates are accepted without an artificial horizon. The common Event temporal rules determine whether the new occurrence is `SCHEDULED` or `COMPLETED`.
 
@@ -182,13 +192,18 @@ The accepted `teamType` catalog shall contain exactly `LANCHE`, `GINCANA`, `BOA_
 
 ```gherkin
 Scenario: Create an occurrence from a date
-  Given the configured São Mário GamLocation exists and is active
+  Given gam.oratorio.location-code selects current system location DBSM
   And no active Oratorio exists on the requested local date
   And the caller has ORATORIO_CREATE
   When the caller creates the Oratorio using only that date
   Then one ORATORIO Event and specialization share one UUID
   And the Event runs from 14:00 to 17:00 in America/Sao_Paulo
   And its audience permission is EVENT_GET_MEMBER
+
+Scenario: Invalid configured location blocks startup
+  Given gam.oratorio.location-code is blank or does not identify a current system GamLocation
+  When the application starts
+  Then startup fails before requests are served
 
 Scenario: Concurrent duplicate dates produce one occurrence
   Given no active occurrence exists for a local date
@@ -239,6 +254,7 @@ Scenario: Removed attendance does not block deletion
 * Structured Boa Tarde scripts, templates, or attachments.
 * Custom occurrence-specific responsibilities beyond the four standard teams.
 * A separate Oratorio search endpoint.
+* Per-occurrence location selection.
 
 ## Related ADRs
 
@@ -252,6 +268,7 @@ Scenario: Removed attendance does not block deletion
 * [Oratorio Attendance Tracker](oratorio-attendance-tracker.md)
 * [Oratorio Coordinator Designation](oratorio-coordinator-designation.md)
 * [RBAC Catalog](../rbac/rbac-catalog.md)
+* [System GamLocation Catalog](../gam-locations/system-gam-location-catalog.md)
 
 ## Related videos
 

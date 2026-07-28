@@ -57,6 +57,7 @@ The current system reference dataset is:
 | Dataset | Stable keys | Authoritative behavior |
 | --- | --- | --- |
 | System Roles, system Permissions, and their baseline links | Role name, Permission code, and Role-Permission pair | [`REQ-RBAC-001` through `REQ-RBAC-005`](../rbac/rbac-catalog.md) |
+| System GamLocations | Location code | [`REQ-GAM-LOCATION-CATALOG-001` through `REQ-GAM-LOCATION-CATALOG-009`](../gam-locations/system-gam-location-catalog.md) |
 
 A future dataset shall not become system reference data merely because an
 implementation seeds it.
@@ -496,8 +497,6 @@ flowchart TD
 
 * The RBAC role, Permission, bundle, stale-record, and stale-link catalogs owned
   by the RBAC Requirement Specifications.
-* The catalog, fields, lifecycle, and default-use behavior of production
-  GamLocation records.
 * Development fixture personas, credentials, scenario coverage, and concrete
   fixture contents.
 * Rebuilding or consolidating the pre-production versioned migration history.
@@ -515,6 +514,7 @@ flowchart TD
 ## Related requirements
 
 * [RBAC Catalog](../rbac/rbac-catalog.md)
+* [System GamLocation Catalog](../gam-locations/system-gam-location-catalog.md)
 * [Member Records and Lifecycle](../members/member-records-and-lifecycle.md)
 * [Event Records and Generic Lifecycle](../events/event-records-and-generic-lifecycle.md)
 * [Membership Solicitations](../members/membership-solicitations.md)

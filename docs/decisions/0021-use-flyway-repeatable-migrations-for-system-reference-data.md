@@ -7,8 +7,8 @@ Accepted
 ## Context
 
 GAM has mandatory persisted catalogs, currently system Roles, system
-Permissions, and their baseline links, whose accepted definitions evolve with
-application code.
+Permissions, their baseline links, and system GamLocations, whose accepted
+definitions evolve with application code.
 
 These catalogs must exist in every applicable runtime environment, preserve
 stable identifiers referenced by domain records, repair missing current data,
@@ -174,6 +174,7 @@ Negative consequences:
 - `REQ-DATA-006`
 - `REQ-DATA-007`
 - [RBAC Catalog](../requirements/rbac/rbac-catalog.md)
+- [System GamLocation Catalog](../requirements/gam-locations/system-gam-location-catalog.md)
 
 ## Related diagrams
 

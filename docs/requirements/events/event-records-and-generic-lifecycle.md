@@ -95,7 +95,17 @@ Invalid examples:
 
 ### REQ-EVENT-004: Required active GamLocation
 
-Generic Event creation and any update that links a GamLocation shall require the selected GamLocation to exist and be active. A missing or soft-deleted GamLocation shall return `404 RESOURCE_NOT_FOUND` for resource `GamLocation` without creating or changing the Event.
+Generic Event creation and any update that links a GamLocation shall require
+the selected GamLocation to exist, be active, and be eligible for current
+configuration. An ordinary active location or a current system location is
+eligible. A missing, soft-deleted, or retired system GamLocation shall return
+`404 RESOURCE_NOT_FOUND` for resource `GamLocation` without creating or
+changing the Event.
+
+An Event that already references a system location when it becomes retired
+shall preserve that UUID and embedded location representation under
+`REQ-GAM-LOCATION-CATALOG-003` and
+`REQ-GAM-LOCATION-CATALOG-007`.
 
 Event creation and relinking shall follow `REQ-GAM-LOCATION-013` and ADR-0010 so they cannot race GamLocation removal into a committed Event reference to a removed GamLocation.
 
@@ -569,6 +579,7 @@ The command transitions in this diagram apply to Generic Events. `SCHEDULED -> C
 * [UUID](../common/uuid.md)
 * [Search and Filter Framework](../platform/search-and-filter-framework.md)
 * [GamLocation Records](../gam-locations/gam-location-records.md)
+* [System GamLocation Catalog](../gam-locations/system-gam-location-catalog.md)
 * [RBAC Catalog](../rbac/rbac-catalog.md)
 * [OpenAPI and Frontend API Documentation](../platform/openapi-and-frontend-api-documentation.md)
 * [Member Event Presences](../presences/member-event-presences.md)

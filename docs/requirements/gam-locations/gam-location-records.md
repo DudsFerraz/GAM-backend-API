@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-GAM activities need reusable physical places that can be created once, referenced by multiple Events, corrected over time, retrieved directly, and removed when unused. The previous Location implementation and tests predated the Requirement Specification workflow and were used only as discovery material.
+GAM activities need reusable physical places that can be created once, referenced by multiple Events, corrected over time, retrieved directly, and removed when unused. Some recurring institutional places are application-owned system reference data governed by the [System GamLocation Catalog](system-gam-location-catalog.md); all other `GamLocation` records remain user-managed. The previous Location implementation and tests predated the Requirement Specification workflow and were used only as discovery material.
 
 This specification establishes `GamLocation` as the canonical domain and API concept. It defines its fields, validation, active-record uniqueness, HTTP operations, authorization, audit behavior, and consistency with Event references.
 
@@ -26,6 +26,8 @@ Every `GamLocation` shall use the UUID identity rules in `REQ-GAM-ID-001` throug
 | Field | Meaning | Response nullability |
 | --- | --- | --- |
 | `id` | Immutable UUID identity assigned by the system | Required |
+| `code` | Immutable application-owned key for a system GamLocation; absent for an ordinary record | Nullable |
+| `systemManaged` | Whether the record belongs to the application-owned system catalog | Required |
 | `name` | Human-facing label by which GAM recognizes the place | Required |
 | `street` | Complete address line below the city/state level | Nullable |
 | `city` | City or equivalent locality | Required |
@@ -35,13 +37,15 @@ Every `GamLocation` shall use the UUID identity rules in `REQ-GAM-ID-001` throug
 | `latitude` | Geographic latitude | Nullable only as part of an absent coordinate pair |
 | `longitude` | Geographic longitude | Nullable only as part of an absent coordinate pair |
 
-Create, get, list, and update responses shall use this same representation. They shall not expose Events, credentials, authorization data, row-audit metadata, or soft-delete metadata.
+Create, get, list, and update responses shall use this same representation. `code` and `systemManaged` are read-only ownership metadata governed by `REQ-GAM-LOCATION-CATALOG-002` through `REQ-GAM-LOCATION-CATALOG-004`. Responses shall not expose Events, credentials, authorization data, row-audit metadata, or soft-delete metadata.
 
 Rationale:
 A stable shared record avoids repeating free-text addresses across Events while keeping the public representation small and consistent.
 
 Valid examples:
 - `Colégio Dom Bosco São Mário — Quadra` is a human-facing `name`.
+- An ordinary place response contains `code: null` and `systemManaged: false`.
+- A current catalog place response contains its accepted code and `systemManaged: true`.
 - A `GamLocation` exists before any Event references it.
 - Several Events reference the same `GamLocation` UUID.
 
@@ -191,9 +195,9 @@ GAM needs one active shared record for the same named address while preserving l
 
 ### REQ-GAM-LOCATION-008: Active retrieval and paged listing
 
-`GET /gam-locations/{id}` shall return `200 OK` and the complete active record. A missing or soft-deleted UUID shall return `404 Not Found` with `code: RESOURCE_NOT_FOUND`, `details.resource: GamLocation`, and the requested UUID as `details.identifier`.
+`GET /gam-locations/{id}` shall return `200 OK` and the complete active record when it is eligible for ordinary visibility. A missing, soft-deleted, or retired system UUID shall return `404 Not Found` with `code: RESOURCE_NOT_FOUND`, `details.resource: GamLocation`, and the requested UUID as `details.identifier`.
 
-`GET /gam-locations` shall return only active records in the GAM-owned paged envelope defined by `REQ-OPENAPI-007`. It shall allow sorting by `name`, `city`, `state`, and `countryCode`. With no requested sort, results shall order by `name` ascending and then UUID ascending as a deterministic internal tie-breaker. UUID need not be a client-selectable sort field.
+`GET /gam-locations` shall return only active ordinary records and current system records in the GAM-owned paged envelope defined by `REQ-OPENAPI-007`. Retired system records shall remain excluded under `REQ-GAM-LOCATION-CATALOG-003`. The endpoint shall allow sorting by `name`, `city`, `state`, and `countryCode`. With no requested sort, results shall order by `name` ascending and then UUID ascending as a deterministic internal tie-breaker. UUID need not be a client-selectable sort field.
 
 Filtering, text search, proximity search, bounding-box search, and Event-based filtering shall not be added to this endpoint by this specification.
 
@@ -210,7 +214,7 @@ A successful change shall return `200 OK` with the complete updated representati
 
 An update whose resulting duplicate identity belongs to another active record shall follow `REQ-GAM-LOCATION-007` and leave the target unchanged. A missing or soft-deleted target shall return `404 RESOURCE_NOT_FOUND`. Other invalid input shall return `400 Bad Request` without partial mutation.
 
-A referenced `GamLocation` may be updated. The corrected shared values become visible wherever the record is subsequently read, including historical Event responses. A genuinely different or relocated place shall be created as a new `GamLocation` instead of changing the identity of the old place.
+A referenced user-managed `GamLocation` may be updated. The corrected shared values become visible wherever the record is subsequently read, including historical Event responses. A genuinely different or relocated place shall be created as a new `GamLocation` instead of changing the identity of the old place. System-managed metadata correction occurs only through `REQ-GAM-LOCATION-CATALOG-005`.
 
 Concurrent valid updates to the same record may use last-committed-write-wins behavior. This specification does not require versions, ETags, or `If-Match` preconditions.
 
@@ -221,7 +225,7 @@ Full replacement gives optional-field clearing unambiguous semantics while keepi
 
 ### REQ-GAM-LOCATION-010: Protected removal
 
-`DELETE /gam-locations/{id}` shall soft-delete an active `GamLocation` and return `204 No Content` only when no Event record references it.
+`DELETE /gam-locations/{id}` shall soft-delete an active user-managed `GamLocation` and return `204 No Content` only when no Event record references it. System-managed targets shall instead follow `REQ-GAM-LOCATION-CATALOG-004`.
 
 Removal shall require a JSON body containing a `reason`. The system shall trim the reason and require 1 to 2,000 characters. Missing, `null`, blank, oversized, or structurally invalid removal bodies shall return `400 Bad Request`.
 
@@ -257,7 +261,7 @@ Shared-place administration is a Coordinator capability, while Members need dire
 
 ### REQ-GAM-LOCATION-012: Activity audit contract
 
-Successful state-changing workflows shall emit one high-level activity event in the same transaction as the business mutation:
+Successful product-facing state-changing workflows shall emit one high-level activity event in the same transaction as the business mutation:
 
 | Workflow | Activity action | Reason | Metadata |
 | --- | --- | --- | --- |
@@ -270,6 +274,10 @@ Each activity shall use the GamLocation UUID as its target. If activity persiste
 Get, list, no-op update, validation failure, duplicate conflict, in-use conflict, and not-found behavior shall not emit GamLocation activity events.
 
 Activity metadata shall not copy the GamLocation name, address values, or other user-authored text.
+
+Infrastructure synchronization of system `GamLocation` records shall follow
+`REQ-GAM-LOCATION-CATALOG-009` and shall not emit these product activity
+events.
 
 Rationale:
 The activity log records meaningful user intent without duplicating full address data or producing noise for reads and failed commands.
@@ -412,6 +420,8 @@ flowchart TD
 * [RBAC Catalog](../rbac/rbac-catalog.md)
 * [OpenAPI and Frontend API Documentation](../platform/openapi-and-frontend-api-documentation.md)
 * [Activity Audit Log](../platform/activity-audit-log.md)
+* [System GamLocation Catalog](system-gam-location-catalog.md)
+* [Database Reference Data and Enum Mirrors](../platform/database-reference-data-and-enum-mirrors.md)
 
 ## Related ADRs
 
