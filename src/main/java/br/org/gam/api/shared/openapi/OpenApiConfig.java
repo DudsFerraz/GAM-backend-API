@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.security.SecurityScheme;
 import io.swagger.v3.oas.annotations.servers.Server;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Components;
+import io.swagger.v3.oas.models.PathItem;
 import io.swagger.v3.oas.models.media.ArraySchema;
 import io.swagger.v3.oas.models.media.BooleanSchema;
 import io.swagger.v3.oas.models.media.ComposedSchema;
@@ -98,6 +99,35 @@ public class OpenApiConfig {
             "getOratorianoFormHistory"
     );
 
+    private static final List<String> COMMON_ERROR_CODES = List.of(
+            "VALIDATION_ERROR",
+            "MALFORMED_JSON",
+            "INVALID_PARAMETER_TYPE",
+            "AUTHENTICATION_REQUIRED",
+            "INVALID_CREDENTIALS",
+            "INVALID_REFRESH_TOKEN",
+            "ACCESS_DENIED",
+            "FORBIDDEN_OPERATION",
+            "REQUEST_SECURITY_REJECTED",
+            "RESOURCE_NOT_FOUND",
+            "INVALID_SEARCH_FILTER",
+            "CONFLICT",
+            "RESOURCE_CONFLICT",
+            "EVENT_AUDIENCE_PERMISSION_INVALID",
+            "EVENT_HAS_PRESENCES",
+            "EVENT_STATUS_TRANSITION_NOT_ALLOWED",
+            "EVENT_TYPE_NOT_MANAGEABLE",
+            "GAM_LOCATION_ALREADY_EXISTS",
+            "GAM_LOCATION_IN_USE",
+            "ORATORIANO_FORM_PROFILE_OVERWRITE_CHOICE_REQUIRED",
+            "ORATORIANO_FORM_PROFILE_SOURCE_IS_NEWER",
+            "ORATORIO_DATE_ALREADY_EXISTS",
+            "PRESENCE_ALREADY_REGISTERED",
+            "PRESENCE_EDIT_NOT_ALLOWED",
+            "PRESENCE_REGISTRATION_NOT_ALLOWED",
+            "PRESENCE_REMOVAL_NOT_ALLOWED"
+    );
+
     @Value("${spring.application.version}")
     private String applicationVersion;
 
@@ -122,16 +152,16 @@ public class OpenApiConfig {
             ));
             Components components = openApi.getComponents() == null ? new Components() : openApi.getComponents();
             openApi.setComponents(components);
-            components.addSchemas("ApiErrorDTO", apiErrorSchema());
+            configureApiErrorSchemas(components);
             requireGamLocationResponseFields(components);
             requireCsrfBootstrapResponseFields(components);
             requireCurrentAccountContextResponseFields(components);
             configureSharedSearchSchemas(components);
             components.getSchemas().remove("Pageable");
 
-            openApi.getPaths().forEach((path, pathItem) -> pathItem.readOperations().forEach(operation -> {
+            openApi.getPaths().forEach((path, pathItem) -> pathItem.readOperationsMap().forEach((method, operation) -> {
                 addOperationMetadata(path, operation);
-                if (isPublicPath(path)) {
+                if (isPublicOperation(path, method)) {
                     operation.setSecurity(List.of());
                 }
                 documentSuccessStatus(operation);
@@ -386,24 +416,156 @@ public class OpenApiConfig {
         return operationId.replaceAll("([a-z])([A-Z])", "$1 $2");
     }
 
-    private boolean isPublicPath(String path) {
+    private boolean isPublicOperation(String path, PathItem.HttpMethod method) {
         return "/auth/register".equals(path)
                 || "/auth/login".equals(path)
                 || "/auth/refresh".equals(path)
                 || "/auth/logout".equals(path)
                 || "/auth/csrf".equals(path)
-                || "/events/{id}".equals(path);
+                || "/events/{id}".equals(path) && method == PathItem.HttpMethod.GET;
+    }
+
+    private void configureApiErrorSchemas(Components components) {
+        components.addSchemas("ApiValidationViolation", validationViolationSchema());
+        components.addSchemas("ApiValidationErrorDetails", validationDetailsSchema());
+        components.addSchemas("ApiMalformedJsonDetails", malformedJsonDetailsSchema());
+        components.addSchemas("ApiInvalidParameterTypeDetails", invalidParameterTypeDetailsSchema());
+        components.addSchemas("ApiResourceNotFoundDetails", resourceNotFoundDetailsSchema());
+        components.addSchemas("ApiInvalidSearchFilterDetails", invalidSearchFilterDetailsSchema());
+        components.addSchemas("ApiEmptyErrorDetails", emptyDetailsSchema());
+        components.addSchemas("ApiFeatureErrorDetails", featureErrorDetailsSchema());
+        components.addSchemas("ApiErrorDTO", apiErrorSchema());
     }
 
     private Schema<?> apiErrorSchema() {
-        ObjectSchema schema = new ObjectSchema();
+        ObjectSchema schema = closedObjectSchema();
+        ObjectSchema details = new ObjectSchema();
+        details.setAnyOf(List.of(
+                schemaReference("ApiValidationErrorDetails"),
+                schemaReference("ApiMalformedJsonDetails"),
+                schemaReference("ApiInvalidParameterTypeDetails"),
+                schemaReference("ApiResourceNotFoundDetails"),
+                schemaReference("ApiInvalidSearchFilterDetails"),
+                schemaReference("ApiEmptyErrorDetails"),
+                schemaReference("ApiFeatureErrorDetails")
+        ));
         schema.addProperty("timestamp", new StringSchema().format("date-time"));
         schema.addProperty("status", new IntegerSchema());
-        schema.addProperty("code", new StringSchema());
+        schema.addProperty("code", new StringSchema()._enum(COMMON_ERROR_CODES));
         schema.addProperty("message", new StringSchema());
-        schema.addProperty("details", new MapSchema());
+        schema.addProperty("details", details);
         schema.setRequired(List.of("timestamp", "status", "code", "message", "details"));
         return schema;
+    }
+
+    private Schema<?> validationViolationSchema() {
+        ObjectSchema schema = closedObjectSchema();
+        schema.addProperty("location", new StringSchema()._enum(
+                List.of("body", "path", "query", "header", "cookie")
+        ));
+        schema.addProperty("field", new StringSchema());
+        schema.addProperty("code", new StringSchema()._enum(List.of(
+                "REQUIRED",
+                "NOT_BLANK",
+                "SIZE",
+                "RANGE",
+                "FORMAT",
+                "ALLOWED_VALUE",
+                "RELATION",
+                "INVALID_VALUE"
+        )));
+        schema.addProperty("message", new StringSchema());
+        schema.setRequired(List.of("location", "field", "code", "message"));
+        return schema;
+    }
+
+    private Schema<?> validationDetailsSchema() {
+        ObjectSchema schema = closedObjectSchema();
+        schema.addProperty(
+                "violations",
+                new ArraySchema().items(schemaReference("ApiValidationViolation"))
+        );
+        schema.setRequired(List.of("violations"));
+        return schema;
+    }
+
+    private Schema<?> malformedJsonDetailsSchema() {
+        ObjectSchema schema = closedObjectSchema();
+        schema.addProperty(
+                "reason",
+                new StringSchema()._enum(List.of("SYNTAX_ERROR", "UNKNOWN_FIELD", "TYPE_MISMATCH"))
+        );
+        schema.addProperty("location", new StringSchema()._enum(List.of("body")));
+        schema.addProperty("field", new StringSchema());
+        schema.setRequired(List.of("reason", "location"));
+        return schema;
+    }
+
+    private Schema<?> invalidParameterTypeDetailsSchema() {
+        ObjectSchema schema = closedObjectSchema();
+        schema.addProperty(
+                "location",
+                new StringSchema()._enum(List.of("path", "query", "header", "cookie"))
+        );
+        schema.addProperty("field", new StringSchema());
+        schema.addProperty("expectedType", new StringSchema()._enum(List.of(
+                "UUID",
+                "INTEGER",
+                "DECIMAL",
+                "BOOLEAN",
+                "DATE",
+                "DATE_TIME",
+                "ENUM"
+        )));
+        schema.setRequired(List.of("location", "field", "expectedType"));
+        return schema;
+    }
+
+    private Schema<?> resourceNotFoundDetailsSchema() {
+        ObjectSchema schema = closedObjectSchema();
+        schema.addProperty("resource", new StringSchema());
+        schema.addProperty("identifier", new StringSchema());
+        schema.setRequired(List.of("resource", "identifier"));
+        return schema;
+    }
+
+    private Schema<?> invalidSearchFilterDetailsSchema() {
+        ObjectSchema schema = closedObjectSchema();
+        IntegerSchema filterIndex = new IntegerSchema();
+        filterIndex.setMinimum(BigDecimal.ZERO);
+        schema.addProperty("filterIndex", filterIndex);
+        schema.addProperty("field", new StringSchema());
+        schema.addProperty("comparisonMethod", new StringSchema()._enum(List.of(
+                "EQUALS",
+                "LIKE",
+                "IN",
+                "GREATER_THAN_OR_EQUAL",
+                "LESS_THAN_OR_EQUAL"
+        )));
+        schema.setRequired(List.of("filterIndex"));
+        return schema;
+    }
+
+    private Schema<?> emptyDetailsSchema() {
+        ObjectSchema schema = closedObjectSchema();
+        schema.setMaxProperties(0);
+        return schema;
+    }
+
+    private Schema<?> featureErrorDetailsSchema() {
+        ObjectSchema schema = new ObjectSchema();
+        schema.setAdditionalProperties(true);
+        return schema;
+    }
+
+    private ObjectSchema closedObjectSchema() {
+        ObjectSchema schema = new ObjectSchema();
+        schema.setAdditionalProperties(false);
+        return schema;
+    }
+
+    private Schema<?> schemaReference(String name) {
+        return new Schema<>().$ref("#/components/schemas/" + name);
     }
 
     private void documentSuccessStatus(io.swagger.v3.oas.models.Operation operation) {
@@ -619,25 +781,84 @@ public class OpenApiConfig {
     }
 
     private void documentErrorResponses(io.swagger.v3.oas.models.Operation operation) {
-        if (isStructuredSearch(operation.getOperationId())) {
-            operation.getResponses().put("400", structuredSearchBadRequestResponse());
-        } else {
-            operation.getResponses().putIfAbsent("400", errorResponse(400, "INVALID_REQUEST", "Invalid request"));
+        if ("getCsrfProof".equals(operation.getOperationId())) {
+            operation.getResponses().keySet().removeIf(status -> !"200".equals(status));
+            return;
         }
-        operation.getResponses().putIfAbsent("401", errorResponse(401, "UNAUTHORIZED", "Authentication is required."));
-        if (Set.of("updateGamLocation", "removeGamLocation").contains(operation.getOperationId())) {
-            operation.getResponses().put("403", gamLocationMutationForbiddenResponse());
+        if (Set.of("getEvent", "getRole").contains(operation.getOperationId())) {
+            operation.getResponses().put("400", invalidParameterBadRequestResponse(operation));
+        } else if (isStructuredSearch(operation.getOperationId())) {
+            operation.getResponses().put("400", structuredSearchBadRequestResponse());
+        } else if ("listGamLocations".equals(operation.getOperationId())) {
+            operation.getResponses().put("400", queryBadRequestResponse("page"));
+        } else if ("getOratorianoAttendanceSummary".equals(operation.getOperationId())) {
+            operation.getResponses().put("400", queryBadRequestResponse("month"));
         } else {
-            operation.getResponses().putIfAbsent(
-                    "403",
+            operation.getResponses().put("400", commonBadRequestResponse(operation));
+        }
+
+        if ("login".equals(operation.getOperationId())) {
+            operation.getResponses().put(
+                    "401",
                     errorResponse(
-                            403,
-                            "FORBIDDEN",
-                            "The authenticated account is not allowed to perform this operation."
+                            401,
+                            "INVALID_CREDENTIALS",
+                            "The supplied credentials are invalid.",
+                            Map.of(),
+                            false
+                    )
+            );
+        } else if ("refreshAccessToken".equals(operation.getOperationId())) {
+            operation.getResponses().put(
+                    "401",
+                    errorResponse(
+                            401,
+                            "INVALID_REFRESH_TOKEN",
+                            "The refresh token is invalid. Please sign in again.",
+                            Map.of(),
+                            false
+                    )
+            );
+        } else if (Set.of("registerAccount", "logout", "getCsrfProof", "getEvent").contains(
+                operation.getOperationId()
+        )) {
+            operation.getResponses().remove("401");
+        } else {
+            operation.getResponses().put(
+                    "401",
+                    errorResponse(
+                            401,
+                            "AUTHENTICATION_REQUIRED",
+                            "Bearer authentication is required.",
+                            Map.of(),
+                            true
                     )
             );
         }
-        operation.getResponses().putIfAbsent("404", errorResponse(404, "NOT_FOUND", "The requested resource was not found."));
+
+        if (Set.of("login", "refreshAccessToken", "logout").contains(operation.getOperationId())) {
+            operation.getResponses().put("403", requestSecurityRejectedResponse());
+        } else if (Set.of("registerAccount", "getCsrfProof", "getEvent").contains(operation.getOperationId())) {
+            operation.getResponses().remove("403");
+        } else if (Set.of("updateGamLocation", "removeGamLocation").contains(operation.getOperationId())) {
+            operation.getResponses().put("403", gamLocationMutationForbiddenResponse());
+        } else if (Set.of("assignAccountRole", "dropAccountRole").contains(operation.getOperationId())) {
+            operation.getResponses().put("403", accountRoleForbiddenResponse());
+        } else {
+            operation.getResponses().put(
+                    "403",
+                    errorResponse(
+                            403,
+                            "ACCESS_DENIED",
+                            "The authenticated Account lacks authority for this operation."
+                    )
+            );
+        }
+
+        operation.getResponses().put(
+                "404",
+                notFoundResponse(operation)
+        );
         ConflictDocumentation conflict = conflictDocumentation(operation.getOperationId());
         operation.getResponses().putIfAbsent(
                 "409",
@@ -651,6 +872,27 @@ public class OpenApiConfig {
         if ("listRoles".equals(operation.getOperationId())) {
             operation.getResponses().remove("404");
             operation.getResponses().remove("409");
+        }
+        retainAcceptedAuthResponses(operation);
+    }
+
+    private void retainAcceptedAuthResponses(io.swagger.v3.oas.models.Operation operation) {
+        Set<String> acceptedStatuses = switch (operation.getOperationId()) {
+            case "registerAccount" -> Set.of("201", "400", "409");
+            case "login" -> Set.of("200", "400", "401", "403");
+            case "refreshAccessToken" -> Set.of("200", "401", "403");
+            case "logout" -> Set.of("200", "403");
+            case "getEvent" -> Set.of("200", "400", "404");
+            case "getRole" -> Set.of("200", "400", "401", "403", "404");
+            case "listGamLocations" -> Set.of("200", "400", "401", "403");
+            case "getOratorianoAttendanceSummary" -> Set.of("200", "400", "401", "403", "404");
+            case "searchAccounts", "searchEvents", "searchMembers",
+                    "searchMembershipSolicitations", "searchOratorianos" ->
+                    Set.of("200", "400", "401", "403");
+            default -> null;
+        };
+        if (acceptedStatuses != null) {
+            operation.getResponses().keySet().removeIf(status -> !acceptedStatuses.contains(status));
         }
     }
 
@@ -670,12 +912,30 @@ public class OpenApiConfig {
         mediaType.addExamples(
                 "malformedJson",
                 new Example().summary("Malformed JSON structure")
-                        .value(errorExample(400, "MALFORMED_JSON", "JSON request is malformed."))
+                        .value(errorExample(
+                                400,
+                                "MALFORMED_JSON",
+                                "The JSON request body is malformed.",
+                                Map.of(
+                                        "reason", "UNKNOWN_FIELD",
+                                        "location", "body"
+                                )
+                        ))
         );
         mediaType.addExamples(
                 "validationError",
                 new Example().summary("Missing, null, or blank required member")
-                        .value(errorExample(400, "VALIDATION_ERROR", "Validation failed."))
+                        .value(errorExample(
+                                400,
+                                "VALIDATION_ERROR",
+                                "The request contains invalid input.",
+                                Map.of("violations", List.of(Map.of(
+                                        "location", "body",
+                                        "field", "/filters",
+                                        "code", "REQUIRED",
+                                        "message", "is required"
+                                )))
+                        ))
         );
         mediaType.addExamples(
                 "invalidSearchFilter",
@@ -687,21 +947,260 @@ public class OpenApiConfig {
                                 Map.of("filterIndex", 0)
                         ))
         );
-        return new ApiResponse()
-                .description("Possible codes: MALFORMED_JSON, VALIDATION_ERROR, INVALID_SEARCH_FILTER.")
-                .content(new Content().addMediaType("application/json", mediaType));
+        mediaType.addExamples(
+                "invalidParameterType",
+                new Example().summary("Pagination parameter type mismatch")
+                        .value(errorExample(
+                                400,
+                                "INVALID_PARAMETER_TYPE",
+                                "A request parameter has an incompatible type.",
+                                Map.of(
+                                        "location", "query",
+                                        "field", "page",
+                                        "expectedType", "INTEGER"
+                                )
+                        ))
+        );
+        return errorTransport(new ApiResponse()
+                .description(
+                        "Possible codes: MALFORMED_JSON, VALIDATION_ERROR, "
+                                + "INVALID_SEARCH_FILTER, INVALID_PARAMETER_TYPE."
+                )
+                .content(new Content().addMediaType("application/json", mediaType)), false);
+    }
+
+    private ApiResponse queryBadRequestResponse(String field) {
+        MediaType mediaType = new MediaType()
+                .schema(new Schema<>().$ref("#/components/schemas/ApiErrorDTO"));
+        mediaType.addExamples(
+                "validationError",
+                new Example().summary("Query parameter range violation")
+                        .value(errorExample(
+                                400,
+                                "VALIDATION_ERROR",
+                                "The request contains invalid input.",
+                                Map.of("violations", List.of(Map.of(
+                                        "location", "query",
+                                        "field", field,
+                                        "code", "RANGE",
+                                        "message", "is outside the allowed range"
+                                )))
+                        ))
+        );
+        mediaType.addExamples(
+                "invalidParameterType",
+                new Example().summary("Query parameter type mismatch")
+                        .value(errorExample(
+                                400,
+                                "INVALID_PARAMETER_TYPE",
+                                "A request parameter has an incompatible type.",
+                                Map.of(
+                                        "location", "query",
+                                        "field", field,
+                                        "expectedType", "INTEGER"
+                                )
+                        ))
+        );
+        return errorTransport(
+                new ApiResponse()
+                        .description("Query validation or public parameter conversion failure.")
+                        .content(new Content().addMediaType("application/json", mediaType)),
+                false
+        );
+    }
+
+    private ApiResponse commonBadRequestResponse(io.swagger.v3.oas.models.Operation operation) {
+        MediaType mediaType = new MediaType()
+                .schema(new Schema<>().$ref("#/components/schemas/ApiErrorDTO"));
+        mediaType.addExamples(
+                "malformedJson",
+                new Example().summary("Malformed JSON body")
+                        .value(errorExample(
+                                400,
+                                "MALFORMED_JSON",
+                                "The JSON request body is malformed.",
+                                Map.of(
+                                        "reason", "SYNTAX_ERROR",
+                                        "location", "body"
+                                )
+                        ))
+        );
+        mediaType.addExamples(
+                "validationError",
+                new Example().summary("Request validation failed")
+                        .value(errorExample(
+                                400,
+                                "VALIDATION_ERROR",
+                                "The request contains invalid input.",
+                                Map.of("violations", List.of(Map.of(
+                                        "location", "body",
+                                        "field", "$",
+                                        "code", "INVALID_VALUE",
+                                        "message", "is invalid"
+                                )))
+                        ))
+        );
+
+        Parameter pathParameter = firstPathParameter(operation);
+        if (pathParameter != null) {
+            mediaType.addExamples(
+                    "invalidParameterType",
+                    new Example().summary("Path parameter type mismatch")
+                            .value(errorExample(
+                                    400,
+                                    "INVALID_PARAMETER_TYPE",
+                                    "A request parameter has an incompatible type.",
+                                    Map.of(
+                                            "location", "path",
+                                            "field", pathParameter.getName(),
+                                            "expectedType", publicTransportType(pathParameter.getSchema())
+                                    )
+                            ))
+            );
+        }
+
+        return errorTransport(
+                new ApiResponse()
+                        .description("Malformed JSON, validation, or public parameter conversion failure.")
+                        .content(new Content().addMediaType("application/json", mediaType)),
+                false
+        );
+    }
+
+    private ApiResponse invalidParameterBadRequestResponse(
+            io.swagger.v3.oas.models.Operation operation
+    ) {
+        Parameter pathParameter = firstPathParameter(operation);
+        MediaType mediaType = new MediaType()
+                .schema(new Schema<>().$ref("#/components/schemas/ApiErrorDTO"));
+        mediaType.addExamples(
+                "invalidParameterType",
+                new Example().summary("Path parameter type mismatch")
+                        .value(errorExample(
+                                400,
+                                "INVALID_PARAMETER_TYPE",
+                                "A request parameter has an incompatible type.",
+                                Map.of(
+                                        "location", "path",
+                                        "field", pathParameter.getName(),
+                                        "expectedType", publicTransportType(pathParameter.getSchema())
+                                )
+                        ))
+        );
+        return errorTransport(
+                new ApiResponse()
+                        .description("Public path-parameter conversion failure.")
+                        .content(new Content().addMediaType("application/json", mediaType)),
+                false
+        );
+    }
+
+    private Parameter firstPathParameter(io.swagger.v3.oas.models.Operation operation) {
+        if (operation.getParameters() == null) {
+            return null;
+        }
+        return operation.getParameters().stream()
+                .filter(parameter -> "path".equals(parameter.getIn()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private String publicTransportType(Schema<?> schema) {
+        if (schema == null) {
+            return "ENUM";
+        }
+        if ("uuid".equals(schema.getFormat())) {
+            return "UUID";
+        }
+        if ("date".equals(schema.getFormat())) {
+            return "DATE";
+        }
+        if ("date-time".equals(schema.getFormat())) {
+            return "DATE_TIME";
+        }
+        if ("integer".equals(schema.getType())) {
+            return "INTEGER";
+        }
+        if ("number".equals(schema.getType())) {
+            return "DECIMAL";
+        }
+        if ("boolean".equals(schema.getType())) {
+            return "BOOLEAN";
+        }
+        return "ENUM";
+    }
+
+    private ApiResponse requestSecurityRejectedResponse() {
+        return errorResponse(
+                403,
+                "REQUEST_SECURITY_REJECTED",
+                "Required request security proof was rejected."
+        );
+    }
+
+    private ApiResponse accountRoleForbiddenResponse() {
+        MediaType mediaType = new MediaType()
+                .schema(new Schema<>().$ref("#/components/schemas/ApiErrorDTO"));
+        mediaType.addExamples(
+                "accessDenied",
+                new Example().summary("Missing operation authority")
+                        .value(errorExample(
+                                403,
+                                "ACCESS_DENIED",
+                                "The authenticated Account lacks authority for this operation."
+                        ))
+        );
+        mediaType.addExamples(
+                "forbiddenOperation",
+                new Example().summary("System-managed Role workflow ownership")
+                        .value(errorExample(
+                                403,
+                                "FORBIDDEN_OPERATION",
+                                "The requested Role transition is owned by another workflow."
+                        ))
+        );
+        return errorTransport(
+                new ApiResponse()
+                        .description("Possible codes: ACCESS_DENIED, FORBIDDEN_OPERATION.")
+                        .content(new Content().addMediaType("application/json", mediaType)),
+                false
+        );
+    }
+
+    private ApiResponse notFoundResponse(io.swagger.v3.oas.models.Operation operation) {
+        String resource = switch (operation.getOperationId()) {
+            case "getRole", "getRolePermissions" -> "Role";
+            case "getPermission" -> "Permission";
+            case "getMember", "getMemberPresences" -> "Member";
+            case "getAccount", "getAccountRoles", "getAccountRoleAssignment" -> "Account";
+            case "getMembershipSolicitation" -> "MembershipSolicitation";
+            case "getGamLocation" -> "GamLocation";
+            case "getEvent" -> "Event";
+            case "getOratoriano" -> "Oratoriano";
+            default -> "Resource";
+        };
+        return errorResponse(
+                404,
+                "RESOURCE_NOT_FOUND",
+                resource + " not found with the supplied identifier.",
+                Map.of(
+                        "resource", resource,
+                        "identifier", "019f6343-321a-7c90-a096-a551e8f88eb4"
+                ),
+                false
+        );
     }
 
     private ApiResponse gamLocationMutationForbiddenResponse() {
         MediaType mediaType = new MediaType()
                 .schema(new Schema<>().$ref("#/components/schemas/ApiErrorDTO"));
         mediaType.addExamples(
-                "missingPermission",
-                new Example().summary("The authenticated account lacks GAM_LOCATION_MANAGE")
+                "accessDenied",
+                new Example().summary("Missing GAM_LOCATION_MANAGE authority")
                         .value(errorExample(
                                 403,
-                                "FORBIDDEN",
-                                "The authenticated account is not allowed to perform this operation."
+                                "ACCESS_DENIED",
+                                "The authenticated Account lacks authority for this operation."
                         ))
         );
         mediaType.addExamples(
@@ -719,9 +1218,12 @@ public class OpenApiConfig {
                                 )
                         ))
         );
-        return new ApiResponse()
-                .description("Possible codes: FORBIDDEN, FORBIDDEN_OPERATION.")
-                .content(new Content().addMediaType("application/json", mediaType));
+        return errorTransport(
+                new ApiResponse()
+                        .description("Possible codes: ACCESS_DENIED, FORBIDDEN_OPERATION.")
+                        .content(new Content().addMediaType("application/json", mediaType)),
+                false
+        );
     }
 
     private Map<String, Object> errorExample(int status, String code, String message) {
@@ -889,7 +1391,17 @@ public class OpenApiConfig {
     }
 
     private ApiResponse errorResponse(int status, String code, String description, Map<String, Object> details) {
-        return new ApiResponse()
+        return errorResponse(status, code, description, details, false);
+    }
+
+    private ApiResponse errorResponse(
+            int status,
+            String code,
+            String description,
+            Map<String, Object> details,
+            boolean bearerChallenge
+    ) {
+        return errorTransport(new ApiResponse()
                 .description(description)
                 .content(new io.swagger.v3.oas.models.media.Content().addMediaType(
                         "application/json",
@@ -902,7 +1414,25 @@ public class OpenApiConfig {
                                         "message", description,
                                         "details", details
                                 ))
-                ));
+                )), bearerChallenge);
+    }
+
+    private ApiResponse errorTransport(ApiResponse response, boolean bearerChallenge) {
+        response.addHeaderObject(
+                "Cache-Control",
+                new Header()
+                        .description("Prevents storage of the error response.")
+                        .schema(new StringSchema().example("no-store"))
+        );
+        if (bearerChallenge) {
+            response.addHeaderObject(
+                    "WWW-Authenticate",
+                    new Header()
+                            .description("Bearer authentication challenge.")
+                            .schema(new StringSchema().example("Bearer"))
+            );
+        }
+        return response;
     }
 
     private void addExamples(OpenAPI openApi, io.swagger.v3.oas.models.Operation operation) {

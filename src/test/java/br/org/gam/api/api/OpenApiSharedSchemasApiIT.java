@@ -258,10 +258,16 @@ class OpenApiSharedSchemasApiIT extends AbstractOpenApiDocumentationApiIT {
             Map<String, Object> examples = object(mediaType, "examples");
             assertThat(examples)
                     .as(route + " exact search error examples")
-                    .containsOnlyKeys("malformedJson", "validationError", "invalidSearchFilter");
+                    .containsOnlyKeys(
+                            "malformedJson",
+                            "validationError",
+                            "invalidSearchFilter",
+                            "invalidParameterType"
+                    );
             assertSearchErrorExample(examples, "malformedJson", "MALFORMED_JSON", route);
             assertSearchErrorExample(examples, "validationError", "VALIDATION_ERROR", route);
             assertSearchErrorExample(examples, "invalidSearchFilter", "INVALID_SEARCH_FILTER", route);
+            assertSearchErrorExample(examples, "invalidParameterType", "INVALID_PARAMETER_TYPE", route);
             assertThat(badRequest.toString()).as(route).doesNotContain("INVALID_REQUEST");
         });
     }
@@ -756,6 +762,16 @@ class OpenApiSharedSchemasApiIT extends AbstractOpenApiDocumentationApiIT {
         assertThat(value.get("message")).isInstanceOf(String.class);
         assertThat(String.valueOf(value.get("message"))).isNotBlank();
         assertThat(value.get("details")).isInstanceOf(Map.class);
+
+        if ("INVALID_PARAMETER_TYPE".equals(expectedCode)) {
+            assertThat(object(value, "details"))
+                    .as(route + " query parameter conversion details")
+                    .containsExactlyInAnyOrderEntriesOf(Map.of(
+                            "location", "query",
+                            "field", "page",
+                            "expectedType", "INTEGER"
+                    ));
+        }
 
         if ("INVALID_SEARCH_FILTER".equals(expectedCode)) {
             Map<String, Object> details = object(value, "details");
