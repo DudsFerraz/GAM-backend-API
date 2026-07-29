@@ -18,5 +18,5 @@ CREATE TABLE oratorio_team_assignments (
     CONSTRAINT fk_oratorio_team_assignment_member
         FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE RESTRICT,
     CONSTRAINT fk_oratorio_team_assignment_created_by
-        FOREIGN KEY (created_by) REFERENCES accounts(id)
+        FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
 );

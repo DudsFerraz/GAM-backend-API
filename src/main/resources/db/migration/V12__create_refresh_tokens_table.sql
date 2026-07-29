@@ -4,5 +4,6 @@ CREATE TABLE refresh_tokens (
     expiry_date TIMESTAMPTZ NOT NULL,
     account_id UUID NOT NULL,
 
-    CONSTRAINT fk_refresh_token_account FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
+    CONSTRAINT fk_refresh_token_account
+        FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );

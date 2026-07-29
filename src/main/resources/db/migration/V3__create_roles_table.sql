@@ -1,8 +1,8 @@
-CREATE TABLE accounts (
+CREATE TABLE roles (
     id UUID PRIMARY KEY,
-    email VARCHAR(255) NOT NULL,
-    password_hash TEXT NOT NULL,
-    display_name VARCHAR(50) NOT NULL,
+    name VARCHAR(50) NOT NULL,
+    description TEXT NOT NULL,
+    system_managed BOOLEAN NOT NULL DEFAULT FALSE,
 
     created_at TIMESTAMPTZ NOT NULL,
     created_by UUID,
@@ -11,16 +11,16 @@ CREATE TABLE accounts (
     deleted_at TIMESTAMPTZ,
     deleted_by UUID,
 
-    CONSTRAINT fk_account_created_by
+    CONSTRAINT fk_roles_created_by
         FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL,
-    CONSTRAINT fk_account_updated_by
+    CONSTRAINT fk_roles_updated_by
         FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL,
-    CONSTRAINT fk_account_deleted_by
+    CONSTRAINT fk_roles_deleted_by
         FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL,
-    CONSTRAINT check_accounts_deleted_attribution
+    CONSTRAINT check_roles_deleted_attribution
         CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
 );
 
-CREATE UNIQUE INDEX idx_accounts_email_not_deleted
-    ON accounts (email)
+CREATE UNIQUE INDEX idx_roles_name_not_deleted
+    ON roles (name)
     WHERE deleted_at IS NULL;

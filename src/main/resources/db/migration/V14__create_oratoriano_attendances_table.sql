@@ -16,11 +16,13 @@ CREATE TABLE oratoriano_attendances (
     CONSTRAINT fk_oratoriano_attendance_oratoriano
         FOREIGN KEY (oratoriano_id) REFERENCES oratorianos(id) ON DELETE RESTRICT,
     CONSTRAINT fk_oratoriano_attendance_created_by
-        FOREIGN KEY (created_by) REFERENCES accounts(id),
+        FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL,
     CONSTRAINT fk_oratoriano_attendance_updated_by
-        FOREIGN KEY (updated_by) REFERENCES accounts(id),
+        FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL,
     CONSTRAINT fk_oratoriano_attendance_deleted_by
-        FOREIGN KEY (deleted_by) REFERENCES accounts(id)
+        FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL,
+    CONSTRAINT check_oratoriano_attendances_deleted_attribution
+        CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
 );
 
 CREATE UNIQUE INDEX idx_oratoriano_attendance_active_pair
