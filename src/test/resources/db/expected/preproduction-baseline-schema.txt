@@ -1,0 +1,618 @@
+[columns]
+account_roles.account_id | uuid | NOT NULL | default=<none>
+account_roles.created_at | timestamp with time zone | NOT NULL | default=<none>
+account_roles.created_by | uuid | NULL | default=<none>
+account_roles.deleted_at | timestamp with time zone | NULL | default=<none>
+account_roles.deleted_by | uuid | NULL | default=<none>
+account_roles.id | uuid | NOT NULL | default=<none>
+account_roles.role_id | uuid | NOT NULL | default=<none>
+accounts.created_at | timestamp with time zone | NOT NULL | default=<none>
+accounts.created_by | uuid | NULL | default=<none>
+accounts.deleted_at | timestamp with time zone | NULL | default=<none>
+accounts.deleted_by | uuid | NULL | default=<none>
+accounts.display_name | character varying(50) | NOT NULL | default=<none>
+accounts.email | character varying(255) | NOT NULL | default=<none>
+accounts.id | uuid | NOT NULL | default=<none>
+accounts.password_hash | text | NOT NULL | default=<none>
+accounts.updated_at | timestamp with time zone | NOT NULL | default=<none>
+accounts.updated_by | uuid | NULL | default=<none>
+activity_logs.action | character varying(100) | NOT NULL | default=<none>
+activity_logs.actor_account_id | uuid | NULL | default=<none>
+activity_logs.actor_kind | character varying(20) | NOT NULL | default=<none>
+activity_logs.actor_reference | character varying(255) | NULL | default=<none>
+activity_logs.id | uuid | NOT NULL | default=<none>
+activity_logs.metadata | jsonb | NOT NULL | default='{}'::jsonb
+activity_logs.occurred_at | timestamp with time zone | NOT NULL | default=<none>
+activity_logs.reason | text | NULL | default=<none>
+activity_logs.request_id | uuid | NULL | default=<none>
+activity_logs.target_id | uuid | NULL | default=<none>
+activity_logs.target_scope | character varying(255) | NULL | default=<none>
+activity_logs.target_type | character varying(100) | NOT NULL | default=<none>
+events.begin_date | timestamp with time zone | NOT NULL | default=<none>
+events.cancellation_reason | text | NULL | default=<none>
+events.created_at | timestamp with time zone | NOT NULL | default=<none>
+events.created_by | uuid | NULL | default=<none>
+events.deleted_at | timestamp with time zone | NULL | default=<none>
+events.deleted_by | uuid | NULL | default=<none>
+events.description | text | NOT NULL | default=<none>
+events.end_date | timestamp with time zone | NOT NULL | default=<none>
+events.gam_location_id | uuid | NOT NULL | default=<none>
+events.id | uuid | NOT NULL | default=<none>
+events.required_permission_id | uuid | NULL | default=<none>
+events.status | event_status_enum | NOT NULL | default=<none>
+events.title | character varying(255) | NOT NULL | default=<none>
+events.type | event_type_enum | NOT NULL | default=<none>
+events.updated_at | timestamp with time zone | NOT NULL | default=<none>
+events.updated_by | uuid | NULL | default=<none>
+gam_locations.catalog_current | boolean | NOT NULL | default=false
+gam_locations.city | character varying(100) | NOT NULL | default=<none>
+gam_locations.code | character varying(32) | NULL | default=<none>
+gam_locations.country_code | character varying(2) | NOT NULL | default=<none>
+gam_locations.created_at | timestamp with time zone | NOT NULL | default=<none>
+gam_locations.created_by | uuid | NULL | default=<none>
+gam_locations.deleted_at | timestamp with time zone | NULL | default=<none>
+gam_locations.deleted_by | uuid | NULL | default=<none>
+gam_locations.id | uuid | NOT NULL | default=<none>
+gam_locations.identity_city | text | NOT NULL | default=<none>
+gam_locations.identity_country_code | text | NOT NULL | default=<none>
+gam_locations.identity_name | text | NOT NULL | default=<none>
+gam_locations.identity_postal_code | text | NOT NULL | default=<none>
+gam_locations.identity_state | text | NOT NULL | default=<none>
+gam_locations.identity_street | text | NOT NULL | default=<none>
+gam_locations.latitude | numeric(10,8) | NULL | default=<none>
+gam_locations.longitude | numeric(11,8) | NULL | default=<none>
+gam_locations.name | character varying(255) | NOT NULL | default=<none>
+gam_locations.postal_code | character varying(20) | NULL | default=<none>
+gam_locations.state | character varying(50) | NOT NULL | default=<none>
+gam_locations.street | character varying(255) | NULL | default=<none>
+gam_locations.system_managed | boolean | NOT NULL | default=false
+gam_locations.updated_at | timestamp with time zone | NOT NULL | default=<none>
+gam_locations.updated_by | uuid | NULL | default=<none>
+members.account_id | uuid | NOT NULL | default=<none>
+members.birth_date | date | NOT NULL | default=<none>
+members.created_at | timestamp with time zone | NOT NULL | default=<none>
+members.created_by | uuid | NULL | default=<none>
+members.deleted_at | timestamp with time zone | NULL | default=<none>
+members.deleted_by | uuid | NULL | default=<none>
+members.first_name | character varying(255) | NOT NULL | default=<none>
+members.id | uuid | NOT NULL | default=<none>
+members.phone_number | character varying(30) | NOT NULL | default=<none>
+members.status | member_status_enum | NOT NULL | default=<none>
+members.surname | character varying(255) | NOT NULL | default=<none>
+members.updated_at | timestamp with time zone | NOT NULL | default=<none>
+members.updated_by | uuid | NULL | default=<none>
+membership_solicitations.account_id | uuid | NOT NULL | default=<none>
+membership_solicitations.birth_date | date | NOT NULL | default=<none>
+membership_solicitations.created_at | timestamp with time zone | NOT NULL | default=<none>
+membership_solicitations.created_by | uuid | NULL | default=<none>
+membership_solicitations.decided_at | timestamp with time zone | NULL | default=<none>
+membership_solicitations.deleted_at | timestamp with time zone | NULL | default=<none>
+membership_solicitations.deleted_by | uuid | NULL | default=<none>
+membership_solicitations.first_name | character varying(255) | NOT NULL | default=<none>
+membership_solicitations.id | uuid | NOT NULL | default=<none>
+membership_solicitations.justification | character varying(2000) | NOT NULL | default=<none>
+membership_solicitations.member_id | uuid | NULL | default=<none>
+membership_solicitations.phone_number | character varying(30) | NOT NULL | default=<none>
+membership_solicitations.review_reason | character varying(2000) | NULL | default=<none>
+membership_solicitations.reviewed_by_account_id | uuid | NULL | default=<none>
+membership_solicitations.status | membership_solicitation_status_enum | NOT NULL | default=<none>
+membership_solicitations.surname | character varying(255) | NOT NULL | default=<none>
+membership_solicitations.updated_at | timestamp with time zone | NOT NULL | default=<none>
+membership_solicitations.updated_by | uuid | NULL | default=<none>
+membership_solicitations.version | bigint | NOT NULL | default=0
+missa_acolhida_members.member_id | uuid | NULL | default=<none>
+missa_acolhida_members.missa_id | uuid | NULL | default=<none>
+missas.comentarios_member | uuid | NULL | default=<none>
+missas.created_at | timestamp with time zone | NOT NULL | default=<none>
+missas.created_by | uuid | NULL | default=<none>
+missas.deleted_at | timestamp with time zone | NULL | default=<none>
+missas.deleted_by | uuid | NULL | default=<none>
+missas.event_id | uuid | NOT NULL | default=<none>
+missas.id | uuid | NOT NULL | default=<none>
+missas.leitura_1_member | uuid | NULL | default=<none>
+missas.leitura_2_member | uuid | NULL | default=<none>
+missas.preces_member | uuid | NULL | default=<none>
+missas.salmo_member | uuid | NULL | default=<none>
+missas.updated_at | timestamp with time zone | NOT NULL | default=<none>
+missas.updated_by | uuid | NULL | default=<none>
+oratoriano_additional_forms.completed_at | timestamp with time zone | NULL | default=<none>
+oratoriano_additional_forms.completed_by | uuid | NULL | default=<none>
+oratoriano_additional_forms.created_at | timestamp with time zone | NOT NULL | default=<none>
+oratoriano_additional_forms.created_by | uuid | NULL | default=<none>
+oratoriano_additional_forms.deleted_at | timestamp with time zone | NULL | default=<none>
+oratoriano_additional_forms.deleted_by | uuid | NULL | default=<none>
+oratoriano_additional_forms.draft_data | jsonb | NOT NULL | default='{}'::jsonb
+oratoriano_additional_forms.draft_revision | bigint | NOT NULL | default=1
+oratoriano_additional_forms.id | uuid | NOT NULL | default=<none>
+oratoriano_additional_forms.oratoriano_id | uuid | NOT NULL | default=<none>
+oratoriano_additional_forms.origin | oratoriano_form_origin_enum | NOT NULL | default=<none>
+oratoriano_additional_forms.revoked_at | timestamp with time zone | NULL | default=<none>
+oratoriano_additional_forms.revoked_by | uuid | NULL | default=<none>
+oratoriano_additional_forms.signed_on | date | NULL | default=<none>
+oratoriano_additional_forms.status | oratoriano_form_status_enum | NOT NULL | default=<none>
+oratoriano_additional_forms.updated_at | timestamp with time zone | NOT NULL | default=<none>
+oratoriano_additional_forms.updated_by | uuid | NULL | default=<none>
+oratoriano_additional_forms.version | integer | NOT NULL | default=<none>
+oratoriano_attendances.created_at | timestamp with time zone | NOT NULL | default=<none>
+oratoriano_attendances.created_by | uuid | NULL | default=<none>
+oratoriano_attendances.deleted_at | timestamp with time zone | NULL | default=<none>
+oratoriano_attendances.deleted_by | uuid | NULL | default=<none>
+oratoriano_attendances.id | uuid | NOT NULL | default=<none>
+oratoriano_attendances.oratoriano_id | uuid | NOT NULL | default=<none>
+oratoriano_attendances.oratorio_id | uuid | NOT NULL | default=<none>
+oratoriano_attendances.registered_at | timestamp with time zone | NOT NULL | default=<none>
+oratoriano_attendances.updated_at | timestamp with time zone | NOT NULL | default=<none>
+oratoriano_attendances.updated_by | uuid | NULL | default=<none>
+oratoriano_form_attachments.byte_length | bigint | NOT NULL | default=<none>
+oratoriano_form_attachments.bytes | bytea | NOT NULL | default=<none>
+oratoriano_form_attachments.created_at | timestamp with time zone | NOT NULL | default=<none>
+oratoriano_form_attachments.created_by | uuid | NULL | default=<none>
+oratoriano_form_attachments.deleted_at | timestamp with time zone | NULL | default=<none>
+oratoriano_form_attachments.deleted_by | uuid | NULL | default=<none>
+oratoriano_form_attachments.form_id | uuid | NOT NULL | default=<none>
+oratoriano_form_attachments.id | uuid | NOT NULL | default=<none>
+oratoriano_form_attachments.original_filename | character varying(255) | NOT NULL | default=<none>
+oratoriano_form_attachments.page_count | integer | NOT NULL | default=1
+oratoriano_form_attachments.page_order | integer | NOT NULL | default=<none>
+oratoriano_form_attachments.sha256 | character(64) | NOT NULL | default=<none>
+oratoriano_form_attachments.updated_at | timestamp with time zone | NOT NULL | default=<none>
+oratoriano_form_attachments.updated_by | uuid | NULL | default=<none>
+oratoriano_form_attachments.verified_mime_type | character varying(100) | NOT NULL | default=<none>
+oratoriano_form_print_snapshots.captured_data | jsonb | NOT NULL | default=<none>
+oratoriano_form_print_snapshots.created_at | timestamp with time zone | NOT NULL | default=<none>
+oratoriano_form_print_snapshots.created_by | uuid | NULL | default=<none>
+oratoriano_form_print_snapshots.deleted_at | timestamp with time zone | NULL | default=<none>
+oratoriano_form_print_snapshots.deleted_by | uuid | NULL | default=<none>
+oratoriano_form_print_snapshots.draft_revision | bigint | NOT NULL | default=<none>
+oratoriano_form_print_snapshots.fingerprint | character(64) | NOT NULL | default=<none>
+oratoriano_form_print_snapshots.form_id | uuid | NOT NULL | default=<none>
+oratoriano_form_print_snapshots.generated_at | timestamp with time zone | NOT NULL | default=<none>
+oratoriano_form_print_snapshots.id | uuid | NOT NULL | default=<none>
+oratoriano_form_print_snapshots.mode | oratoriano_form_print_mode_enum | NOT NULL | default=<none>
+oratoriano_form_print_snapshots.page_count | integer | NOT NULL | default=<none>
+oratoriano_form_print_snapshots.template_version | character varying(50) | NOT NULL | default=<none>
+oratoriano_form_print_snapshots.updated_at | timestamp with time zone | NOT NULL | default=<none>
+oratoriano_form_print_snapshots.updated_by | uuid | NULL | default=<none>
+oratorianos.birth_date | date | NULL | default=<none>
+oratorianos.birth_date_manual_updated_at | timestamp with time zone | NULL | default=<none>
+oratorianos.birth_date_source_form_id | uuid | NULL | default=<none>
+oratorianos.birth_date_source_signed_on | date | NULL | default=<none>
+oratorianos.created_at | timestamp with time zone | NOT NULL | default=<none>
+oratorianos.created_by | uuid | NULL | default=<none>
+oratorianos.deleted_at | timestamp with time zone | NULL | default=<none>
+oratorianos.deleted_by | uuid | NULL | default=<none>
+oratorianos.first_name | character varying(32) | NOT NULL | default=<none>
+oratorianos.id | uuid | NOT NULL | default=<none>
+oratorianos.name_key | text | NOT NULL | default=<none>
+oratorianos.name_manual_updated_at | timestamp with time zone | NULL | default=<none>
+oratorianos.name_source_form_id | uuid | NULL | default=<none>
+oratorianos.name_source_signed_on | date | NULL | default=<none>
+oratorianos.phone_manual_updated_at | timestamp with time zone | NULL | default=<none>
+oratorianos.phone_number | character varying(30) | NULL | default=<none>
+oratorianos.phone_source_form_id | uuid | NULL | default=<none>
+oratorianos.phone_source_signed_on | date | NULL | default=<none>
+oratorianos.surname | character varying(64) | NOT NULL | default=<none>
+oratorianos.updated_at | timestamp with time zone | NOT NULL | default=<none>
+oratorianos.updated_by | uuid | NULL | default=<none>
+oratorio_bt_criancas.member_id | uuid | NOT NULL | default=<none>
+oratorio_bt_criancas.oratorio_id | uuid | NOT NULL | default=<none>
+oratorio_bt_jovens.member_id | uuid | NOT NULL | default=<none>
+oratorio_bt_jovens.oratorio_id | uuid | NOT NULL | default=<none>
+oratorio_lanche.member_id | uuid | NOT NULL | default=<none>
+oratorio_lanche.oratorio_id | uuid | NOT NULL | default=<none>
+oratorio_presences_oratorianos.oratoriano_id | uuid | NOT NULL | default=<none>
+oratorio_presences_oratorianos.oratorio_id | uuid | NOT NULL | default=<none>
+oratorio_team_assignments.created_at | timestamp with time zone | NOT NULL | default=<none>
+oratorio_team_assignments.created_by | uuid | NULL | default=<none>
+oratorio_team_assignments.member_id | uuid | NOT NULL | default=<none>
+oratorio_team_assignments.oratorio_id | uuid | NOT NULL | default=<none>
+oratorio_team_assignments.team_type | oratorio_team_type_enum | NOT NULL | default=<none>
+oratorios.boa_tarde_criancas_plan | text | NULL | default=<none>
+oratorios.boa_tarde_jovens_plan | text | NULL | default=<none>
+oratorios.cancellation_reason | text | NULL | default=<none>
+oratorios.created_at | timestamp with time zone | NOT NULL | default=<none>
+oratorios.created_by | uuid | NULL | default=<none>
+oratorios.deleted_at | timestamp with time zone | NULL | default=<none>
+oratorios.deleted_by | uuid | NULL | default=<none>
+oratorios.event_id | uuid | NOT NULL | default=<none>
+oratorios.gincana_description | text | NULL | default=<none>
+oratorios.id | uuid | NOT NULL | default=<none>
+oratorios.lanche_description | text | NULL | default=<none>
+oratorios.local_date | date | NOT NULL | default=<none>
+oratorios.updated_at | timestamp with time zone | NOT NULL | default=<none>
+oratorios.updated_by | uuid | NULL | default=<none>
+permissions.code | character varying(100) | NOT NULL | default=<none>
+permissions.created_at | timestamp with time zone | NOT NULL | default=<none>
+permissions.created_by | uuid | NULL | default=<none>
+permissions.deleted_at | timestamp with time zone | NULL | default=<none>
+permissions.deleted_by | uuid | NULL | default=<none>
+permissions.description | text | NOT NULL | default=<none>
+permissions.id | uuid | NOT NULL | default=<none>
+permissions.label | character varying(100) | NOT NULL | default=<none>
+permissions.system_managed | boolean | NOT NULL | default=false
+permissions.updated_at | timestamp with time zone | NOT NULL | default=<none>
+permissions.updated_by | uuid | NULL | default=<none>
+presences.created_at | timestamp with time zone | NOT NULL | default=<none>
+presences.created_by | uuid | NULL | default=<none>
+presences.deleted_at | timestamp with time zone | NULL | default=<none>
+presences.deleted_by | uuid | NULL | default=<none>
+presences.event_id | uuid | NOT NULL | default=<none>
+presences.id | uuid | NOT NULL | default=<none>
+presences.member_id | uuid | NOT NULL | default=<none>
+presences.observations | text | NULL | default=<none>
+presences.updated_at | timestamp with time zone | NOT NULL | default=<none>
+presences.updated_by | uuid | NULL | default=<none>
+refresh_tokens.account_id | uuid | NOT NULL | default=<none>
+refresh_tokens.expiry_date | timestamp with time zone | NOT NULL | default=<none>
+refresh_tokens.id | uuid | NOT NULL | default=<none>
+refresh_tokens.token | uuid | NOT NULL | default=<none>
+role_permissions.created_at | timestamp with time zone | NOT NULL | default=<none>
+role_permissions.created_by | uuid | NULL | default=<none>
+role_permissions.deleted_at | timestamp with time zone | NULL | default=<none>
+role_permissions.deleted_by | uuid | NULL | default=<none>
+role_permissions.id | uuid | NOT NULL | default=<none>
+role_permissions.permission_id | uuid | NOT NULL | default=<none>
+role_permissions.role_id | uuid | NOT NULL | default=<none>
+roles.created_at | timestamp with time zone | NOT NULL | default=<none>
+roles.created_by | uuid | NULL | default=<none>
+roles.deleted_at | timestamp with time zone | NULL | default=<none>
+roles.deleted_by | uuid | NULL | default=<none>
+roles.description | text | NOT NULL | default=<none>
+roles.id | uuid | NOT NULL | default=<none>
+roles.name | character varying(50) | NOT NULL | default=<none>
+roles.system_managed | boolean | NOT NULL | default=false
+roles.updated_at | timestamp with time zone | NOT NULL | default=<none>
+roles.updated_by | uuid | NULL | default=<none>
+
+[constraints]
+account_roles.account_roles_account_id_not_null | NOT NULL account_id
+account_roles.account_roles_created_at_not_null | NOT NULL created_at
+account_roles.account_roles_id_not_null | NOT NULL id
+account_roles.account_roles_pkey | PRIMARY KEY (id)
+account_roles.account_roles_role_id_not_null | NOT NULL role_id
+account_roles.check_account_roles_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+account_roles.fk_account_role_account | FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+account_roles.fk_account_role_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+account_roles.fk_account_role_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+account_roles.fk_account_role_role | FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+accounts.accounts_created_at_not_null | NOT NULL created_at
+accounts.accounts_display_name_not_null | NOT NULL display_name
+accounts.accounts_email_not_null | NOT NULL email
+accounts.accounts_id_not_null | NOT NULL id
+accounts.accounts_password_hash_not_null | NOT NULL password_hash
+accounts.accounts_pkey | PRIMARY KEY (id)
+accounts.accounts_updated_at_not_null | NOT NULL updated_at
+accounts.check_accounts_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+accounts.fk_account_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+accounts.fk_account_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+accounts.fk_account_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
+activity_logs.activity_logs_action_not_null | NOT NULL action
+activity_logs.activity_logs_actor_kind_not_null | NOT NULL actor_kind
+activity_logs.activity_logs_id_not_null | NOT NULL id
+activity_logs.activity_logs_metadata_not_null | NOT NULL metadata
+activity_logs.activity_logs_occurred_at_not_null | NOT NULL occurred_at
+activity_logs.activity_logs_pkey | PRIMARY KEY (id)
+activity_logs.activity_logs_target_type_not_null | NOT NULL target_type
+activity_logs.check_activity_logs_actor_form | CHECK (actor_kind::text = 'ACCOUNT'::text AND actor_account_id IS NOT NULL AND actor_reference IS NULL OR actor_kind::text = 'ANONYMOUS'::text AND actor_account_id IS NULL AND actor_reference IS NULL OR (actor_kind::text = ANY (ARRAY['SYSTEM'::character varying, 'DEVELOPER'::character varying]::text[])) AND actor_account_id IS NULL AND actor_reference IS NOT NULL)
+activity_logs.check_activity_logs_target_form | CHECK (target_id IS NOT NULL AND target_scope IS NULL OR target_id IS NULL AND target_scope IS NOT NULL)
+events.check_event_dates | CHECK (end_date > begin_date)
+events.check_events_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+events.events_begin_date_not_null | NOT NULL begin_date
+events.events_created_at_not_null | NOT NULL created_at
+events.events_description_not_null | NOT NULL description
+events.events_end_date_not_null | NOT NULL end_date
+events.events_gam_location_id_not_null | NOT NULL gam_location_id
+events.events_id_not_null | NOT NULL id
+events.events_pkey | PRIMARY KEY (id)
+events.events_status_not_null | NOT NULL status
+events.events_title_not_null | NOT NULL title
+events.events_type_not_null | NOT NULL type
+events.events_updated_at_not_null | NOT NULL updated_at
+events.fk_event_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+events.fk_event_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+events.fk_event_gam_location | FOREIGN KEY (gam_location_id) REFERENCES gam_locations(id) ON DELETE RESTRICT
+events.fk_event_permission | FOREIGN KEY (required_permission_id) REFERENCES permissions(id) ON DELETE RESTRICT
+events.fk_event_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
+gam_locations.check_gam_locations_catalog_current | CHECK (NOT catalog_current OR system_managed)
+gam_locations.check_gam_locations_code_format | CHECK (code IS NULL OR code::text ~ '^[A-Z][A-Z0-9_]*$'::text)
+gam_locations.check_gam_locations_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+gam_locations.check_gam_locations_system_ownership | CHECK (system_managed = (code IS NOT NULL))
+gam_locations.fk_location_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+gam_locations.fk_location_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+gam_locations.fk_location_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
+gam_locations.gam_locations_catalog_current_not_null | NOT NULL catalog_current
+gam_locations.gam_locations_identity_city_not_null | NOT NULL identity_city
+gam_locations.gam_locations_identity_country_code_not_null | NOT NULL identity_country_code
+gam_locations.gam_locations_identity_name_not_null | NOT NULL identity_name
+gam_locations.gam_locations_identity_postal_code_not_null | NOT NULL identity_postal_code
+gam_locations.gam_locations_identity_state_not_null | NOT NULL identity_state
+gam_locations.gam_locations_identity_street_not_null | NOT NULL identity_street
+gam_locations.gam_locations_system_managed_not_null | NOT NULL system_managed
+gam_locations.locations_city_not_null | NOT NULL city
+gam_locations.locations_country_code_not_null | NOT NULL country_code
+gam_locations.locations_created_at_not_null | NOT NULL created_at
+gam_locations.locations_id_not_null | NOT NULL id
+gam_locations.locations_name_not_null | NOT NULL name
+gam_locations.locations_pkey | PRIMARY KEY (id)
+gam_locations.locations_state_not_null | NOT NULL state
+gam_locations.locations_updated_at_not_null | NOT NULL updated_at
+members.check_members_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+members.fk_member_account | FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE RESTRICT
+members.fk_member_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+members.fk_member_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+members.fk_member_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
+members.members_account_id_not_null | NOT NULL account_id
+members.members_birth_date_not_null | NOT NULL birth_date
+members.members_created_at_not_null | NOT NULL created_at
+members.members_first_name_not_null | NOT NULL first_name
+members.members_id_not_null | NOT NULL id
+members.members_phone_number_not_null | NOT NULL phone_number
+members.members_pkey | PRIMARY KEY (id)
+members.members_status_not_null | NOT NULL status
+members.members_surname_not_null | NOT NULL surname
+members.members_updated_at_not_null | NOT NULL updated_at
+membership_solicitations.check_membership_solicitations_decision | CHECK (status = 'PENDING'::membership_solicitation_status_enum AND reviewed_by_account_id IS NULL AND decided_at IS NULL AND review_reason IS NULL AND member_id IS NULL OR status = 'APPROVED'::membership_solicitation_status_enum AND reviewed_by_account_id IS NOT NULL AND decided_at IS NOT NULL AND review_reason IS NOT NULL AND member_id IS NOT NULL OR status = 'REJECTED'::membership_solicitation_status_enum AND reviewed_by_account_id IS NOT NULL AND decided_at IS NOT NULL AND review_reason IS NOT NULL AND member_id IS NULL)
+membership_solicitations.check_membership_solicitations_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+membership_solicitations.fk_membership_solicitations_account | FOREIGN KEY (account_id) REFERENCES accounts(id)
+membership_solicitations.fk_membership_solicitations_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+membership_solicitations.fk_membership_solicitations_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+membership_solicitations.fk_membership_solicitations_member | FOREIGN KEY (member_id) REFERENCES members(id)
+membership_solicitations.fk_membership_solicitations_reviewed_by | FOREIGN KEY (reviewed_by_account_id) REFERENCES accounts(id)
+membership_solicitations.fk_membership_solicitations_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
+membership_solicitations.membership_solicitations_account_id_not_null | NOT NULL account_id
+membership_solicitations.membership_solicitations_birth_date_not_null | NOT NULL birth_date
+membership_solicitations.membership_solicitations_created_at_not_null | NOT NULL created_at
+membership_solicitations.membership_solicitations_first_name_not_null | NOT NULL first_name
+membership_solicitations.membership_solicitations_id_not_null | NOT NULL id
+membership_solicitations.membership_solicitations_justification_not_null | NOT NULL justification
+membership_solicitations.membership_solicitations_phone_number_not_null | NOT NULL phone_number
+membership_solicitations.membership_solicitations_pkey | PRIMARY KEY (id)
+membership_solicitations.membership_solicitations_status_not_null | NOT NULL status
+membership_solicitations.membership_solicitations_surname_not_null | NOT NULL surname
+membership_solicitations.membership_solicitations_updated_at_not_null | NOT NULL updated_at
+membership_solicitations.membership_solicitations_version_not_null | NOT NULL version
+missa_acolhida_members.fk_acolhida_member | FOREIGN KEY (member_id) REFERENCES members(id)
+missa_acolhida_members.fk_acolhida_missa | FOREIGN KEY (missa_id) REFERENCES missas(id)
+missas.check_missas_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+missas.fk_comentarios_member | FOREIGN KEY (comentarios_member) REFERENCES members(id)
+missas.fk_leitura_1_member | FOREIGN KEY (leitura_1_member) REFERENCES members(id)
+missas.fk_leitura_2_member | FOREIGN KEY (leitura_2_member) REFERENCES members(id)
+missas.fk_missa_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+missas.fk_missa_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+missas.fk_missa_event | FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+missas.fk_missa_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
+missas.fk_preces_member | FOREIGN KEY (preces_member) REFERENCES members(id)
+missas.fk_salmo_member | FOREIGN KEY (salmo_member) REFERENCES members(id)
+missas.missas_created_at_not_null | NOT NULL created_at
+missas.missas_event_id_not_null | NOT NULL event_id
+missas.missas_id_not_null | NOT NULL id
+missas.missas_pkey | PRIMARY KEY (id)
+missas.missas_updated_at_not_null | NOT NULL updated_at
+oratoriano_additional_forms.check_oratoriano_additional_forms_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+oratoriano_additional_forms.fk_oratoriano_additional_form_completed_by | FOREIGN KEY (completed_by) REFERENCES accounts(id)
+oratoriano_additional_forms.fk_oratoriano_additional_form_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratoriano_additional_forms.fk_oratoriano_additional_form_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratoriano_additional_forms.fk_oratoriano_additional_form_oratoriano | FOREIGN KEY (oratoriano_id) REFERENCES oratorianos(id) ON DELETE RESTRICT
+oratoriano_additional_forms.fk_oratoriano_additional_form_revoked_by | FOREIGN KEY (revoked_by) REFERENCES accounts(id)
+oratoriano_additional_forms.fk_oratoriano_additional_form_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratoriano_additional_forms.idx_oratoriano_additional_form_version | UNIQUE (oratoriano_id, version)
+oratoriano_additional_forms.oratoriano_additional_forms_created_at_not_null | NOT NULL created_at
+oratoriano_additional_forms.oratoriano_additional_forms_draft_data_not_null | NOT NULL draft_data
+oratoriano_additional_forms.oratoriano_additional_forms_draft_revision_not_null | NOT NULL draft_revision
+oratoriano_additional_forms.oratoriano_additional_forms_id_not_null | NOT NULL id
+oratoriano_additional_forms.oratoriano_additional_forms_oratoriano_id_not_null | NOT NULL oratoriano_id
+oratoriano_additional_forms.oratoriano_additional_forms_origin_not_null | NOT NULL origin
+oratoriano_additional_forms.oratoriano_additional_forms_pkey | PRIMARY KEY (id)
+oratoriano_additional_forms.oratoriano_additional_forms_status_not_null | NOT NULL status
+oratoriano_additional_forms.oratoriano_additional_forms_updated_at_not_null | NOT NULL updated_at
+oratoriano_additional_forms.oratoriano_additional_forms_version_not_null | NOT NULL version
+oratoriano_attendances.check_oratoriano_attendances_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+oratoriano_attendances.fk_oratoriano_attendance_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratoriano_attendances.fk_oratoriano_attendance_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratoriano_attendances.fk_oratoriano_attendance_oratoriano | FOREIGN KEY (oratoriano_id) REFERENCES oratorianos(id) ON DELETE RESTRICT
+oratoriano_attendances.fk_oratoriano_attendance_oratorio | FOREIGN KEY (oratorio_id) REFERENCES oratorios(id) ON DELETE RESTRICT
+oratoriano_attendances.fk_oratoriano_attendance_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratoriano_attendances.oratoriano_attendances_created_at_not_null | NOT NULL created_at
+oratoriano_attendances.oratoriano_attendances_id_not_null | NOT NULL id
+oratoriano_attendances.oratoriano_attendances_oratoriano_id_not_null | NOT NULL oratoriano_id
+oratoriano_attendances.oratoriano_attendances_oratorio_id_not_null | NOT NULL oratorio_id
+oratoriano_attendances.oratoriano_attendances_pkey | PRIMARY KEY (id)
+oratoriano_attendances.oratoriano_attendances_registered_at_not_null | NOT NULL registered_at
+oratoriano_attendances.oratoriano_attendances_updated_at_not_null | NOT NULL updated_at
+oratoriano_form_attachments.check_oratoriano_form_attachment_page_count | CHECK (page_count > 0)
+oratoriano_form_attachments.check_oratoriano_form_attachments_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+oratoriano_form_attachments.fk_oratoriano_form_attachment_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratoriano_form_attachments.fk_oratoriano_form_attachment_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratoriano_form_attachments.fk_oratoriano_form_attachment_form | FOREIGN KEY (form_id) REFERENCES oratoriano_additional_forms(id) ON DELETE RESTRICT
+oratoriano_form_attachments.fk_oratoriano_form_attachment_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratoriano_form_attachments.oratoriano_form_attachments_byte_length_not_null | NOT NULL byte_length
+oratoriano_form_attachments.oratoriano_form_attachments_bytes_not_null | NOT NULL bytes
+oratoriano_form_attachments.oratoriano_form_attachments_created_at_not_null | NOT NULL created_at
+oratoriano_form_attachments.oratoriano_form_attachments_form_id_not_null | NOT NULL form_id
+oratoriano_form_attachments.oratoriano_form_attachments_id_not_null | NOT NULL id
+oratoriano_form_attachments.oratoriano_form_attachments_original_filename_not_null | NOT NULL original_filename
+oratoriano_form_attachments.oratoriano_form_attachments_page_count_not_null | NOT NULL page_count
+oratoriano_form_attachments.oratoriano_form_attachments_page_order_not_null | NOT NULL page_order
+oratoriano_form_attachments.oratoriano_form_attachments_pkey | PRIMARY KEY (id)
+oratoriano_form_attachments.oratoriano_form_attachments_sha256_not_null | NOT NULL sha256
+oratoriano_form_attachments.oratoriano_form_attachments_updated_at_not_null | NOT NULL updated_at
+oratoriano_form_attachments.oratoriano_form_attachments_verified_mime_type_not_null | NOT NULL verified_mime_type
+oratoriano_form_print_snapshots.check_oratoriano_form_print_snapshots_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+oratoriano_form_print_snapshots.fk_oratoriano_form_print_snapshot_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratoriano_form_print_snapshots.fk_oratoriano_form_print_snapshot_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratoriano_form_print_snapshots.fk_oratoriano_form_print_snapshot_form | FOREIGN KEY (form_id) REFERENCES oratoriano_additional_forms(id) ON DELETE RESTRICT
+oratoriano_form_print_snapshots.fk_oratoriano_form_print_snapshot_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratoriano_form_print_snapshots.oratoriano_form_print_snapshots_captured_data_not_null | NOT NULL captured_data
+oratoriano_form_print_snapshots.oratoriano_form_print_snapshots_created_at_not_null | NOT NULL created_at
+oratoriano_form_print_snapshots.oratoriano_form_print_snapshots_draft_revision_not_null | NOT NULL draft_revision
+oratoriano_form_print_snapshots.oratoriano_form_print_snapshots_fingerprint_not_null | NOT NULL fingerprint
+oratoriano_form_print_snapshots.oratoriano_form_print_snapshots_form_id_not_null | NOT NULL form_id
+oratoriano_form_print_snapshots.oratoriano_form_print_snapshots_generated_at_not_null | NOT NULL generated_at
+oratoriano_form_print_snapshots.oratoriano_form_print_snapshots_id_not_null | NOT NULL id
+oratoriano_form_print_snapshots.oratoriano_form_print_snapshots_mode_not_null | NOT NULL mode
+oratoriano_form_print_snapshots.oratoriano_form_print_snapshots_page_count_not_null | NOT NULL page_count
+oratoriano_form_print_snapshots.oratoriano_form_print_snapshots_pkey | PRIMARY KEY (id)
+oratoriano_form_print_snapshots.oratoriano_form_print_snapshots_template_version_not_null | NOT NULL template_version
+oratoriano_form_print_snapshots.oratoriano_form_print_snapshots_updated_at_not_null | NOT NULL updated_at
+oratorianos.check_oratorianos_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+oratorianos.fk_oratoriano_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratorianos.fk_oratoriano_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratorianos.fk_oratoriano_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratorianos.oratorianos_created_at_not_null | NOT NULL created_at
+oratorianos.oratorianos_first_name_not_null | NOT NULL first_name
+oratorianos.oratorianos_id_not_null | NOT NULL id
+oratorianos.oratorianos_name_key_not_null | NOT NULL name_key
+oratorianos.oratorianos_pkey | PRIMARY KEY (id)
+oratorianos.oratorianos_surname_not_null | NOT NULL surname
+oratorianos.oratorianos_updated_at_not_null | NOT NULL updated_at
+oratorio_bt_criancas.fk_bt_criancas_member | FOREIGN KEY (member_id) REFERENCES members(id)
+oratorio_bt_criancas.fk_bt_criancas_oratorio | FOREIGN KEY (oratorio_id) REFERENCES oratorios(id)
+oratorio_bt_criancas.oratorio_bt_criancas_member_id_not_null | NOT NULL member_id
+oratorio_bt_criancas.oratorio_bt_criancas_oratorio_id_not_null | NOT NULL oratorio_id
+oratorio_bt_criancas.oratorio_bt_criancas_pkey | PRIMARY KEY (oratorio_id, member_id)
+oratorio_bt_jovens.fk_bt_jovens_member | FOREIGN KEY (member_id) REFERENCES members(id)
+oratorio_bt_jovens.fk_bt_jovens_oratorio | FOREIGN KEY (oratorio_id) REFERENCES oratorios(id)
+oratorio_bt_jovens.oratorio_bt_jovens_member_id_not_null | NOT NULL member_id
+oratorio_bt_jovens.oratorio_bt_jovens_oratorio_id_not_null | NOT NULL oratorio_id
+oratorio_bt_jovens.oratorio_bt_jovens_pkey | PRIMARY KEY (oratorio_id, member_id)
+oratorio_lanche.fk_lanche_member | FOREIGN KEY (member_id) REFERENCES members(id)
+oratorio_lanche.fk_lanche_oratorio | FOREIGN KEY (oratorio_id) REFERENCES oratorios(id)
+oratorio_lanche.oratorio_lanche_member_id_not_null | NOT NULL member_id
+oratorio_lanche.oratorio_lanche_oratorio_id_not_null | NOT NULL oratorio_id
+oratorio_lanche.oratorio_lanche_pkey | PRIMARY KEY (oratorio_id, member_id)
+oratorio_presences_oratorianos.fk_presences_oratoriano | FOREIGN KEY (oratoriano_id) REFERENCES oratorianos(id)
+oratorio_presences_oratorianos.fk_presences_oratorio | FOREIGN KEY (oratorio_id) REFERENCES oratorios(id)
+oratorio_presences_oratorianos.oratorio_presences_oratorianos_oratoriano_id_not_null | NOT NULL oratoriano_id
+oratorio_presences_oratorianos.oratorio_presences_oratorianos_oratorio_id_not_null | NOT NULL oratorio_id
+oratorio_presences_oratorianos.oratorio_presences_oratorianos_pkey | PRIMARY KEY (oratorio_id, oratoriano_id)
+oratorio_team_assignments.fk_oratorio_team_assignment_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratorio_team_assignments.fk_oratorio_team_assignment_member | FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE RESTRICT
+oratorio_team_assignments.fk_oratorio_team_assignment_oratorio | FOREIGN KEY (oratorio_id) REFERENCES oratorios(id) ON DELETE RESTRICT
+oratorio_team_assignments.oratorio_team_assignments_created_at_not_null | NOT NULL created_at
+oratorio_team_assignments.oratorio_team_assignments_member_id_not_null | NOT NULL member_id
+oratorio_team_assignments.oratorio_team_assignments_oratorio_id_not_null | NOT NULL oratorio_id
+oratorio_team_assignments.oratorio_team_assignments_pkey | PRIMARY KEY (oratorio_id, member_id, team_type)
+oratorio_team_assignments.oratorio_team_assignments_team_type_not_null | NOT NULL team_type
+oratorios.check_oratorios_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+oratorios.fk_oratorio_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratorios.fk_oratorio_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratorios.fk_oratorio_event | FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+oratorios.fk_oratorio_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
+oratorios.oratorios_created_at_not_null | NOT NULL created_at
+oratorios.oratorios_event_id_not_null | NOT NULL event_id
+oratorios.oratorios_id_not_null | NOT NULL id
+oratorios.oratorios_local_date_not_null | NOT NULL local_date
+oratorios.oratorios_pkey | PRIMARY KEY (id)
+oratorios.oratorios_updated_at_not_null | NOT NULL updated_at
+permissions.check_permissions_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+permissions.fk_permissions_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+permissions.fk_permissions_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+permissions.fk_permissions_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
+permissions.permissions_code_not_null | NOT NULL code
+permissions.permissions_created_at_not_null | NOT NULL created_at
+permissions.permissions_description_not_null | NOT NULL description
+permissions.permissions_id_not_null | NOT NULL id
+permissions.permissions_label_not_null | NOT NULL label
+permissions.permissions_pkey | PRIMARY KEY (id)
+permissions.permissions_system_managed_not_null | NOT NULL system_managed
+permissions.permissions_updated_at_not_null | NOT NULL updated_at
+presences.check_presences_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+presences.fk_presence_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+presences.fk_presence_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+presences.fk_presence_event | FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE RESTRICT
+presences.fk_presence_member | FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE RESTRICT
+presences.fk_presence_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
+presences.presences_created_at_not_null | NOT NULL created_at
+presences.presences_event_id_not_null | NOT NULL event_id
+presences.presences_id_not_null | NOT NULL id
+presences.presences_member_id_not_null | NOT NULL member_id
+presences.presences_pkey | PRIMARY KEY (id)
+presences.presences_updated_at_not_null | NOT NULL updated_at
+refresh_tokens.fk_refresh_token_account | FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+refresh_tokens.refresh_tokens_account_id_not_null | NOT NULL account_id
+refresh_tokens.refresh_tokens_expiry_date_not_null | NOT NULL expiry_date
+refresh_tokens.refresh_tokens_id_not_null | NOT NULL id
+refresh_tokens.refresh_tokens_pkey | PRIMARY KEY (id)
+refresh_tokens.refresh_tokens_token_key | UNIQUE (token)
+refresh_tokens.refresh_tokens_token_not_null | NOT NULL token
+role_permissions.check_role_permissions_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+role_permissions.fk_role_perm_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+role_permissions.fk_role_perm_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+role_permissions.fk_role_perm_permission | FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE RESTRICT
+role_permissions.fk_role_perm_role | FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+role_permissions.role_permissions_created_at_not_null | NOT NULL created_at
+role_permissions.role_permissions_id_not_null | NOT NULL id
+role_permissions.role_permissions_permission_id_not_null | NOT NULL permission_id
+role_permissions.role_permissions_pkey | PRIMARY KEY (id)
+role_permissions.role_permissions_role_id_not_null | NOT NULL role_id
+roles.check_roles_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+roles.fk_roles_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+roles.fk_roles_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+roles.fk_roles_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
+roles.roles_created_at_not_null | NOT NULL created_at
+roles.roles_description_not_null | NOT NULL description
+roles.roles_id_not_null | NOT NULL id
+roles.roles_name_not_null | NOT NULL name
+roles.roles_pkey | PRIMARY KEY (id)
+roles.roles_system_managed_not_null | NOT NULL system_managed
+roles.roles_updated_at_not_null | NOT NULL updated_at
+
+[indexes]
+account_roles.account_roles_pkey | CREATE UNIQUE INDEX account_roles_pkey ON account_roles USING btree (id)
+account_roles.idx_account_role_not_deleted | CREATE UNIQUE INDEX idx_account_role_not_deleted ON account_roles USING btree (account_id, role_id) WHERE (deleted_at IS NULL)
+accounts.accounts_pkey | CREATE UNIQUE INDEX accounts_pkey ON accounts USING btree (id)
+accounts.idx_accounts_email_not_deleted | CREATE UNIQUE INDEX idx_accounts_email_not_deleted ON accounts USING btree (email) WHERE (deleted_at IS NULL)
+activity_logs.activity_logs_pkey | CREATE UNIQUE INDEX activity_logs_pkey ON activity_logs USING btree (id)
+activity_logs.idx_activity_logs_actor_account | CREATE INDEX idx_activity_logs_actor_account ON activity_logs USING btree (actor_account_id)
+activity_logs.idx_activity_logs_occurred_at | CREATE INDEX idx_activity_logs_occurred_at ON activity_logs USING btree (occurred_at DESC)
+activity_logs.idx_activity_logs_request_id | CREATE INDEX idx_activity_logs_request_id ON activity_logs USING btree (request_id) WHERE (request_id IS NOT NULL)
+activity_logs.idx_activity_logs_target | CREATE INDEX idx_activity_logs_target ON activity_logs USING btree (target_type, target_id)
+events.events_pkey | CREATE UNIQUE INDEX events_pkey ON events USING btree (id)
+gam_locations.idx_gam_location_active_duplicate_identity | CREATE UNIQUE INDEX idx_gam_location_active_duplicate_identity ON gam_locations USING btree (identity_name, identity_street, identity_city, identity_state, identity_postal_code, identity_country_code) WHERE (deleted_at IS NULL)
+gam_locations.idx_gam_locations_code | CREATE UNIQUE INDEX idx_gam_locations_code ON gam_locations USING btree (code)
+gam_locations.locations_pkey | CREATE UNIQUE INDEX locations_pkey ON gam_locations USING btree (id)
+members.idx_members_account_id | CREATE UNIQUE INDEX idx_members_account_id ON members USING btree (account_id)
+members.members_pkey | CREATE UNIQUE INDEX members_pkey ON members USING btree (id)
+membership_solicitations.idx_membership_solicitations_member | CREATE UNIQUE INDEX idx_membership_solicitations_member ON membership_solicitations USING btree (member_id) WHERE (member_id IS NOT NULL)
+membership_solicitations.idx_membership_solicitations_one_pending | CREATE UNIQUE INDEX idx_membership_solicitations_one_pending ON membership_solicitations USING btree (account_id) WHERE ((status = 'PENDING'::membership_solicitation_status_enum) AND (deleted_at IS NULL))
+membership_solicitations.membership_solicitations_pkey | CREATE UNIQUE INDEX membership_solicitations_pkey ON membership_solicitations USING btree (id)
+missas.idx_missas_event_id_not_deleted | CREATE UNIQUE INDEX idx_missas_event_id_not_deleted ON missas USING btree (event_id) WHERE (deleted_at IS NULL)
+missas.missas_pkey | CREATE UNIQUE INDEX missas_pkey ON missas USING btree (id)
+oratoriano_additional_forms.idx_oratoriano_additional_form_current | CREATE UNIQUE INDEX idx_oratoriano_additional_form_current ON oratoriano_additional_forms USING btree (oratoriano_id) WHERE ((status = 'COMPLETED'::oratoriano_form_status_enum) AND (deleted_at IS NULL))
+oratoriano_additional_forms.idx_oratoriano_additional_form_version | CREATE UNIQUE INDEX idx_oratoriano_additional_form_version ON oratoriano_additional_forms USING btree (oratoriano_id, version)
+oratoriano_additional_forms.oratoriano_additional_forms_pkey | CREATE UNIQUE INDEX oratoriano_additional_forms_pkey ON oratoriano_additional_forms USING btree (id)
+oratoriano_attendances.idx_oratoriano_attendance_active_pair | CREATE UNIQUE INDEX idx_oratoriano_attendance_active_pair ON oratoriano_attendances USING btree (oratorio_id, oratoriano_id) WHERE (deleted_at IS NULL)
+oratoriano_attendances.oratoriano_attendances_pkey | CREATE UNIQUE INDEX oratoriano_attendances_pkey ON oratoriano_attendances USING btree (id)
+oratoriano_form_attachments.idx_oratoriano_form_attachment_active_page | CREATE UNIQUE INDEX idx_oratoriano_form_attachment_active_page ON oratoriano_form_attachments USING btree (form_id, page_order) WHERE (deleted_at IS NULL)
+oratoriano_form_attachments.oratoriano_form_attachments_pkey | CREATE UNIQUE INDEX oratoriano_form_attachments_pkey ON oratoriano_form_attachments USING btree (id)
+oratoriano_form_print_snapshots.oratoriano_form_print_snapshots_pkey | CREATE UNIQUE INDEX oratoriano_form_print_snapshots_pkey ON oratoriano_form_print_snapshots USING btree (id)
+oratorianos.idx_oratorianos_reserved_name_key | CREATE UNIQUE INDEX idx_oratorianos_reserved_name_key ON oratorianos USING btree (name_key)
+oratorianos.oratorianos_pkey | CREATE UNIQUE INDEX oratorianos_pkey ON oratorianos USING btree (id)
+oratorio_bt_criancas.oratorio_bt_criancas_pkey | CREATE UNIQUE INDEX oratorio_bt_criancas_pkey ON oratorio_bt_criancas USING btree (oratorio_id, member_id)
+oratorio_bt_jovens.oratorio_bt_jovens_pkey | CREATE UNIQUE INDEX oratorio_bt_jovens_pkey ON oratorio_bt_jovens USING btree (oratorio_id, member_id)
+oratorio_lanche.oratorio_lanche_pkey | CREATE UNIQUE INDEX oratorio_lanche_pkey ON oratorio_lanche USING btree (oratorio_id, member_id)
+oratorio_presences_oratorianos.oratorio_presences_oratorianos_pkey | CREATE UNIQUE INDEX oratorio_presences_oratorianos_pkey ON oratorio_presences_oratorianos USING btree (oratorio_id, oratoriano_id)
+oratorio_team_assignments.oratorio_team_assignments_pkey | CREATE UNIQUE INDEX oratorio_team_assignments_pkey ON oratorio_team_assignments USING btree (oratorio_id, member_id, team_type)
+oratorios.idx_oratorios_active_local_date | CREATE UNIQUE INDEX idx_oratorios_active_local_date ON oratorios USING btree (local_date) WHERE (deleted_at IS NULL)
+oratorios.idx_oratorios_event_id_not_deleted | CREATE UNIQUE INDEX idx_oratorios_event_id_not_deleted ON oratorios USING btree (event_id) WHERE (deleted_at IS NULL)
+oratorios.oratorios_pkey | CREATE UNIQUE INDEX oratorios_pkey ON oratorios USING btree (id)
+permissions.idx_permissions_code_not_deleted | CREATE UNIQUE INDEX idx_permissions_code_not_deleted ON permissions USING btree (code) WHERE (deleted_at IS NULL)
+permissions.permissions_pkey | CREATE UNIQUE INDEX permissions_pkey ON permissions USING btree (id)
+presences.idx_presence_not_deleted | CREATE UNIQUE INDEX idx_presence_not_deleted ON presences USING btree (member_id, event_id) WHERE (deleted_at IS NULL)
+presences.presences_pkey | CREATE UNIQUE INDEX presences_pkey ON presences USING btree (id)
+refresh_tokens.refresh_tokens_pkey | CREATE UNIQUE INDEX refresh_tokens_pkey ON refresh_tokens USING btree (id)
+refresh_tokens.refresh_tokens_token_key | CREATE UNIQUE INDEX refresh_tokens_token_key ON refresh_tokens USING btree (token)
+role_permissions.idx_role_perm_not_deleted | CREATE UNIQUE INDEX idx_role_perm_not_deleted ON role_permissions USING btree (role_id, permission_id) WHERE (deleted_at IS NULL)
+role_permissions.role_permissions_pkey | CREATE UNIQUE INDEX role_permissions_pkey ON role_permissions USING btree (id)
+roles.idx_roles_name_not_deleted | CREATE UNIQUE INDEX idx_roles_name_not_deleted ON roles USING btree (name) WHERE (deleted_at IS NULL)
+roles.roles_pkey | CREATE UNIQUE INDEX roles_pkey ON roles USING btree (id)
+
+[enums]
+event_status_enum | SCHEDULED,COMPLETED,LOCKED,FINALIZED,CANCELLED
+event_type_enum | GENERIC,ORATORIO,MISSA
+member_status_enum | ACTIVE,INACTIVE
+membership_solicitation_status_enum | PENDING,APPROVED,REJECTED
+oratoriano_form_origin_enum | PAPER_TRANSCRIPTION,DIRECT_SYSTEM_ENTRY
+oratoriano_form_print_mode_enum | IDENTIFIED_BLANK,PREFILLED
+oratoriano_form_status_enum | DRAFT,COMPLETED,SUPERSEDED,REVOKED
+oratorio_team_type_enum | LANCHE,GINCANA,BOA_TARDE_CRIANCAS,BOA_TARDE_JOVENS

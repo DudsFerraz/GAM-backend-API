@@ -58,48 +58,111 @@ class GamLocationMigrationPersistenceIT {
     private final JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
 
     @Test
-    @DisplayName("REQ-GAM-LOCATION-007 and ADR-0009 - V22 legacy-row backfill -> accent-insensitive canonical identity")
-    void v22ShouldBackfillLegacyRowsWithCanonicalDuplicateIdentity() {
-        String schema = uniqueSchema("gam_location_backfill");
-        migrate(schema, "21", "classpath:db/migration").migrate();
-
-        UUID id = UUID.randomUUID();
-        Timestamp now = Timestamp.from(Instant.now());
-        jdbcTemplate.update(
-                "INSERT INTO " + schema + ".locations "
-                        + "(id, name, street, city, state, postal_code, country_code, created_at, updated_at) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                id,
-                "Sal\u00e3o  S\u00e3o Jos\u00e9",
-                "Rua S\u00e3o Jos\u00e9, 123",
-                "S\u00e3o Paulo",
-                "S\u00e3o Paulo",
-                "01000-000",
-                "BR",
-                now,
-                now
-        );
-
+    @DisplayName("REQ-GAM-LOCATION-007 and ADR-0022 - fresh baseline -> canonical GamLocation schema")
+    void freshBaselineShouldCreateTheCanonicalGamLocationSchema() {
+        String schema = uniqueSchema("gam_location_current");
         migrate(schema, null, "classpath:db/migration").migrate();
 
-        Map<String, Object> identity = jdbcTemplate.queryForMap(
-                "SELECT identity_name, identity_street, identity_city, identity_state, "
-                        + "identity_postal_code, identity_country_code "
-                        + "FROM " + schema + ".gam_locations WHERE id = ?",
-                id
+        assertThat(jdbcTemplate.queryForList(
+                "SELECT column_name FROM information_schema.columns "
+                        + "WHERE table_schema = ? AND table_name = 'gam_locations' "
+                        + "ORDER BY ordinal_position",
+                String.class,
+                schema
+        )).containsExactlyInAnyOrder(
+                "id",
+                "code",
+                "system_managed",
+                "catalog_current",
+                "name",
+                "street",
+                "city",
+                "state",
+                "postal_code",
+                "country_code",
+                "latitude",
+                "longitude",
+                "created_at",
+                "created_by",
+                "updated_at",
+                "updated_by",
+                "deleted_at",
+                "deleted_by",
+                "identity_name",
+                "identity_street",
+                "identity_city",
+                "identity_state",
+                "identity_postal_code",
+                "identity_country_code"
         );
-        assertThat(identity)
-                .containsEntry("identity_name", "salao sao jose")
-                .containsEntry("identity_street", "rua sao jose, 123")
-                .containsEntry("identity_city", "sao paulo")
-                .containsEntry("identity_state", "sao paulo")
-                .containsEntry("identity_postal_code", "01000-000")
-                .containsEntry("identity_country_code", "br");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                        + "WHERE table_schema = ? AND table_name = 'locations'",
+                Long.class,
+                schema
+        )).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT character_maximum_length FROM information_schema.columns "
+                        + "WHERE table_schema = ? AND table_name = 'gam_locations' "
+                        + "AND column_name = 'country_code'",
+                Integer.class,
+                schema
+        )).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                        + "WHERE table_schema = ? AND table_name = 'gam_locations' "
+                        + "AND column_name LIKE 'identity_%' AND is_nullable = 'NO'",
+                Long.class,
+                schema
+        )).isEqualTo(6L);
+        assertThat(jdbcTemplate.queryForMap(
+                "SELECT data_type, character_maximum_length, is_nullable "
+                        + "FROM information_schema.columns "
+                        + "WHERE table_schema = ? AND table_name = 'gam_locations' "
+                        + "AND column_name = 'code'",
+                schema
+        )).containsEntry("data_type", "character varying")
+                .containsEntry("character_maximum_length", 32)
+                .containsEntry("is_nullable", "YES");
+        assertThat(jdbcTemplate.queryForList(
+                "SELECT column_name, is_nullable, column_default "
+                        + "FROM information_schema.columns "
+                        + "WHERE table_schema = ? AND table_name = 'gam_locations' "
+                        + "AND column_name IN ('system_managed', 'catalog_current') "
+                        + "ORDER BY column_name",
+                schema
+        )).allSatisfy(row -> assertThat(row)
+                .containsEntry("is_nullable", "NO")
+                .containsEntry("column_default", "false"));
+        assertThat(jdbcTemplate.queryForList(
+                "SELECT constraint_name FROM information_schema.table_constraints "
+                        + "WHERE table_schema = ? AND table_name = 'gam_locations' "
+                        + "AND constraint_name IN ("
+                        + "'check_gam_locations_system_ownership', "
+                        + "'check_gam_locations_catalog_current', "
+                        + "'check_gam_locations_code_format') "
+                        + "ORDER BY constraint_name",
+                String.class,
+                schema
+        )).containsExactly(
+                "check_gam_locations_catalog_current",
+                "check_gam_locations_code_format",
+                "check_gam_locations_system_ownership"
+        );
+        assertThat(jdbcTemplate.queryForMap(
+                "SELECT indexname, indexdef FROM pg_indexes "
+                        + "WHERE schemaname = ? AND tablename = 'gam_locations' "
+                        + "AND indexname = 'idx_gam_locations_code'",
+                schema
+        )).containsEntry("indexname", "idx_gam_locations_code")
+                .satisfies(row -> assertThat(row.get("indexdef").toString())
+                        .contains("CREATE UNIQUE INDEX")
+                        .contains("(code)"));
     }
 
     @Test
-    @DisplayName("REQ-EVENT-004 - V22 Event schema -> GamLocation foreign key is required")
-    void v22ShouldRequireEveryEventToReferenceAGamLocation() {
+    @DisplayName("REQ-EVENT-004 and ADR-0022 - current Event schema -> GamLocation foreign key is required")
+    void currentEventSchemaShouldRequireEveryEventToReferenceAGamLocation() {
         String schema = uniqueSchema("event_gam_location_required");
         migrate(schema, null, "classpath:db/migration").migrate();
 
@@ -246,7 +309,7 @@ class GamLocationMigrationPersistenceIT {
     @DisplayName("REQ-GAM-LOCATION-CATALOG-006 and REQ-DATA-004 - ordinary accepted-identity collision -> atomic synchronization failure without adoption")
     void ordinaryDuplicateIdentityShouldBlockTheCompleteSystemCatalogSynchronization() {
         String schema = uniqueSchema("system_gam_location_collision");
-        migrate(schema, "33", "classpath:db/migration").migrate();
+        migrate(schema, null, "classpath:db/migration").migrate();
         UUID ordinaryId = insertOrdinaryDbcaDuplicate(schema);
 
         Flyway flyway = migrateSystemCatalog(schema);
@@ -274,7 +337,7 @@ class GamLocationMigrationPersistenceIT {
     @DisplayName("REQ-GAM-LOCATION-CATALOG-006 and REQ-DATA-004 - soft-deleted ordinary accepted-identity collision -> atomic synchronization failure")
     void softDeletedOrdinaryDuplicateIdentityShouldBlockTheCompleteSystemCatalogSynchronization() {
         String schema = uniqueSchema("soft_deleted_collision");
-        migrate(schema, "33", "classpath:db/migration").migrate();
+        migrate(schema, null, "classpath:db/migration").migrate();
         UUID ordinaryId = insertOrdinaryDbcaDuplicate(schema);
         Timestamp deletedAt = Timestamp.from(Instant.parse("2000-02-03T04:05:06Z"));
         jdbcTemplate.update(
