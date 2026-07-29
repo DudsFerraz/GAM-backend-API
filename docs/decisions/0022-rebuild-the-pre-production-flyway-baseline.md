@@ -9,11 +9,13 @@ Accepted
 GAM is in pre-production development. It has no production deployment,
 external users, or production data that must be preserved.
 
-The current Flyway history contains 32 versioned SQL migrations. Later
+The current Flyway history contains 33 versioned SQL migrations. Later
 migrations rename objects, backfill rows, add columns, replace constraints,
 and remove obsolete columns from tables created by earlier migrations. For
 example, V31 replaces audit foreign keys and adds deletion-attribution checks
-to tables that can be created with those final definitions directly.
+to tables that can be created with those final definitions directly, while
+V33 adds the accepted system-location ownership fields and constraints to
+`gam_locations`.
 
 Replaying those intermediate states on every new database preserves
 unreleased implementation history without preserving any accepted product
@@ -28,7 +30,7 @@ that has applied the old versions.
 
 ## Decision
 
-Replace the current V1-V32 SQL history in one coordinated change with a new
+Replace the current V1-V33 SQL history in one coordinated change with a new
 V1-V25 current-state baseline.
 
 The rebuilt baseline shall:
@@ -58,7 +60,7 @@ The baseline manifest is:
 | `V3__create_roles_table.sql` | Current V2 plus the final audit foreign keys and deletion-attribution check from V31 |
 | `V4__create_permissions_table.sql` | Current V3 plus the final audit foreign keys and deletion-attribution check from V31 |
 | `V5__create_members_table.sql` | Current V6 plus the final audit foreign keys and deletion-attribution check from V31 |
-| `V6__create_gam_locations_table.sql` | Current V7, the final GamLocation identity from V22, and the final audit rules from V31 |
+| `V6__create_gam_locations_table.sql` | Current V7, the final GamLocation identity from V22, the final audit rules from V31, and the system-location ownership fields, checks, and unique code index from V33 |
 | `V7__create_events_table.sql` | Current V8, the required `gam_location_id` relationship from V22, and the final audit rules from V31 |
 | `V8__create_presences_table.sql` | Current V9 plus the final audit foreign keys and deletion-attribution check from V31 |
 | `V9__create_oratorios_table.sql` | Current V10, occurrence-planning fields and uniqueness from V23, and the final audit rules from V31 |
@@ -79,6 +81,22 @@ The baseline manifest is:
 | `V24__create_missa_acolhida_members_table.sql` | Current V17 |
 | `V25__create_oratorio_team_assignments_table.sql` | Current V24 plus the final nullable audit-actor foreign key from V31 |
 
+V6 shall create the V33 definitions directly:
+
+- nullable `code VARCHAR(32)`;
+- `system_managed BOOLEAN NOT NULL DEFAULT FALSE`;
+- `catalog_current BOOLEAN NOT NULL DEFAULT FALSE`;
+- `check_gam_locations_system_ownership`, enforcing
+  `system_managed = (code IS NOT NULL)`;
+- `check_gam_locations_catalog_current`, enforcing
+  `NOT catalog_current OR system_managed`;
+- `check_gam_locations_code_format`, allowing null or an uppercase code that
+  matches `^[A-Z][A-Z0-9_]*$`; and
+- unique index `idx_gam_locations_code` on `code`.
+
+The rebuilt history shall not retain V33 or an equivalent transition that adds
+those definitions after table creation.
+
 Enum mirrors used by only one table shall be created immediately before that
 table in the same migration. The baseline shall preserve the exact accepted
 enum labels. Java repeatable migrations shall run after the complete
@@ -88,7 +106,7 @@ profile and shall not be copied into the production-safe path.
 
 ### Reset boundary
 
-Every database that has applied any replaced V1-V32 migration is incompatible
+Every database that has applied any replaced V1-V33 migration is incompatible
 with the new history and must be recreated.
 
 - Local project databases shall stop all GAM application instances, remove
@@ -122,6 +140,7 @@ The coverage shall verify at least:
 - the exact V1-V25 manifest and consecutive version sequence;
 - the absence of compatibility-only `ALTER TABLE`, `UPDATE`, constraint
   replacement, and rename operations from the baseline;
+- direct creation of the final V33 system-location ownership schema in V6;
 - creation of the final table, enum, column, constraint, index, default, and
   foreign-key-action contracts on an empty PostgreSQL database;
 - exact database enum-mirror labels required by accepted specifications;
@@ -151,7 +170,7 @@ work touches the HTTP contract.
 
 ## Alternatives considered
 
-### Option 1: Keep V1-V32 and continue appending migrations
+### Option 1: Keep V1-V33 and continue appending migrations
 
 Pros:
 
@@ -164,7 +183,7 @@ Cons:
 - Current table definitions remain fragmented across historical files.
 - The project keeps compatibility work that the pre-production policy rejects.
 
-### Option 2: Mutate old migrations but keep all 32 version numbers
+### Option 2: Mutate old migrations but keep all 33 version numbers
 
 Pros:
 
@@ -241,6 +260,7 @@ Negative consequences:
 - [Member Records and Lifecycle](../requirements/members/member-records-and-lifecycle.md)
 - [Membership Solicitations](../requirements/members/membership-solicitations.md)
 - [GamLocation Records](../requirements/gam-locations/gam-location-records.md)
+- [System GamLocation Catalog](../requirements/gam-locations/system-gam-location-catalog.md)
 - [Event Records and Generic Lifecycle](../requirements/events/event-records-and-generic-lifecycle.md)
 - [Member Event Presences](../requirements/presences/member-event-presences.md)
 - [Oratorio Occurrences and Planning](../requirements/oratorio/oratorio-occurrences-and-planning.md)
