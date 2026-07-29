@@ -14,4 +14,11 @@ public final class RequiredReason {
             throw InvalidCommandException.reason(message);
         }
     }
+
+    public static String validationCode(String reason) {
+        if (reason == null) {
+            return "REQUIRED";
+        }
+        return ActivityReasonNormalizer.normalizedCodePointCount(reason) == 0 ? "NOT_BLANK" : "SIZE";
+    }
 }

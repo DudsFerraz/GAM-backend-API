@@ -159,8 +159,16 @@ public class ManageGenericEvent {
 
     @Transactional
     public EventRDTO cancel(UUID eventId, EventReasonDTO dto) {
-        String reason = RequiredReason.normalize(dto.reason(), "Event cancellation requires an audit reason.");
+        String reason = validatedCancellationReason(dto.reason());
         return transition(eventId, EventStatus.CANCELLED, reason, EventStatus.SCHEDULED);
+    }
+
+    private String validatedCancellationReason(String reason) {
+        try {
+            return RequiredReason.normalize(reason, "Event cancellation requires an audit reason.");
+        } catch (InvalidCommandException exception) {
+            throw new RequestValidationException("body", "/reason", RequiredReason.validationCode(reason));
+        }
     }
 
     @Transactional

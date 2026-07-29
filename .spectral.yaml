@@ -2,6 +2,15 @@ extends:
   - spectral:oas
 
 rules:
+  duplicated-entry-in-enum:
+    given: "$..[?(@ && @property !== 'properties' && @.enum && @.enum.constructor.name === 'Array')]"
+    then:
+      field: enum
+      function: schema
+      functionOptions:
+        schema:
+          type: array
+          uniqueItems: true
   gam-operation-operation-id:
     given: $.paths[*][*]
     then:

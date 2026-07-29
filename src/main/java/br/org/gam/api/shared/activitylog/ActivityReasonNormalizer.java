@@ -13,6 +13,14 @@ public final class ActivityReasonNormalizer {
         return normalizeSupplied(reason);
     }
 
+    public static int normalizedCodePointCount(String reason) {
+        if (reason == null) {
+            return 0;
+        }
+        String normalized = stripUnicodeWhitespace(reason);
+        return normalized.codePointCount(0, normalized.length());
+    }
+
     static String normalizeSupplied(String reason) {
         String normalized = stripUnicodeWhitespace(reason);
         int codePoints = normalized.codePointCount(0, normalized.length());

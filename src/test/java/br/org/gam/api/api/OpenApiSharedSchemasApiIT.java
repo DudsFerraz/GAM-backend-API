@@ -646,7 +646,7 @@ class OpenApiSharedSchemasApiIT extends AbstractOpenApiDocumentationApiIT {
                     .contains("FORBIDDEN_OPERATION");
             softly.assertThat(responseExampleCodes(forbidden))
                     .as("%s 403 example codes", operation.getKey())
-                    .contains("FORBIDDEN", "FORBIDDEN_OPERATION");
+                    .contains("ACCESS_DENIED", "FORBIDDEN_OPERATION");
         }
 
         softly.assertAll();
