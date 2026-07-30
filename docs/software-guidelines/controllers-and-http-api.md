@@ -17,7 +17,8 @@ Controllers enforce a strict boundary between the web layer and the application 
 * Trigger input validation (e.g., using `@Valid`).
 * Delegate execution exclusively to application classes (use cases or read operations).
 * Return mapped `RDTO`s or HTTP response wrappers.
-* Expose method-level authorization annotations (e.g., `@PreAuthorize`).
+* Keep any controller `@PreAuthorize` annotation aligned with the authoritative
+  pre-MVC coarse route policy and use it only as defense in depth.
 
 **Controllers Must NOT:**
 
@@ -141,7 +142,26 @@ public ResponseEntity<MemberRDTO> registerMember(...) {
 
 ## 6. Authorization
 
-Endpoint-level authorization rules are defined directly on the controller methods.
+Authorization follows the precedence in
+[`REQ-API-ERROR-007`](../requirements/platform/api-error-and-authorization-contract.md#req-api-error-007-authentication-authorization-and-validation-precedence)
+and the architecture in
+[ADR-0023](../decisions/0023-enforce-coarse-route-authorization-before-mvc-parsing.md).
 
-* **Standard Authorization:** Use `@PreAuthorize` on controller methods to enforce role or permission checks.
-* **Complex Authorization:** If an authorization decision depends on evaluating the internal state of a domain object or requires complex logic, do not write that logic in the controller. Delegate it to a dedicated security component or application-layer policy.
+* **Authentication and Coarse Route Authorization:** Enforce protected-route
+  authentication and coarse method/path permission policy in the Spring
+  Security filter chain before Spring MVC parses request parameters or bodies.
+  The policy may use request matchers or a custom `AuthorizationManager`, but
+  it must not parse input or load a target resource.
+* **Controller Method Security:** Retain `@PreAuthorize` only as defense in
+  depth. It must not be the sole mechanism for coarse authorization, must not
+  be stricter than or diverge from the pre-MVC policy, and must not prevent a
+  documented target-specific alternative such as self-view.
+* **Visibility and Target-Specific Authorization:** When a decision depends on
+  a parsed identifier, visible target, ownership, lifecycle state, or
+  relationship to the caller, delegate it to an application-layer policy after
+  parsing and lookup. Controllers must not implement or orchestrate that
+  policy.
+* **Business and Security Invariants:** Evaluate target-specific authorization
+  before application-layer invariants so that missing or hidden targets,
+  visible forbidden targets, conflicts, and forbidden transitions retain their
+  Accepted `404`, `403`, or `409` outcomes.

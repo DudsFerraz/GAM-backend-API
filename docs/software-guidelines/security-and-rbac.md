@@ -13,13 +13,27 @@ Security in this application is strictly **permission-based**. Roles act purely 
 Authorization is enforced exclusively through permissions, never through roles.
 
 * **Authentication Phase:** The `AccountDetailsService` emits only permission authorities (e.g., `MEMBER_GET`) into the security context. It does **not** emit role authorities (e.g., `ROLE_COORD`).
-* **Authorization Phase:** Controller methods and business rules use `@PreAuthorize` to check for specific permission codes.
+* **Coarse Authorization Phase:** The Spring Security filter chain uses HTTP
+  method/path request matchers or a custom `AuthorizationManager` to enforce
+  coarse permission policy before Spring MVC parses request input. This policy
+  is authoritative for protected-route `401` and coarse-permission `403`
+  precedence.
+* **Target Authorization Phase:** Application-layer policies evaluate visible
+  target ownership, lifecycle, and caller relationships after parsing and
+  lookup. They authorize through permission authorities or an explicitly
+  Accepted target-specific alternative such as self-view.
+* **Defense in Depth:** Controller `@PreAuthorize` checks may mirror the coarse
+  policy, but they are not its authoritative enforcement point and must not
+  replace application-layer target policies.
 
 **Correct Usage:**
 
 ```java
 @PreAuthorize("hasAuthority('" + PermissionEnum.Code.MEMBER_GET + "')")
 ```
+
+The example is a permission check, not authorization to rely on controller
+method security for pre-parsing precedence.
 
 **Forbidden Usage:**
 
@@ -28,12 +42,38 @@ Authorization is enforced exclusively through permissions, never through roles.
 @PreAuthorize("hasAuthority('ROLE_COORD')")
 ```
 
-### 2.2. Authorization HTTP Responses (`403` vs `404`)
+### 2.2. Authorization Layers and HTTP Responses
 
-The API handles unauthorized access dynamically based on the sensitivity of the resource's existence.
+Follow
+[`REQ-API-ERROR-007`](../requirements/platform/api-error-and-authorization-contract.md#req-api-error-007-authentication-authorization-and-validation-precedence)
+and
+[ADR-0023](../decisions/0023-enforce-coarse-route-authorization-before-mvc-parsing.md)
+in this order:
 
-* **Use `404 Not Found`:** When revealing the mere existence of a resource is sensitive (e.g., fetching a specific `Member` or `Event` that the user has no visibility over).
-* **Use `403 Forbidden`:** When the user knows the resource or action exists, but lacks the permission to perform the requested operation (e.g., an Account attempting to edit a system-managed role without the required permission, or a user attempting to activate a member without the `MEMBER_ACTIVATION` permission).
+1. Require valid authentication for a protected operation.
+2. Apply coarse method/path authorization without parsing request input or
+   loading a target.
+3. Apply required CSRF or canonical-origin proof.
+4. Parse and validate request input.
+5. Resolve the target and apply its visibility rule.
+6. Apply target-specific authorization to a visible target.
+7. Apply business and security invariants.
+
+The public outcomes are:
+
+* **Use `401 AUTHENTICATION_REQUIRED`:** A protected operation has no valid
+  authentication.
+* **Use `403 ACCESS_DENIED`:** An authenticated caller lacks coarse route
+  permission or target-specific authority for a visible operation.
+* **Use `404 RESOURCE_NOT_FOUND`:** A referenced target is missing,
+  soft-deleted, or deliberately hidden by the owning Accepted Requirement
+  Specification.
+* **Use `403 FORBIDDEN_OPERATION`:** The caller may invoke the operation, but a
+  business or security invariant prohibits this transition.
+
+Security entry points and denial handlers must use the common error envelope,
+safe details, headers, and non-cacheable transport defined by the
+[API Error and Authorization Contract](../requirements/platform/api-error-and-authorization-contract.md).
 
 ## 3. Roles and Permissions Model
 
@@ -48,16 +88,24 @@ When `systemManaged = true`, the record is part of the application's immutable s
 
 ### 3.2. System Roles
 
-The application defines four baseline system-managed roles. Their definitions and permission bundles are contracted by the Accepted RBAC Catalog Requirement Specification and implemented by the codebase registry.
+The application defines five baseline system-managed roles. Their definitions
+and permission bundles are contracted by the Accepted RBAC Catalog Requirement
+Specification and implemented by the codebase registry.
 
 | Role | Definition |
 | --- | --- |
 | `SUDO` | Developer role. Automatically receives every system permission that exists. |
 | `COORD` | System role that reuses the GAM domain term and receives only the explicit permission allowlist accepted in the RBAC Catalog Requirement Specification. |
+| `ORATORIO_COORD` | Lifecycle-owned Oratorio operational role with the explicit permission allowlist accepted in the RBAC Catalog Requirement Specification. |
 | `MEMBER` | Volunteer worker role. |
-| `VISITOR` | Public/unauthenticated viewer role. |
+| `VISITOR` | Lifecycle-owned inactive-Member role with no baseline permissions; it does not represent anonymous access. |
 
-A newly accepted system permission is added automatically only to `SUDO`. It shall not expand `COORD`, `MEMBER`, or `VISITOR` authority unless the corresponding accepted allowlist is deliberately updated.
+Public Event visibility is represented by a null `requiredPermissionId`, not by
+the `VISITOR` Role or an implicit visitor permission.
+
+A newly accepted system permission is added automatically only to `SUDO`. It
+shall not expand `COORD`, `ORATORIO_COORD`, `MEMBER`, or `VISITOR` authority
+unless the corresponding accepted allowlist is deliberately updated.
 
 ### 3.3. System Permissions
 
@@ -83,7 +131,7 @@ A permission definition consists of:
 ### 4.1. Account-Role Assignment
 
 * Accounts with `ACCOUNT_ROLE_MANAGE` can assign and remove only active custom Roles with `systemManaged = false`, subject to the Account-role requirements.
-* The Member lifecycle exclusively owns `MEMBER`, `VISITOR`, and `COORD`. Coordinator grant and revoke use the dedicated `COORDINATOR_MANAGE` permission and Member-targeted lifecycle endpoints.
+* The Member lifecycle exclusively owns `MEMBER`, `VISITOR`, `COORD`, and `ORATORIO_COORD`. Coordinator grant and revoke use the dedicated `COORDINATOR_MANAGE` permission and Member-targeted lifecycle endpoints. Oratorio Coordinator grant and revoke use `ORATORIO_COORD_MANAGE` and the owning Oratorio Coordinator lifecycle endpoints.
 * Generic Account-role administration rejects every system-managed Role, including future system Roles.
 * **`SUDO` Exception:** Ordinary HTTP callers cannot assign or remove the `SUDO` role. `SUDO` management is strictly developer-controlled and must be executed via the command-line `maintenance` Spring profile.
 

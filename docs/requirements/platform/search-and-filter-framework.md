@@ -489,7 +489,8 @@ Scenario: LIKE treats pattern characters literally
 
 ```mermaid
 flowchart TD
-    Request["Receive structured-search JSON"] --> Syntax{"Valid JSON and known properties?"}
+    Entry["Post-authorization subflow<br/>Enter after applicable authentication, coarse route authorization,<br/>and request-security gates pass under REQ-API-ERROR-007"] --> Request["Receive structured-search JSON"]
+    Request --> Syntax{"Valid JSON and known properties?"}
     Syntax -- "No" --> Malformed["400 MALFORMED_JSON"]
     Syntax -- "Yes" --> Structure{"Required shape and limits valid?"}
     Structure -- "No" --> Validation["400 VALIDATION_ERROR"]
@@ -530,6 +531,7 @@ flowchart TD
 
 ## Related requirements
 
+- [API Error and Authorization Contract](api-error-and-authorization-contract.md)
 - [OpenAPI and Frontend API Documentation](openapi-and-frontend-api-documentation.md)
 - [Account Records](../accounts/account-records.md)
 - [Member Records and Lifecycle](../members/member-records-and-lifecycle.md)

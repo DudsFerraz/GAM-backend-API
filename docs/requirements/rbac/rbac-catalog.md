@@ -636,7 +636,9 @@ flowchart LR
     Current -- "Yes" --> Authoritative["Visible and authoritative"]
     Current -- "No" --> Stale["Preserved, hidden, and non-authoritative"]
 
-    Request["Catalog read request"] --> Auth{"Required catalog permissions present?"}
+    Request["Catalog read request"] --> Authenticated{"Authenticated?"}
+    Authenticated -- "No" --> Unauthorized["401 Unauthorized"]
+    Authenticated -- "Yes" --> Auth{"Required catalog permissions present?"}
     Auth -- "No" --> Forbidden["403 Forbidden"]
     Auth -- "Yes" --> Visible{"Current active target exists?"}
     Visible -- "No" --> NotFound["404 Not Found"]
@@ -674,6 +676,7 @@ flowchart LR
 
 ## Related requirements
 
+* [API Error and Authorization Contract](../platform/api-error-and-authorization-contract.md)
 * [Member Event Presences](../presences/member-event-presences.md)
 * [Oratorio Coordinator Designation](../oratorio/oratorio-coordinator-designation.md)
 * [Oratorio Occurrences and Planning](../oratorio/oratorio-occurrences-and-planning.md)

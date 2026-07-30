@@ -608,7 +608,8 @@ flowchart TD
 
 ## Related ADRs
 
-* None.
+* [ADR-0023: Enforce coarse route authorization before MVC
+  parsing](../../decisions/0023-enforce-coarse-route-authorization-before-mvc-parsing.md)
 
 ## Related videos
 
