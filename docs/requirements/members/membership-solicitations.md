@@ -416,7 +416,7 @@ Valid examples:
 Invalid examples:
 - Related Account deletion removes the solicitation from an authorized manager's history.
 - A retained Account summary is treated as a submission-time or decision-time snapshot.
-- Returning a retained summary makes the soft-deleted Account readable through `/accounts/{id}`.
+- Returning a retained summary makes the soft-deleted Account readable through `/accounts/{accountId}`.
 - A retained `memberId` makes a soft-deleted Member ordinarily readable.
 - The historical view returns Account soft-delete metadata, roles, or credentials.
 

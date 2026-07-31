@@ -366,7 +366,7 @@ invalid-input permutations remain an automated-test responsibility.
 | `POST /auth/refresh` | A successful persona login can create the required refresh-token session and CSRF state. |
 | `POST /auth/logout` | A successful persona login can create the session to log out; the endpoint remains repeatable without a session. |
 | `GET /accounts/me` | Every authenticated persona exposes a distinct current Account context. |
-| `GET /accounts/{id}` | Self, other-account, role-varied, and unprivileged Accounts exist. |
+| `GET /accounts/{accountId}` | Self, other-account, role-varied, and unprivileged Accounts exist. |
 | `POST /accounts/search` | Accounts vary by email, display name, and active Role assignment. |
 | `GET /accounts/{accountId}/roles` | Accounts with zero, one, and multiple active Roles exist. |
 | `POST /accounts/{accountId}/roles` | `paulo.custom-role@example.com` and active custom Role `EVENT_SUPPORT` provide an eligible missing pair. |
