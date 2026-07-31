@@ -1,0 +1,6 @@
+
+
+an excel spreadsheet import is a must feature before for the first release.
+
+Currently, oratorio coords keep a excel spreadsheet to track presences (docs\ideas\oratorio\Presença Oratório.xlsx) can you perfectly read that xlsx file? I could convert to csv if it is better for model interpretation.
+

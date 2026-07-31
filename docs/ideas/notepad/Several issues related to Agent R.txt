@@ -1,0 +1,5 @@
+Several issues related to Agent R
+
+"Orchestration is paused on an invalid Agent R result.
+The substantive finding is actionable: generated OpenAPI still advertises prohibited accountId in the membership-solicitation request schema and example.
+However, read-only Agent R reported four reviewed files as modified instead of consulted, violating the role-result contract. Please authorize treating those entries as consulted and routing the OpenAPI coverage finding to Agent T."
