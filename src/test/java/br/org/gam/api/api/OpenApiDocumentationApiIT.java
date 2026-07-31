@@ -80,6 +80,33 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
     }
 
     @Test
+    @DisplayName("REQ-MEMBER-SOL-002 and REQ-OPENAPI-004 - solicitation submission -> prohibited accountId is absent from schema and example")
+    void membershipSolicitationSubmissionShouldOmitProhibitedAccountId() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> operation = object(
+                object(object(contract, "paths"), "/membership-solicitations"),
+                "post"
+        );
+        Map<String, Object> requestBody = object(operation, "requestBody");
+        Map<String, Object> json = object(object(requestBody, "content"), "application/json");
+        Map<String, Object> schema = resolveSchema(contract, object(json, "schema"));
+        Map<String, Object> properties = object(schema, "properties");
+        Map<String, Object> example = object(json, "example");
+        SoftAssertions softly = new SoftAssertions();
+
+        softly.assertThat(properties)
+                .as("solicitation submission request properties")
+                .containsOnlyKeys("firstName", "surname", "birthDate", "phoneNumber", "justification");
+        softly.assertThat(strings(schema, "required"))
+                .as("solicitation submission required properties")
+                .containsExactlyInAnyOrder("firstName", "surname", "birthDate", "phoneNumber", "justification");
+        softly.assertThat(example)
+                .as("solicitation submission example")
+                .containsOnlyKeys("firstName", "surname", "birthDate", "phoneNumber", "justification");
+        softly.assertAll();
+    }
+
+    @Test
     @DisplayName("REQ-PRESENCE-002/004/011/013 and REQ-OPENAPI-003/004 - Presence request schemas -> exact normalized text contracts")
     void presenceRequestsShouldDocumentExactNormalizedTextContracts() {
         Map<String, Object> contract = openApiContract().body();
@@ -273,7 +300,12 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
         Map<String, Object> components = object(contract, "components");
         Map<String, Object> securitySchemes = object(components, "securitySchemes");
         Map<String, Object> bearerAuth = object(securitySchemes, "bearerAuth");
-        assertThat(paths).containsKeys("/auth/login", "/auth/csrf", "/accounts/{id}", "/roles/{roleId}");
+        assertThat(paths).containsKeys(
+                "/auth/login",
+                "/auth/csrf",
+                "/accounts/{accountId}",
+                "/roles/{roleId}"
+        );
         List<Map<String, Object>> publicAuthenticationOperations = List.of(
                 object(object(paths, "/auth/register"), "post"),
                 object(object(paths, "/auth/login"), "post"),

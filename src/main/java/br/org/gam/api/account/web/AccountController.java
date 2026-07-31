@@ -50,11 +50,11 @@ public class AccountController {
         return ResponseEntity.ok(getCurrentAccountContext.get(accountDetails.getId()));
     }
 
-    @PreAuthorize("@accountSecurity.canGetAccount(#id)")
+    @PreAuthorize("@accountSecurity.canGetAccount(#accountId)")
     @Operation(operationId = "getAccount")
-    @GetMapping("/{id}")
-    public ResponseEntity<AccountRDTO> getAccountById(@PathVariable UUID id) {
-        AccountRDTO dto = getAccount.byId(id);
+    @GetMapping("/{accountId}")
+    public ResponseEntity<AccountRDTO> getAccountById(@PathVariable UUID accountId) {
+        AccountRDTO dto = getAccount.byId(accountId);
         return ResponseEntity.ok(dto);
     }
 

@@ -7,6 +7,7 @@ import br.org.gam.api.security.application.TokenNotFoundException;
 import br.org.gam.api.shared.domain.InvalidEmailException;
 import br.org.gam.api.shared.specification.InvalidSearchFilterException;
 import com.fasterxml.jackson.core.JsonParseException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import br.org.gam.api.shared.phonenumber.InvalidPhoneNumberException;
@@ -530,7 +531,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     private String validationCode(String springCode, Object rejectedValue) {
-        if (rejectedValue == null) {
+        if ("Null".equals(springCode)) {
+            return "INVALID_VALUE";
+        }
+        if (rejectedValue == null
+                || rejectedValue instanceof JsonNode jsonNode && jsonNode.isNull()) {
             return "REQUIRED";
         }
         if (springCode == null) {
@@ -538,7 +543,6 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         }
         return switch (springCode) {
             case "NotNull" -> "REQUIRED";
-            case "Null" -> "INVALID_VALUE";
             case "NotBlank" -> "NOT_BLANK";
             case "NotEmpty", "Size" -> "SIZE";
             case "Min", "Max", "DecimalMin", "DecimalMax", "Positive",

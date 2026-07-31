@@ -160,6 +160,40 @@ class ApiErrorAuthorizationContractApiIT extends MemberApiTestSupport {
     }
 
     @Test
+    @DisplayName("REQ-API-ERROR-007 and REQ-ACCOUNT-001/002 - Account self-view alternative -> coarse admission preserves parsing and target authorization")
+    void accountSelfViewAlternativeShouldRemainReachableAfterCoarseAuthorization() {
+        AuthSession visitor = newSession("VISITOR");
+        UUID otherAccountId = newAccount("Other Account self-view target");
+
+        ExtractableResponse<Response> unauthenticatedInvalidPath = jsonRequest()
+                .get("/accounts/{accountId}", "not-a-uuid-secret")
+                .then()
+                .extract();
+        ExtractableResponse<Response> authenticatedInvalidPath = authenticatedJsonRequest(visitor)
+                .get("/accounts/{accountId}", "not-a-uuid-secret")
+                .then()
+                .extract();
+        ExtractableResponse<Response> selfView = authenticatedJsonRequest(visitor)
+                .get("/accounts/{accountId}", visitor.accountId())
+                .then()
+                .extract();
+        ExtractableResponse<Response> forbiddenOther = authenticatedJsonRequest(visitor)
+                .get("/accounts/{accountId}", otherAccountId)
+                .then()
+                .extract();
+
+        assertError(unauthenticatedInvalidPath, 401, "AUTHENTICATION_REQUIRED", Map.of());
+        assertError(authenticatedInvalidPath, 400, "INVALID_PARAMETER_TYPE", Map.of(
+                "location", "path",
+                "field", "accountId",
+                "expectedType", "UUID"
+        ));
+        assertThat(selfView.statusCode()).isEqualTo(200);
+        assertThat(selfView.<String>path("id")).isEqualTo(visitor.accountId().toString());
+        assertError(forbiddenOther, 403, "ACCESS_DENIED", Map.of());
+    }
+
+    @Test
     @DisplayName("REQ-API-ERROR-007/009 - every accepted static-permission route -> coarse denial precedes transport parsing")
     void everyAcceptedStaticPermissionRouteShouldAuthorizeBeforeParsing() {
         AuthSession callerWithoutPermissions = newSessionWithPermissions();
@@ -571,6 +605,50 @@ class ApiErrorAuthorizationContractApiIT extends MemberApiTestSupport {
     }
 
     @Test
+    @DisplayName("REQ-API-ERROR-003/004 - invalid nonzero filter item -> submitted index in public validation paths")
+    void nestedValidationShouldUseSubmittedCollectionIndexes() {
+        AuthSession coordinator = newSession("COORD");
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(coordinator)
+                .body("""
+                        {
+                          "filters": [
+                            {
+                              "field": "status",
+                              "value": "ACTIVE",
+                              "comparisonMethod": "EQUALS"
+                            },
+                            {
+                              "field": null,
+                              "value": null,
+                              "comparisonMethod": null
+                            }
+                          ]
+                        }
+                        """)
+                .post("/members/search")
+                .then()
+                .extract();
+
+        assertErrorEnvelope(response, 400, "VALIDATION_ERROR");
+        List<Map<String, Object>> violations = response.jsonPath().getList("details.violations");
+        assertThat(violations)
+                .extracting(violation -> List.of(
+                        violation.get("location"),
+                        violation.get("field"),
+                        violation.get("code")
+                ))
+                .containsExactly(
+                        List.of("body", "/filters/1/comparisonMethod", "REQUIRED"),
+                        List.of("body", "/filters/1/field", "REQUIRED"),
+                        List.of("body", "/filters/1/value", "REQUIRED")
+                );
+        assertThat(violations).allSatisfy(violation ->
+                assertThat(violation).containsOnlyKeys("location", "field", "code", "message"));
+        assertSafe(response, "", "SearchDTO", "SpecificationFilterDTO", "NotNull");
+    }
+
+    @Test
     @DisplayName("REQ-API-ERROR-002/003/004 and REQ-AUTH-002 - oversized Account displayName -> public SIZE violation")
     void accountDisplayNameConstraintShouldUseStructuredValidationViolation() {
         String submittedDisplayName = "x".repeat(51);
@@ -713,6 +791,30 @@ class ApiErrorAuthorizationContractApiIT extends MemberApiTestSupport {
                 "SubmitMembershipSolicitationDTO",
                 "jakarta.validation.constraints.Null"
         );
+    }
+
+    @Test
+    @DisplayName("REQ-API-ERROR-004 and REQ-MEMBER-SOL-002 - explicit null prohibited accountId -> INVALID_VALUE")
+    void explicitNullProhibitedRequestMemberShouldRemainInvalidValue() {
+        AuthSession applicant = newSession("VISITOR");
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(applicant)
+                .body("""
+                        {
+                          "firstName": "Ana",
+                          "surname": "Silva",
+                          "birthDate": "%s",
+                          "phoneNumber": "+5519998877665",
+                          "justification": "I want to participate in GAM activities",
+                          "accountId": null
+                        }
+                        """.formatted(LocalDate.now().minusYears(20)))
+                .post("/membership-solicitations")
+                .then()
+                .extract();
+
+        assertSingleViolation(response, "body", "/accountId", "INVALID_VALUE");
+        assertSafe(response, "", "SubmitMembershipSolicitationDTO", "jakarta.validation.constraints.Null");
     }
 
     @Test
