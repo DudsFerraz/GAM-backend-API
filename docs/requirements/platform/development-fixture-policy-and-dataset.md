@@ -332,7 +332,7 @@ initial states:
 | Member Presences | Active Presences with null and non-null observations, an eligible missing pair for registration, a removed pair eligible for re-registration, an inactive Member's preserved Presence, and roster data suitable for name filtering and ordering. |
 | Oratorios | Relative future and historical occurrences covering `SCHEDULED`, `COMPLETED`, `LOCKED`, `FINALIZED`, and `CANCELLED`; planning text variation; all four team types; occurrences with no attendance, active attendance, and only removed attendance; and an unused documented future date for manual creation. |
 | Oratorianos | Minimal name-only records, enriched ordinary profiles, multi-period attendance histories, a non-deleted record with no attendance, a deletable draft-only record, a soft-deleted restorable record, and a record whose immutable form blocks deletion. |
-| Additional forms | `DRAFT` records for create/update/delete/upload flows; a printable draft; a completion-ready draft with a current print snapshot and complete synthetic attachment; one current `COMPLETED` form; one `SUPERSEDED` form; one `REVOKED` form; a downloadable print snapshot; and a downloadable synthetic signed attachment. |
+| Additional forms | `DRAFT` records for create/update/delete/upload flows; a printable draft; a completion-ready draft with a current print snapshot and complete synthetic attachment; one current `COMPLETED` form; one `SUPERSEDED` form; one `REVOKED` form; multiple downloadable print snapshots across revisions; and a downloadable synthetic signed-attachment collection. |
 
 Relative Event and Oratorio dates shall be recalculated from the current
 `America/Sao_Paulo` local date on reconciliation. Fixture Events intended to be
@@ -350,7 +350,7 @@ months and at least two calendar years.
 ### REQ-DEV-FIXTURE-010: User-facing endpoint readiness
 
 Every current user-facing endpoint shall be represented by this readiness
-matrix. The accepted controller surface contains 87 endpoint methods when this
+matrix. The accepted controller surface contains 89 endpoint methods when this
 specification is accepted. Endpoint readiness requires a successful starting
 path; representative authorization, visibility, duplicate, in-use, and
 invalid-lifecycle paths shall also exist per workflow family. Exhaustive
@@ -464,8 +464,10 @@ invalid-input permutations remain an automated-test responsibility.
 | `PATCH /oratorianos/{oratorianoId}/forms/{formId}/complete` | A completion-ready draft has valid structured data, current print-snapshot correspondence, and a complete synthetic attachment. |
 | `PATCH /oratorianos/{oratorianoId}/forms/{formId}/revoke` | A current completed form exists independently of the completion-ready draft. |
 | `POST /oratorianos/{oratorianoId}/forms/{formId}/print-snapshots` | A dedicated draft exists for snapshot creation. |
+| `GET /oratorianos/{oratorianoId}/forms/{formId}/print-snapshots` | A stable form has multiple non-deleted snapshots across draft revisions for pagination and deterministic newest-first ordering. |
 | `GET /oratorianos/{oratorianoId}/forms/{formId}/print-snapshots/{printSnapshotId}/pdf` | A stable printable snapshot exists for audited PDF rendering. |
 | `PUT /oratorianos/{oratorianoId}/forms/{formId}/signed-attachments` | A dedicated draft without an immutable attachment collection is available. |
+| `GET /oratorianos/{oratorianoId}/forms/{formId}/signed-attachments` | A stable form has an active ordered synthetic attachment collection, while replaced files remain excluded from ordinary reads. |
 | `GET /oratorianos/{oratorianoId}/forms/{formId}/signed-attachments/{attachmentId}` | A stable synthetic PDF attachment exists for audited download. |
 
 ---

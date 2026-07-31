@@ -10,6 +10,8 @@ An Oratoriano can be registered and attend with only a name. More frequent Orato
 
 The form remains optional for participation, but a form represented as completed must be trustworthy, immutable, traceable to the signed paper, and protected as sensitive information.
 
+The browser may lose transient resource identifiers after a reload. Users must still be able to recover the exact immutable print snapshot that identified a document already printed or signed, and the active signed-attachment identifiers required for later downloads, without creating replacement artifacts or storing generated PDF bytes.
+
 ## Ubiquitous Language
 
 - `additional form`: One versioned, sensitive information snapshot for an Oratoriano.
@@ -306,11 +308,86 @@ The additional-form API shall expose:
 | `PATCH` | `/oratorianos/{oratorianoId}/forms/{formId}/complete` | Complete the draft and automatically supersede any prior current form |
 | `PATCH` | `/oratorianos/{oratorianoId}/forms/{formId}/revoke` | Revoke the current completed form with a required reason |
 | `POST` | `/oratorianos/{oratorianoId}/forms/{formId}/print-snapshots` | Create immutable print-snapshot data and return `201 Created` |
+| `GET` | `/oratorianos/{oratorianoId}/forms/{formId}/print-snapshots` | Read paged recoverable print-snapshot metadata |
 | `GET` | `/oratorianos/{oratorianoId}/forms/{formId}/print-snapshots/{printSnapshotId}/pdf` | Render and download the disposable PDF |
 | `PUT` | `/oratorianos/{oratorianoId}/forms/{formId}/signed-attachments` | Atomically replace a draft's complete PDF or ordered image collection |
+| `GET` | `/oratorianos/{oratorianoId}/forms/{formId}/signed-attachments` | Read the active signed-attachment collection's metadata |
 | `GET` | `/oratorianos/{oratorianoId}/forms/{formId}/signed-attachments/{attachmentId}` | Download one stored file with sensitive-read auditing |
 
 The print-snapshot mode shall derive from the immutable form origin; clients shall not choose a conflicting mode. Completing a form shall make the signed-attachment collection immutable.
+
+---
+
+### REQ-ORATORIANO-FORM-020: Recoverable print-snapshot metadata
+
+`GET /oratorianos/{oratorianoId}/forms/{formId}/print-snapshots` shall return a GAM-owned paged response containing every non-deleted print snapshot that belongs to the addressed non-deleted form, including snapshots from older draft revisions.
+
+Each item shall contain exactly:
+
+- `id`;
+- `draftRevision`;
+- `mode`;
+- `generatedAt`;
+- `templateVersion`; and
+- `pageCount`.
+
+The metadata response shall not expose captured structured data, the data fingerprint, generated PDF bytes, or render-result filename, MIME type, or byte length. An empty result shall be represented as an empty page.
+
+Paging shall follow `REQ-OPENAPI-007`. The only client-selectable sort field shall be `generatedAt`; the default order shall be `generatedAt DESC`, with snapshot UUID descending as the stable tie-breaker. Unknown sort fields or directions and a requested size above 100 shall return `400 Bad Request`.
+
+The operation shall require `ORATORIANO_FORM_PDF_GENERATE`. It shall be available for non-deleted forms in `DRAFT`, `COMPLETED`, `SUPERSEDED`, and `REVOKED` state. Reading this metadata shall not emit a sensitive-read activity; rendering the selected snapshot's PDF remains separately authorized and audited under `REQ-ORATORIANO-FORM-015`.
+
+Rationale:
+Creating another snapshot would produce a different identified document. Recovering existing metadata allows a client that lost transient state to render the exact snapshot already printed or signed, while preserving disposable PDF rendering.
+
+---
+
+### REQ-ORATORIANO-FORM-021: Recoverable signed-attachment metadata
+
+`GET /oratorianos/{oratorianoId}/forms/{formId}/signed-attachments` shall return the active signed-attachment collection for the addressed non-deleted form as an unpaged array ordered by `pageOrder ASC`. An absent collection shall return an empty array.
+
+Each item shall contain exactly:
+
+- `id`;
+- `originalFilename`;
+- `verifiedMimeType`;
+- `byteLength`;
+- `pageOrder`; and
+- `pageCount`.
+
+The successful `PUT /oratorianos/{oratorianoId}/forms/{formId}/signed-attachments` response shall use that same item representation. Neither operation shall expose the SHA-256 digest or attachment bytes in its JSON response.
+
+The list operation shall require `ORATORIANO_FORM_ATTACHMENT_GET`. It shall be available for non-deleted forms in `DRAFT`, `COMPLETED`, `SUPERSEDED`, and `REVOKED` state. Reading this metadata shall not emit a sensitive-read activity; downloading a selected attachment remains separately authorized and audited under `REQ-ORATORIANO-FORM-015`.
+
+Attachments replaced by a later `PUT`, or soft-deleted with their draft, shall remain preserved according to the accepted audit and retention rules but shall not appear in ordinary metadata lists or downloads.
+
+Rationale:
+The upload response is transient. Recovering the same active identifiers after a client reload allows later download of the previously uploaded files without replacing the collection.
+
+---
+
+### REQ-ORATORIANO-FORM-022: Typed structured form data response
+
+The `data` property of `FormRDTO` shall use `FormDraftDTO` as its API and OpenAPI schema rather than an untyped object or map. This shall apply consistently to create, draft-replacement, and sensitive-detail responses.
+
+Fields inside `FormDraftDTO` shall remain nullable so a `DRAFT` can represent any accepted partial subset under `REQ-ORATORIANO-FORM-003`. The typed response shall preserve the stored structured values and shall not add validation requirements to ordinary draft reads.
+
+Rationale:
+The frontend must be able to regenerate a type-safe client and repopulate the editable form without treating every structured value as `unknown`.
+
+---
+
+### REQ-ORATORIANO-FORM-023: Human-readable form actor references
+
+When present, `createdBy`, `completedBy`, and `revokedBy` actor references in additional-form detail and metadata-history responses shall contain exactly:
+
+- `id`, the stable Account UUID; and
+- `displayName`, the Account's current `displayName` at response time.
+
+The UUID shall remain available for identity and traceability, while product interfaces shall use `displayName` as the human-readable label. Changing an Account's `displayName` shall change the label returned for earlier form actions without changing their actor UUID. The form module shall not persist a historical copy of `displayName` for those actions.
+
+Rationale:
+An actor UUID alone does not support labels such as “Created by Maria”, while a stable identifier remains necessary to distinguish Accounts.
 
 ## Acceptance scenarios
 
@@ -378,6 +455,41 @@ Scenario: Prefilled PDF rendering is audited
   Then one sensitive-read audit has already committed and identifies the actor, form, Oratoriano, and print snapshot
   And no form values or PDF bytes are copied into the audit
 
+Scenario: Reload recovers an earlier identified print snapshot
+  Given a non-deleted form has print snapshots from multiple draft revisions
+  And the client no longer holds the identifier of a previously printed snapshot
+  When an authorized user lists the form's print snapshots
+  Then the response includes the previously printed snapshot and the newer snapshots
+  And the newest generation appears first by default
+  And each item contains only the accepted print-snapshot metadata
+  And no sensitive-read activity is emitted for the metadata list
+
+Scenario: Reload recovers the active signed-attachment identifiers
+  Given a non-deleted form has an active ordered signed-attachment collection
+  And the client loses the identifiers returned by the upload
+  When an authorized user lists the form's signed attachments
+  Then the same active attachment identifiers and accepted metadata are returned in page order
+  And replaced attachment records are not returned
+  And no sensitive-read activity is emitted for the metadata list
+
+Scenario: Signed-attachment upload and listing share one metadata shape
+  Given an authorized user uploads a valid signed-attachment collection
+  When the upload response and a later metadata-list response are compared
+  Then both represent each active file with id, original filename, verified MIME type, byte length, page order, and page count
+  And neither response contains attachment bytes or a digest
+
+Scenario: Form detail exposes typed draft data
+  Given a form contains a partial structured draft
+  When the API contract and form response are read
+  Then FormRDTO data uses the FormDraftDTO schema
+  And its nullable structured fields preserve the draft values
+
+Scenario: Form history identifies actors by display name
+  Given a form action records an Account actor
+  When an authorized user reads additional-form detail or metadata history
+  Then the actor reference contains the Account UUID and current displayName
+  And no Account email is added to the actor reference
+
 Scenario: Sensitive content is withheld when auditing fails
   Given an authorized user requests form detail, generated PDF bytes, or signed-attachment bytes
   When the required sensitive-read activity cannot commit
@@ -407,6 +519,8 @@ Scenario: Revocation does not roll back the ordinary profile
 * Automatic rollback of ordinary-profile values after revocation.
 * Ordinary deletion of immutable form versions.
 * A permanent retention-cleanup policy.
+* Persisting generated PDF bytes or render-result filename, MIME type, or byte length.
+* Persisting historical copies of Account `displayName` for form actor references.
 
 ## Related ADRs
 
@@ -423,6 +537,7 @@ Scenario: Revocation does not roll back the ordinary profile
 * [GamPhoneNumber](../common/gam-phone-number.md)
 * [GamEmail](../common/gam-email.md)
 * [RBAC Catalog](../rbac/rbac-catalog.md)
+* [OpenAPI and Frontend API Documentation](../platform/openapi-and-frontend-api-documentation.md)
 
 ## Related videos
 
