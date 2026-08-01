@@ -265,10 +265,18 @@ public class OpenApiConfig {
                             + "ORATORIO_DATE_ALREADY_EXISTS.";
             case "markOratorioMemberPresent" ->
                     "Idempotently marks the Member present. Repeating an existing check returns "
-                            + "the existing attendance without creating a duplicate.";
+                            + "the existing attendance without creating a duplicate. SCHEDULED and COMPLETED "
+                            + "occurrences accept confirmed attendance without a clock-based time boundary.";
             case "markOratorianoPresent" ->
                     "Idempotently marks the Oratoriano present. Repeating an existing check returns "
-                            + "the existing attendance without creating a duplicate.";
+                            + "the existing attendance without creating a duplicate. SCHEDULED and COMPLETED "
+                            + "occurrences accept confirmed attendance without a clock-based time boundary.";
+            case "registerEventPresence" ->
+                    "Registers confirmed attendance for a Member. SCHEDULED and COMPLETED Events accept "
+                            + "confirmed attendance without a clock-based time boundary.";
+            case "registerAndMarkOratorianoPresent" ->
+                    "Atomically registers an Oratoriano and records confirmed attendance. SCHEDULED and "
+                            + "COMPLETED occurrences accept confirmed attendance without a clock-based time boundary.";
             case "completeOratorianoForm" ->
                     "Completes a valid draft only after its complete signed attachment and print snapshot "
                             + "correspondence have been verified. Set overwriteNewerProfileValues to true "
@@ -1305,7 +1313,7 @@ public class OpenApiConfig {
                     "PRESENCE_ALREADY_REGISTERED",
                     "Possible codes: PRESENCE_ALREADY_REGISTERED, PRESENCE_REGISTRATION_NOT_ALLOWED. "
                             + "Duplicate details include eventId, memberId, and presenceId. Eligibility details "
-                            + "include eventId, status, beginDate, and evaluationInstant.",
+                            + "include eventId, status, and evaluationInstant.",
                     Map.of(
                             "eventId", "019f6343-321a-7c90-a096-a551e8f88eb4",
                             "memberId", "019f6343-321a-7c90-a096-a551e8f88eb5",

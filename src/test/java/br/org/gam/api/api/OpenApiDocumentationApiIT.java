@@ -230,7 +230,7 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
     }
 
     @Test
-    @DisplayName("REQ-EVENT-011/012/017/019 and REQ-PRESENCE-003/005 - conflict responses -> operation-specific codes and details")
+    @DisplayName("REQ-EVENT-011/012/017/019 and REQ-PRESENCE-005/017 - conflict responses -> operation-specific codes and details")
     void eventAndPresenceConflictsShouldBeDocumentedPerOperation() {
         Map<String, Object> contract = openApiContract().body();
         Map<String, Object> paths = object(contract, "paths");
@@ -269,9 +269,29 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
                         "memberId",
                         "presenceId",
                         "status",
-                        "beginDate",
                         "evaluationInstant"
-                );
+                )
+                .doesNotContain("beginDate");
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-PRESENCE-017 and REQ-ORATORIO-ATT-012 - attendance operations document lifecycle eligibility without clock boundaries")
+    void attendanceOperationsShouldDocumentLifecycleEligibilityWithoutClockBoundaries() {
+        Map<String, Object> paths = object(openApiContract().body(), "paths");
+        List<Map<String, Object>> operations = List.of(
+                object(object(paths, "/events/{eventId}/presences"), "post"),
+                object(object(paths, "/oratorios/{oratorioId}/attendance/members/{memberId}"), "put"),
+                object(object(paths, "/oratorios/{oratorioId}/attendance/oratorianos/{oratorianoId}"), "put"),
+                object(object(paths, "/oratorios/{oratorioId}/attendance/oratorianos/register-and-mark"), "post")
+        );
+        SoftAssertions softly = new SoftAssertions();
+
+        operations.forEach(operation -> softly.assertThat(String.valueOf(operation.get("description")))
+                .as(String.valueOf(operation.get("operationId")))
+                .contains("SCHEDULED", "COMPLETED")
+                .containsIgnoringCase("time boundary")
+                .containsIgnoringCase("confirmed attendance"));
         softly.assertAll();
     }
 

@@ -74,15 +74,13 @@ public class RegisterPresence {
         EventStatus status = Event.effectiveStatus(
                 relatedEvent.getStatus(), relatedEvent.getEndDate(), evaluationInstant
         );
-        if (evaluationInstant.isBefore(relatedEvent.getBeginDate())
-                || (status != EventStatus.SCHEDULED && status != EventStatus.COMPLETED)) {
+        if (status != EventStatus.SCHEDULED && status != EventStatus.COMPLETED) {
             throw ConflictException.resource(
                     "PRESENCE_REGISTRATION_NOT_ALLOWED", "Event", dto.eventId(),
                     "Presence registration is not allowed for the Event in its current state.",
                     Map.of(
                             "eventId", dto.eventId(),
                             "status", status.name(),
-                            "beginDate", relatedEvent.getBeginDate(),
                             "evaluationInstant", evaluationInstant
                     )
             );

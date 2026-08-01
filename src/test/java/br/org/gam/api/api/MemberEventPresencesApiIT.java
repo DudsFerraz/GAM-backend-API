@@ -35,6 +35,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -116,29 +117,92 @@ class MemberEventPresencesApiIT extends MemberApiTestSupport {
         assertThat(activityCountFor("PRESENCE_REGISTERED", presenceId)).isEqualTo(1);
     }
 
-    @Test
-    @DisplayName("REQ-PRESENCE-003 - registration before beginDate -> intent-specific conflict without Presence or activity")
-    void registrationBeforeEventBeginsShouldBeRejectedWithoutMutation() {
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"GENERIC", "MISSA", "ORATORIO"})
+    @DisplayName("REQ-PRESENCE-017 - arbitrarily early SCHEDULED registration -> confirmed attendance for every Event type")
+    void arbitrarilyEarlyScheduledRegistrationShouldBeConfirmedForEveryEventType(String eventType) {
         AuthSession caller = newSession("SUDO");
-        Instant beginDate = Instant.now().plusSeconds(3_600);
+        Instant beginDate = Instant.now().plusSeconds(10L * 365 * 24 * 60 * 60);
         UUID eventId = createEvent(
                 caller,
-                "Future attendance",
+                "Arbitrarily early " + eventType + " attendance",
                 null,
                 beginDate,
                 beginDate.plusSeconds(3_600)
         );
+        if (!"GENERIC".equals(eventType)) {
+            jdbcTemplate.update(
+                    "UPDATE events SET type = CAST(? AS event_type_enum) WHERE id = ?",
+                    eventType,
+                    eventId
+            );
+        }
         UUID memberId = createMember(caller, "Bento", "Moura");
+        clearActivities();
+
+        ExtractableResponse<Response> response = registerPresence(
+                caller,
+                eventId,
+                memberId,
+                "  Confirmed attendance  "
+        );
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(201);
+        UUID presenceId = UUID.fromString(response.path("id"));
+        assertThat(response.<String>path("event.type")).isEqualTo(eventType);
+        assertThat(response.<String>path("event.status")).isEqualTo("SCHEDULED");
+        assertThat(response.<String>path("observations")).isEqualTo("Confirmed attendance");
+        assertThat(activePresenceCount(eventId, memberId)).isEqualTo(1);
+        assertThat(activityCountFor("PRESENCE_REGISTERED", presenceId)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("REQ-PRESENCE-017 - arbitrarily late COMPLETED registration -> confirmed attendance")
+    void arbitrarilyLateCompletedRegistrationShouldRemainEligible() {
+        AuthSession caller = newSession("SUDO");
+        Instant endDate = Instant.now().minusSeconds(10L * 365 * 24 * 60 * 60);
+        UUID eventId = createEvent(
+                caller,
+                "Arbitrarily late completed attendance",
+                null,
+                endDate.minusSeconds(3_600),
+                endDate
+        );
+        UUID memberId = createMember(caller, "Laura", "Campos");
+        clearActivities();
+
+        ExtractableResponse<Response> response = registerPresence(caller, eventId, memberId, null);
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(201);
+        UUID presenceId = UUID.fromString(response.path("id"));
+        assertThat(response.<String>path("event.status")).isEqualTo("COMPLETED");
+        assertThat(activePresenceCount(eventId, memberId)).isEqualTo(1);
+        assertThat(activityCountFor("PRESENCE_REGISTERED", presenceId)).isEqualTo(1);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"CANCELLED", "LOCKED", "FINALIZED"})
+    @DisplayName("REQ-PRESENCE-017 - attendance-closed lifecycle -> stable conflict without clock boundary details")
+    void attendanceClosedLifecycleShouldStillRejectRegistration(String status) {
+        AuthSession caller = newSession("SUDO");
+        UUID eventId = createCompletedEvent(caller, "Closed " + status + " attendance");
+        jdbcTemplate.update(
+                "UPDATE events SET status = CAST(? AS event_status_enum) WHERE id = ?",
+                status,
+                eventId
+        );
+        UUID memberId = createMember(caller, "Mateus", "Ramos");
         clearActivities();
 
         ExtractableResponse<Response> response = registerPresence(caller, eventId, memberId, null);
 
         assertThat(response.statusCode()).isEqualTo(409);
         assertThat(response.<String>path("code")).isEqualTo("PRESENCE_REGISTRATION_NOT_ALLOWED");
-        assertThat(response.<String>path("details.eventId")).isEqualTo(eventId.toString());
-        assertThat(response.<String>path("details.status")).isEqualTo("SCHEDULED");
-        assertThat(response.<String>path("details.beginDate"))
-                .isEqualTo(storedEventBeginDate(eventId).toString());
+        assertThat(response.<Map<String, Object>>path("details"))
+                .containsEntry("eventId", eventId.toString())
+                .containsEntry("status", status)
+                .containsKey("evaluationInstant")
+                .doesNotContainKey("beginDate");
         assertThat(response.<String>path("details.evaluationInstant")).isNotBlank();
         assertThat(activePresenceCount(eventId, memberId)).isZero();
         assertThat(activityCount("PRESENCE_REGISTERED")).isZero();

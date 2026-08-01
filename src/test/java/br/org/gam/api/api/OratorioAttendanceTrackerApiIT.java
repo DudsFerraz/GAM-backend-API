@@ -18,8 +18,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -33,28 +36,42 @@ class OratorioAttendanceTrackerApiIT extends OratorioModuleApiTestSupport {
     private static final LocalDate OCCURRENCE_DATE = LocalDate.of(2026, 7, 25);
 
     @Test
-    @DisplayName("REQ-ORATORIO-ATT-004 - 13:30 inclusive early boundary applies to both tracker sections")
-    void earlyBoundaryShouldBeInclusiveForMembersAndOratorianos() {
-        setCurrentInstant(Instant.parse("2026-07-25T12:00:00Z"));
+    @DisplayName("REQ-ORATORIO-ATT-012 - arbitrarily early SCHEDULED attendance -> both tracker sections persist confirmed facts")
+    void arbitrarilyEarlyScheduledAttendanceShouldBeAllowedForBothTrackerSections() {
+        setCurrentInstant(Instant.parse("2020-01-01T12:00:00Z"));
         AuthSession caller = sudoSession();
         UUID oratorioId = createOratorio(caller, OCCURRENCE_DATE);
-        UUID memberId = createActiveMember(caller, "Early-boundary Member");
+        UUID memberId = createActiveMember(caller, "Arbitrarily early Member");
         UUID oratorianoId = createOratoriano(caller, "Erik", "Garcia");
         clearActivities();
 
-        setCurrentInstant(Instant.parse("2026-07-25T16:29:59Z"));
-        assertThat(markMember(caller, oratorioId, memberId).statusCode()).isEqualTo(409);
-        assertThat(markOratoriano(caller, oratorioId, oratorianoId).statusCode()).isEqualTo(409);
-        assertThat(activityLogCount()).isZero();
-
-        setCurrentInstant(Instant.parse("2026-07-25T16:30:00Z"));
         ExtractableResponse<Response> member = markMember(caller, oratorioId, memberId);
         ExtractableResponse<Response> oratoriano = markOratoriano(caller, oratorioId, oratorianoId);
 
-        assertThat(member.statusCode()).isEqualTo(201);
-        assertThat(oratoriano.statusCode()).isEqualTo(201);
-        assertUuidV7(UUID.fromString(member.path("id")));
-        assertUuidV7(UUID.fromString(oratoriano.path("id")));
+        SoftAssertions softly = new SoftAssertions();
+        softly.assertThat(member.statusCode()).as(member.asString()).isEqualTo(201);
+        softly.assertThat(oratoriano.statusCode()).as(oratoriano.asString()).isEqualTo(201);
+        softly.assertThat(member.<String>path("id")).as("Member attendance id").isNotBlank();
+        softly.assertThat(oratoriano.<String>path("id")).as("Oratoriano attendance id").isNotBlank();
+        softly.assertThat(activityLogCount()).isEqualTo(2);
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIO-ATT-012 - arbitrarily late COMPLETED attendance -> both tracker sections remain eligible")
+    void arbitrarilyLateCompletedAttendanceShouldBeAllowedForBothTrackerSections() {
+        setCurrentInstant(Instant.parse("2036-07-25T21:00:00Z"));
+        AuthSession caller = sudoSession();
+        UUID oratorioId = createOratorio(caller, OCCURRENCE_DATE);
+        UUID memberId = createActiveMember(caller, "Late correction Member");
+        UUID oratorianoId = createOratoriano(caller, "Helena", "Pires");
+        clearActivities();
+
+        ExtractableResponse<Response> member = markMember(caller, oratorioId, memberId);
+        ExtractableResponse<Response> oratoriano = markOratoriano(caller, oratorioId, oratorianoId);
+
+        assertThat(member.statusCode()).as(member.asString()).isEqualTo(201);
+        assertThat(oratoriano.statusCode()).as(oratoriano.asString()).isEqualTo(201);
         assertThat(activityLogCount()).isEqualTo(2);
     }
 
@@ -117,7 +134,7 @@ class OratorioAttendanceTrackerApiIT extends OratorioModuleApiTestSupport {
     }
 
     @Test
-    @DisplayName("REQ-ORATORIO-ATT-004 and REQ-ORATORIO-ATT-006 - CANCELLED rejects additions but permits reason-free correction")
+    @DisplayName("REQ-ORATORIO-ATT-006/012 - CANCELLED rejects additions but permits reason-free correction")
     void cancelledOccurrenceShouldRejectAdditionAndPermitRemoval() {
         setCurrentInstant(Instant.parse("2026-07-25T16:30:00Z"));
         AuthSession caller = sudoSession();
@@ -138,7 +155,7 @@ class OratorioAttendanceTrackerApiIT extends OratorioModuleApiTestSupport {
     }
 
     @Test
-    @DisplayName("REQ-ORATORIO-ATT-004 - LOCKED and FINALIZED reject every attendance mutation")
+    @DisplayName("REQ-ORATORIO-ATT-012 - LOCKED and FINALIZED reject every attendance mutation")
     void lockedAndFinalizedOccurrencesShouldRejectEveryAttendanceMutation() {
         setCurrentInstant(Instant.parse("2026-07-25T21:00:00Z"));
         AuthSession caller = sudoSession();
@@ -168,10 +185,48 @@ class OratorioAttendanceTrackerApiIT extends OratorioModuleApiTestSupport {
         assertThat(activityLogCount()).isZero();
     }
 
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"CANCELLED", "LOCKED", "FINALIZED"})
+    @DisplayName("REQ-ORATORIO-ATT-007/008/012 - attendance-closed lifecycle -> every addition route rejects atomically")
+    void attendanceClosedLifecycleShouldRejectEveryAdditionRouteAtomically(String status) {
+        setCurrentInstant(Instant.parse("2020-01-01T12:00:00Z"));
+        AuthSession caller = sudoSession();
+        UUID oratorioId = createOratorio(caller, OCCURRENCE_DATE);
+        UUID memberId = createActiveMember(caller, "Closed-lifecycle Member");
+        UUID oratorianoId = createOratoriano(caller, "Closed", "Lifecycle");
+        jdbcTemplate.update(
+                "UPDATE events SET status = CAST(? AS event_status_enum) WHERE id = ?",
+                status,
+                oratorioId
+        );
+        long activeOratorianosBefore = activeOratorianoCount();
+        clearActivities();
+
+        ExtractableResponse<Response> member = markMember(caller, oratorioId, memberId);
+        ExtractableResponse<Response> oratoriano = markOratoriano(caller, oratorioId, oratorianoId);
+        ExtractableResponse<Response> quickRegistration = authenticatedJsonRequest(caller)
+                .body(oratorianoRegistrationPayload("Quick", "Rejected"))
+                .post("/oratorios/{id}/attendance/oratorianos/register-and-mark", oratorioId)
+                .then()
+                .extract();
+
+        SoftAssertions softly = new SoftAssertions();
+        List.of(member, oratoriano, quickRegistration).forEach(response -> {
+            softly.assertThat(response.statusCode()).as(response.asString()).isEqualTo(409);
+            softly.assertThat(response.<String>path("code")).isEqualTo("ORATORIO_LIFECYCLE_CONFLICT");
+            softly.assertThat(response.<String>path("details.status")).isEqualTo(status);
+        });
+        softly.assertThat(memberPresenceCount(oratorioId, memberId)).isZero();
+        softly.assertThat(oratorianoAttendanceCount(oratorioId, oratorianoId)).isZero();
+        softly.assertThat(activeOratorianoCount()).isEqualTo(activeOratorianosBefore);
+        softly.assertThat(activityLogCount()).isZero();
+        softly.assertAll();
+    }
+
     @Test
-    @DisplayName("REQ-ORATORIO-ATT-007 and REQ-ORATORIO-ATT-008 - quick registration creates one person and attendance atomically")
+    @DisplayName("REQ-ORATORIO-ATT-007/008/012 - arbitrarily early quick registration creates one person and attendance atomically")
     void quickRegistrationShouldCreatePersonAndAttendanceAtomically() {
-        setCurrentInstant(Instant.parse("2026-07-25T16:30:00Z"));
+        setCurrentInstant(Instant.parse("2020-01-01T12:00:00Z"));
         AuthSession caller = sudoSession();
         UUID oratorioId = createOratorio(caller, OCCURRENCE_DATE);
         clearActivities();
@@ -660,6 +715,23 @@ class OratorioAttendanceTrackerApiIT extends OratorioModuleApiTestSupport {
                 Long.class,
                 oratorioId,
                 oratorianoId
+        );
+    }
+
+    private long memberPresenceCount(UUID oratorioId, UUID memberId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM presences "
+                        + "WHERE event_id = ? AND member_id = ? AND deleted_at IS NULL",
+                Long.class,
+                oratorioId,
+                memberId
+        );
+    }
+
+    private long activeOratorianoCount() {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM oratorianos WHERE deleted_at IS NULL",
+                Long.class
         );
     }
 }

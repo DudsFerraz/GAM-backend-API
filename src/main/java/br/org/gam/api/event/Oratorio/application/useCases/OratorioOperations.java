@@ -598,7 +598,7 @@ public class OratorioOperations {
         OratorioEntity occurrence = oratorioRepository.findById(id)
                 .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
         EventStatus status = effectiveStatus(event);
-        if (!additionAllowed(event, status)) {
+        if (!additionAllowed(status)) {
             throw lifecycleConflict(id, status, "New attendance is not allowed for this occurrence.");
         }
         return occurrence;
@@ -615,14 +615,8 @@ public class OratorioOperations {
         return status;
     }
 
-    private boolean additionAllowed(EventEntity event, EventStatus status) {
-        if (status == EventStatus.COMPLETED) {
-            return true;
-        }
-        if (status != EventStatus.SCHEDULED) {
-            return false;
-        }
-        return !clock.instant().isBefore(event.getBeginDate().minusSeconds(30 * 60L));
+    private boolean additionAllowed(EventStatus status) {
+        return status == EventStatus.SCHEDULED || status == EventStatus.COMPLETED;
     }
 
     private String removalReason(EventStatus status, String rawReason) {
