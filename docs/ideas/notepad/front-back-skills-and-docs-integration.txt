@@ -1,0 +1,29 @@
+Besides this being a independent and isolated repo, this codebase represents the backend part of a larger project. The frontend is in a neighboor directory, C:\Users\Eduardo\GAM\gam-frontend, Are you able to read its files?
+
+Not having a monorepo with front and back fully integrated was a conscient decision. But that brings some disadvantages, the objective right now is to mitigate one of them.
+Backend has a lot of skills, rules stated in agents.md, subagents configuration, documentation rules and other relevant info related to LLM agentic workflows. (.agents\skills, .codex.example, .codex, docs, .worktreeinclude.example, .worktreeinclude, AGENTS.md, skills-lock.json, etc)
+All of the following ideas are just ideas, and should be debated, approved, disapproved or adpated.
+
+1- Decide what to directly replicate in frontend, what to ignore and what to adapt. We could divide the files in 3 cathegories: "shared" (both repos use the exact same file), "independent" (the files is not relevant to the other part, therefore is independant and should not be replicated in any means) and "adapted" (the files are useful for both repos, but requires adaptation). Or other better names.
+
+2- How to handle changes in shared skills? Will I have to update both of the repos? It would be better to have a centralized and unique source of truth. How to do it?
+
+3- Currently, some docs, such as requirements are stated as universal source of truth for the project. Would that be valid to both front and back? Or shoul I keep frontend isolated (in this case the OpenAPI contract would be frontend's source of truth). When deciding to share skills and LLM config
+
+4- Should I create a separate repo exclusively for gam skills, LLM configs, some general rules contained in docs and other relevant? What To include? Would that be recommended? Why? Then backend, frontend and any other future repo within gam context would consume this centralized repo.
+
+What are other relevant things to consider?
+
+
+
+
+
+
+
+
+gam-agent-workflow with the custom TDD-Review cycle is not necessary for gam-frontend repo. Custom agents are also discardable.
+
+Backend skills to have in frontend (some might need adaptations):
+
+
+Backend skills to not have in frontend:
