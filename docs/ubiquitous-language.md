@@ -6,6 +6,12 @@ This document defines project-wide GAM domain language. Use it to keep terminolo
 
 This document is not a Requirement Specification. It defines canonical terms, discouraged aliases, and relationships between terms. Business behavior still belongs in Requirement Specifications.
 
+The English–Portuguese glossary in this document also defines the canonical
+Brazilian Portuguese (`pt-BR`) presentation term for GAM-wide concepts. It is
+not a general localization catalog: feature-specific interface copy and closed
+transport-value mappings remain owned by the frontend feature that presents
+them.
+
 ## Canonical terms
 
 | Term               | Definition                                                                                                                                                                                   | Accepted short forms | Aliases to avoid                 |
@@ -43,6 +49,49 @@ This document is not a Requirement Specification. It defines canonical terms, di
 | **row audit metadata** | Low-level persisted creation, latest non-deletion update, and deletion timestamps and actor identifiers. It describes row state and does not replace an activity entry that records business or security intent. | None | activity log, action history |
 | **activity entry** | An immutable append-only record of one meaningful business or security outcome, designated sensitive read, or exceptional Developer-maintenance operation. | activity | row audit, database-write log |
 
+## English–Portuguese glossary
+
+The Portuguese entries below are canonical base terms for Brazilian Portuguese
+product presentation. Interface copy may apply ordinary Portuguese inflection,
+pluralization, articles, and sentence capitalization without creating a new
+domain term. Transport names, enum values, permission codes, identifiers, and
+source-code symbols remain unchanged at the API boundary.
+
+| Canonical GAM term | Canonical `pt-BR` term | Scope and usage |
+| --- | --- | --- |
+| **Oratorio** | **Oratório** | User-facing domain term. Keep `Oratorio` in code and transport identifiers. |
+| **Boa Tarde** | **Boa Tarde** | User-facing cultural term; do not translate it literally. |
+| **Lanche** | **Lanche** | User-facing cultural term. |
+| **Gincana** | **Gincana** | User-facing cultural term. |
+| **Oratoriano** | **Oratoriano** | User-facing person term. Use **Oratorianos** as the regular plural. |
+| **Member** | **Membro** | User-facing person term. |
+| **Membership Solicitation** | **Solicitação para se tornar membro** | Use the complete expression when the kind of solicitation is not already clear from the surrounding context; **solicitação** is acceptable after that context is established. |
+| **Coordinator** | **Coordenador** | Refers to the person. **Coordenação** may describe the corresponding responsibility or access presentation, but must not replace the person term. |
+| **Coordenador do Oratório** | **Coordenador do Oratório** | User-facing person term. **Coordenação do Oratório** describes the responsibility or access presentation. |
+| **Account** | **Conta** | User-facing identity term. Do not translate it as **usuário**. |
+| **User** | **Usuário** | Product-facing actor term; it does not mean **Conta** or **Desenvolvedor**. |
+| **Developer** | **Desenvolvedor** | Agent- and contributor-facing term, not ordinary product-interface copy. |
+| **displayName** | **nome de exibição** | User-facing field label when the concept must be named. Keep `displayName` in code and transport identifiers. |
+| **GamName** | **nome da pessoa** | Use only when the whole name concept must be described. Interfaces normally label its components separately and must not display `GamName`. |
+| **firstName** | **nome** | User-facing field label. Keep `firstName` in code and transport identifiers. |
+| **surname** | **sobrenome** | User-facing field label. Keep `surname` in code and transport identifiers. |
+| **GamEmail** | **e-mail** | User-facing field label. Keep `GamEmail` in technical domain documentation and code. |
+| **GamPhoneNumber** | **telefone** | User-facing field label. Keep `GamPhoneNumber` in technical domain documentation and code. |
+| **GamCPF** | **CPF** | User-facing Brazilian document term. |
+| **GamRG** | **RG** | User-facing Brazilian document term. |
+| **GamLocation** | **local** | User-facing place term. Keep `GamLocation` in technical domain documentation and code. |
+| **Event** | **Evento** | User-facing domain term. |
+| **Presence** | **Presença** | User-facing attendance-record term; do not translate it as RSVP or planned attendance. |
+| **Generic Event** | **Evento genérico** | User-facing specialization of **Evento**. |
+| **UUID** | **identificador técnico** | Internal-only presentation description. The UUID value must not be requested from or displayed to ordinary users. |
+| **system reference data** | **dados de referência do sistema** | Technical documentation term; normally not interface copy. |
+| **database enum mirror** | **espelho de enumeração do banco de dados** | Backend technical term; not interface copy. |
+| **lifecycle-owned Role** | **tipo de acesso controlado pelo ciclo de vida** | Technical and agent-facing term. Product interfaces present the specific access type, not this classification. |
+| **Proxy** | **proxy** | Architecture term; use the selected product name only in product-specific implementation contexts. |
+| **Canonical Public Origin** | **origem pública canônica** | Architecture and deployment term; not ordinary interface copy. |
+| **row audit metadata** | **metadados de auditoria do registro** | Technical and audit documentation term; not ordinary interface copy. |
+| **activity entry** | **registro de atividade** | Audit-domain term. Use a more specific approved label when a feature presents an activity history to users. |
+
 ## Relationships
 
 - A **Member** may serve in an **Oratorio**.
@@ -78,6 +127,9 @@ This document is not a Requirement Specification. It defines canonical terms, di
 - Use accepted short forms only when the context remains clear. `coord` is accepted as user-facing shorthand and as an informal internal abbreviation for **Coordinator**.
 - In agent-facing documentation, use **Developer** for the person prompting or directing agents. Reserve **User** for product-facing GAM actors.
 - Treat aliases to avoid as clarification aids, not as competing domain names.
+- Use the English–Portuguese glossary for GAM-wide `pt-BR` domain terminology in frontend-authored copy. Do not translate transport codes, source-code symbols, or technical identifiers at the API boundary.
+- A glossary translation does not authorize rendering an otherwise internal value. Terms marked internal or technical remain subject to the frontend presentation boundary.
+- Feature-owned presentation maps may translate closed contract values that are not GAM-wide domain terms, but they must not redefine a glossary entry.
 - Feature-specific Requirement Specification `Ubiquitous Language` sections may introduce local terms, but must not repeat or redefine terms, aliases, synonyms, translations, or legacy names already defined here.
 - If a term is ambiguous, preserve the ambiguity as an open question in the relevant Requirement Specification or planning handoff until the developer resolves it.
 - Use **Proxy** in architecture-neutral documentation. Use Caddy, Nginx, or another product name only when discussing a selected implementation or a product-specific example.
