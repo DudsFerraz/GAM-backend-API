@@ -16,7 +16,7 @@ This specification owns Member Presence identity, registration, observation edit
 
 - `active Presence`: A Presence that has not been removed and is available through normal application workflows.
 - `removed Presence`: A soft-deleted Presence retained for history but excluded from normal reads and active duplicate identity.
-- `registration-eligible Event`: An active Event whose attendance window has opened and whose effective status is `SCHEDULED` or `COMPLETED`. Generic Event and Missa windows open at `beginDate`; an Oratorio window opens under its specialized tracker rule.
+- `registration-eligible Event`: An active Event whose effective status is `SCHEDULED` or `COMPLETED`, without any clock-based registration boundary.
 
 ## Functional requirements
 
@@ -64,35 +64,46 @@ Invalid examples:
 
 ---
 
-### REQ-PRESENCE-003: Registration eligibility
+### REQ-PRESENCE-003: Superseded time-based registration eligibility
 
-The system shall capture one clock instant for a registration request and use it consistently for Event timing and effective-status evaluation.
+This requirement is superseded by `REQ-PRESENCE-017` and is retained for stable identity and historical traceability.
 
-A Presence may be registered only when:
+The superseded rule captured one clock instant and delayed registration until `beginDate` for Generic Events and Missas or until 30 minutes before `beginDate` for Oratorios. It otherwise allowed registration while the Event was `SCHEDULED` or `COMPLETED` and rejected registration for a `CANCELLED`, `LOCKED`, or `FINALIZED` Event. These earliest-time boundaries are no longer current behavior.
+
+---
+
+### REQ-PRESENCE-017: Registration eligibility without clock-based time boundaries
+
+The system shall capture one clock instant for a registration request and use it consistently for effective-status evaluation.
+
+A Presence may be registered when:
 
 - the Event exists, is active, and has type `GENERIC`, `ORATORIO`, or `MISSA`;
-- for `GENERIC` and `MISSA`, the evaluation instant is equal to or after the Event's `beginDate`;
-- for `ORATORIO`, the evaluation instant is equal to or after the 30-minute early boundary defined by `REQ-ORATORIO-ATT-004`;
 - the Event's effective status is `SCHEDULED` or `COMPLETED`; and
 - the Member exists and is not soft-deleted, regardless of whether the Member is `ACTIVE` or `INACTIVE`.
 
-Registration before the type-specific attendance boundary or against a `CANCELLED`, `LOCKED`, or `FINALIZED` Event shall return `409 Conflict` with code `PRESENCE_REGISTRATION_NOT_ALLOWED`. Structured details shall include `eventId`, effective Event `status`, applicable boundary, and `evaluationInstant`.
+No comparison between the evaluation instant and the Event's `beginDate`, `endDate`, or any boundary derived from them shall restrict registration. A `SCHEDULED` Event may therefore receive a Presence immediately after it exists, regardless of how far its beginning lies in the future. No amount of elapsed time after an Event ends shall prevent registration while its effective status remains `COMPLETED`.
+
+Registration eligibility shall be determined by lifecycle status rather than elapsed time: `SCHEDULED` and `COMPLETED` permit registration; `CANCELLED`, `LOCKED`, and `FINALIZED` reject it.
+
+Registering a Presence before the Event begins still records confirmed attendance. It shall not create an absent, tentative, planned-attendance, reservation, or RSVP state.
+
+Registration against a `CANCELLED`, `LOCKED`, or `FINALIZED` Event shall return `409 Conflict` with code `PRESENCE_REGISTRATION_NOT_ALLOWED`. Structured details shall include `eventId`, effective Event `status`, and `evaluationInstant`; an attendance boundary is no longer applicable.
 
 A missing or soft-deleted Event or Member shall return `404 RESOURCE_NOT_FOUND` for the corresponding resource.
 
 Rationale:
-Presence confirms attendance rather than advance intent. Attendance can be recorded during an Event or entered later until administrative closure.
+Coordinators may know that a Member attended or will attend but forget to enter the confirmed attendance at the Event. Removing clock-based boundaries permits immediate or delayed entry while preserving administrative closure as the final mutation boundary.
 
 Valid examples:
-- A Coordinator records Generic Event attendance after it begins.
-- A Coordinator records Oratorio attendance at its 13:30 early boundary.
-- A Coordinator enters late attendance while the Event is `COMPLETED`.
+- A Coordinator records Member attendance for a Generic Event whose `beginDate` is several weeks in the future.
+- A Coordinator records Member attendance for an Oratorio before its former 30-minute early boundary.
+- A Coordinator enters forgotten attendance months after an Event ended while it remains `COMPLETED`.
 
 Invalid examples:
-- Generic Event or Missa attendance is recorded before the Event begins.
-- Oratorio attendance is recorded before its 30-minute early boundary.
 - Attendance is recorded after the Event is locked or finalized.
 - Attendance is recorded for a cancelled Event.
+- An early Presence is interpreted as a separate RSVP or planned-attendance state.
 
 ---
 
@@ -283,7 +294,7 @@ Rejected concurrent operations shall return their domain error rather than expos
 
 ### REQ-PRESENCE-016: Specialized Oratorio tracker delegation
 
-The common Presence resource shall remain the persisted attendance fact for a Member attending an Oratorio. The specialized tracker routes, permissions, response composition, early window, idempotent check/uncheck behavior, and conditional removal reason shall be owned by the accepted Oratorio Attendance Tracker specification.
+The common Presence resource shall remain the persisted attendance fact for a Member attending an Oratorio. The specialized tracker routes, permissions, response composition, idempotent check/uncheck behavior, and conditional removal reason shall be owned by the accepted Oratorio Attendance Tracker specification. Its timing and lifecycle rule shall align with `REQ-PRESENCE-017`.
 
 Specialized tracker mutation shall require `ORATORIO_ATTENDANCE_MANAGE`; it shall not additionally require `PRESENCE_REGISTER`, `PRESENCE_REMOVE`, or `PRESENCE_EDIT`. Combined tracker read shall require `ORATORIO_ATTENDANCE_GET`; it shall not be implied by `EVENT_GET_PRESENCES`.
 
@@ -292,8 +303,8 @@ The common Presence routes and permissions in this specification shall remain av
 ## Acceptance scenarios
 
 ```gherkin
-Scenario: Register confirmed attendance during an Event
-  Given a visible Event has begun and is SCHEDULED
+Scenario Outline: Register confirmed attendance before each supported Event type begins
+  Given a visible <eventType> Event is SCHEDULED and begins several weeks from now
   And an active Member has no active Presence for the Event
   And the caller has PRESENCE_REGISTER and the Event audience permission
   When the caller registers the Member with an observation
@@ -301,18 +312,32 @@ Scenario: Register confirmed attendance during an Event
   And Location identifies /api/events/{eventId}/presences/{memberId}
   And one PRESENCE_REGISTERED activity records that an observation is present without copying its text
 
-Scenario: Reject Generic Event attendance before it begins
-  Given a visible SCHEDULED Generic Event has not reached beginDate
+  Examples:
+    | eventType |
+    | GENERIC   |
+    | MISSA     |
+    | ORATORIO  |
+
+Scenario: Register Oratorio attendance before the former early boundary
+  Given a visible SCHEDULED Oratorio begins at 14:00 local time on a future date
   And the caller has PRESENCE_REGISTER and the Event audience permission
   When the caller registers a Member
-  Then the response is 409 PRESENCE_REGISTRATION_NOT_ALLOWED
-  And no Presence or activity is created
-
-Scenario: Register Oratorio Presence during the early window
-  Given a visible SCHEDULED Oratorio begins at 14:00 local time
-  And the caller has ORATORIO_ATTENDANCE_MANAGE
-  When the caller checks a Member present at 13:30 through the specialized tracker
   Then one common Presence is created
+  And no start-time boundary rejects the registration
+
+Scenario: Register Oratorio Presence through the specialized tracker before it begins
+  Given a visible SCHEDULED Oratorio begins several days from now
+  And the caller has ORATORIO_ATTENDANCE_MANAGE
+  When the caller checks a Member present through the specialized tracker
+  Then one common Presence is created
+
+Scenario: Register forgotten attendance long after an Event ends
+  Given a visible Event ended several months ago
+  And its effective status remains COMPLETED
+  And the caller has PRESENCE_REGISTER and the Event audience permission
+  When the caller registers a Member
+  Then one common Presence is created
+  And elapsed time since the Event ended does not reject the registration
 
 Scenario: Specialized repeated check is idempotent
   Given an active common Presence exists for an Oratorio and Member
@@ -398,7 +423,7 @@ Scenario: Concurrent duplicate registrations produce one active Presence
 ```mermaid
 stateDiagram-v2
     [*] --> NoActive: no active Presence
-    NoActive --> Active: register after Event begins / new UUID
+    NoActive --> Active: register while SCHEDULED or COMPLETED / new UUID
     Active --> Active: edit observations
     Active --> Removed: remove with reason
     Removed --> Active: re-register same pair / new UUID
@@ -412,7 +437,7 @@ The diagram represents active identity for one Event and Member pair. Re-registr
 
 ## Out of scope
 
-* Advance registration, RSVP, planned attendance, or attendance reservations.
+* RSVP, planned attendance, or attendance reservations as states distinct from confirmed Presence.
 * Bulk registration, bulk removal, roster replacement, and file import.
 * Changing a Presence's Member or Event relationship.
 * Presence restoration and developer hard deletion.

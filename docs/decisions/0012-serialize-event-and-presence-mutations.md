@@ -26,7 +26,7 @@ Event editing, lifecycle transition, and deletion workflows shall acquire a data
 Presence registration, observation editing, and removal shall acquire and revalidate the same active Event row lock before reading or changing the active Presence state. Each workflow shall evaluate one latest committed state after acquiring the lock:
 
 1. Event mutations revalidate active visibility, type, effective status, request rules, and related resources before mutation.
-2. Presence registration revalidates Event audience visibility, `beginDate`, effective status, the Member, and active pair uniqueness before inserting a new UUID.
+2. Presence registration revalidates Event audience visibility, effective status, the Member, and active pair uniqueness before inserting a new UUID. Registration timing follows `REQ-PRESENCE-017` and therefore has no clock-derived eligibility boundary before or after the Event.
 3. Presence observation editing and removal revalidate Event audience visibility, effective status, and the latest active Presence for the Event and Member pair.
 4. Event deletion counts only active Presences while holding the Event lock. Any active count rejects deletion; removed Presences do not.
 5. Every changed workflow persists its one matching activity in the same transaction. A normalized Presence observation no-op emits no activity.
@@ -123,7 +123,7 @@ Negative consequences:
 
 - `REQ-EVENT-018`
 - `REQ-EVENT-019`
-- `REQ-PRESENCE-003`
+- `REQ-PRESENCE-017`
 - `REQ-PRESENCE-005`
 - `REQ-PRESENCE-011`
 - `REQ-PRESENCE-013`

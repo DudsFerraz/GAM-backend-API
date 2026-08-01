@@ -14,7 +14,6 @@ The common Presence model remains the attendance resource for Members. Oratorian
 
 - `Oratoriano attendance`: The persisted, auditable fact that one Oratoriano attended one Oratorio occurrence.
 - `combined tracker`: The Oratorio operational view containing separate Member and Oratoriano sections.
-- `early attendance window`: The interval beginning 30 minutes before the fixed Oratorio start.
 
 ## Functional requirements
 
@@ -59,13 +58,25 @@ A deleted Oratoriano shall not be offered for new attendance. Member Presence el
 
 ---
 
-### REQ-ORATORIO-ATT-004: Attendance timing and lifecycle
+### REQ-ORATORIO-ATT-004: Superseded early attendance window
 
-For both sections, new attendance shall become eligible at 13:30 inclusive on the occurrence date in `America/Sao_Paulo`, exactly 30 minutes before the fixed 14:00 start.
+This requirement is superseded by `REQ-ORATORIO-ATT-012` and is retained for stable identity and historical traceability.
 
-Attendance may be added or corrected while the Event is `SCHEDULED` after that boundary and while it is `COMPLETED`. `LOCKED` and `FINALIZED` shall reject all attendance mutations. `CANCELLED` shall reject new attendance but permit removal of an existing mistaken attendance.
+The superseded rule made new attendance eligible at 13:30 inclusive on the occurrence date in `America/Sao_Paulo`, exactly 30 minutes before the fixed 14:00 start. It applied to both tracker sections and specialized the common Member Presence timing rule.
 
-The early-window rule is an explicit Oratorio specialization of the common Member Presence rule; Generic Event and Missa Presence registration shall continue to begin at their Event `beginDate`.
+---
+
+### REQ-ORATORIO-ATT-012: Attendance without clock-based time boundaries
+
+For both tracker sections, a `SCHEDULED` Oratorio shall permit new attendance as soon as the occurrence exists, regardless of how far its fixed start lies in the future. No clock instant derived from the occurrence date or start time shall delay Member or Oratoriano attendance registration.
+
+No amount of elapsed time after the occurrence ends shall prevent new attendance while its Event remains `COMPLETED`.
+
+Attendance entered before the occurrence begins remains a confirmed attendance fact. It shall not create an absent, tentative, planned-attendance, reservation, or RSVP state.
+
+Attendance eligibility shall be determined by lifecycle status rather than elapsed time. `SCHEDULED` and `COMPLETED` shall permit new attendance. `LOCKED` and `FINALIZED` shall reject all attendance mutations. `CANCELLED` shall reject new attendance but permit removal of an existing mistaken attendance.
+
+The common Member Presence timing rule for every supported Event type is defined by `REQ-PRESENCE-017`.
 
 ---
 
@@ -102,14 +113,14 @@ The interface shall prominently advise the coordinator to ask for the Oratoriano
 
 An existing match shall never be marked automatically. The coordinator must explicitly confirm that the arriving person is the existing Oratoriano before using the ordinary check operation.
 
-The combined registration operation shall be allowed only while new attendance is eligible under `REQ-ORATORIO-ATT-004`. It shall:
+The combined registration operation shall be allowed only while new attendance is eligible under `REQ-ORATORIO-ATT-012`. It shall:
 
 - create both the new Oratoriano and attendance, or neither;
 - create no attendance when name uniqueness fails, including a concurrent conflict;
 - reject a name reserved by a deleted Oratoriano and require restoration first; and
 - never infer that an existing name identifies the arriving person.
 
-Outside the attendance window, ordinary Oratoriano registration remains available independently.
+When the occurrence lifecycle makes new attendance ineligible, ordinary Oratoriano registration remains available independently.
 
 ---
 
@@ -163,16 +174,19 @@ A newly created check shall return `201 Created`. Checking an already active pai
 ## Acceptance scenarios
 
 ```gherkin
-Scenario: Check attendance at the early boundary
-  Given an Oratorio begins at 14:00 local time
+Scenario: Check attendance before the occurrence begins
+  Given a SCHEDULED Oratorio begins several days from now
   And the occurrence is SCHEDULED
-  When an authorized coordinator checks a person present at 13:30
-  Then attendance is recorded
+  When an authorized coordinator checks a Member and an Oratoriano present
+  Then both attendance facts are recorded
+  And no start-time boundary rejects either check
 
-Scenario: Reject attendance before the early boundary
-  Given an Oratorio begins at 14:00 local time
-  When an authorized coordinator checks attendance at 13:29:59 local time
-  Then the operation is rejected
+Scenario: Check forgotten attendance long after the occurrence ends
+  Given an Oratorio ended several months ago
+  And its Event remains COMPLETED
+  When an authorized coordinator checks a Member and an Oratoriano present
+  Then both attendance facts are recorded
+  And elapsed time since the occurrence ended does not reject either check
 
 Scenario: Repeated check is idempotent
   Given an active attendance already exists for a person and occurrence
@@ -193,8 +207,8 @@ Scenario: Cancelled occurrence allows removal but not addition
   Then the attendance is removed without requiring a reason
 
 Scenario: Quick registration is atomic
-  Given no Oratoriano has the submitted canonical name
-  And attendance is open
+  Given a SCHEDULED Oratorio begins several days from now
+  And no Oratoriano has the submitted canonical name
   When an authorized coordinator registers the name from the tracker
   Then one Oratoriano and one attendance are created
   And neither can commit without the other

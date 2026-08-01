@@ -141,8 +141,8 @@ The occurrence shall reuse the common Event statuses with these specialized effe
 
 | Status | Planning | Attendance |
 | --- | --- | --- |
-| `SCHEDULED` | Editable | Open from the specialized early window |
-| `COMPLETED` | Editable | Open for late entry and correction |
+| `SCHEDULED` | Editable | Open without an earliest time boundary under `REQ-ORATORIO-ATT-012` |
+| `COMPLETED` | Editable | Open without a latest time boundary under `REQ-ORATORIO-ATT-012` |
 | `LOCKED` | Editable for authorized corrections | Closed |
 | `FINALIZED` | Closed | Closed |
 | `CANCELLED` | Closed | New attendance closed; mistaken attendance may be removed |
