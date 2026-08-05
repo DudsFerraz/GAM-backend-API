@@ -5,7 +5,6 @@ import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 public final class OratorianoFormApiModels {
@@ -59,7 +58,12 @@ public final class OratorianoFormApiModels {
     ) {
     }
 
-    public record AccountReferenceRDTO(UUID id) {
+    public record AccountReferenceRDTO(
+            @Schema(format = "uuid", requiredMode = Schema.RequiredMode.REQUIRED)
+            UUID id,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String displayName
+    ) {
     }
 
     public record AddressDTO(
@@ -122,20 +126,35 @@ public final class OratorianoFormApiModels {
 
     @Schema(description = "Editable structured transcription for one additional-form draft")
     public record FormDraftDTO(
+            @Schema(types = {"string", "null"})
             String firstName,
+            @Schema(types = {"string", "null"})
             String surname,
+            @Schema(types = {"string", "null"}, format = "date")
             LocalDate birthDate,
+            @Schema(types = {"string", "null"})
             String cpf,
+            @Schema(types = {"string", "null"})
             String rg,
+            @Schema(types = {"object", "null"})
             AddressDTO address,
+            @Schema(types = {"string", "null"})
             String phoneNumber,
+            @Schema(types = {"string", "null"})
             String schoolName,
+            @Schema(types = {"string", "null"})
             String schoolGrade,
+            @Schema(types = {"object", "null"})
             ResponsibleDTO responsible,
+            @Schema(types = {"object", "null"})
             ParentDTO father,
+            @Schema(types = {"object", "null"})
             ParentDTO mother,
+            @Schema(types = {"object", "null"})
             HealthDTO health,
+            @Schema(types = {"object", "null"})
             DeclarationsDTO declarations,
+            @Schema(types = {"string", "null"}, format = "date")
             LocalDate signedOn
     ) {
     }
@@ -147,10 +166,14 @@ public final class OratorianoFormApiModels {
             FormStatus status,
             FormOrigin origin,
             long draftRevision,
-            Map<String, Object> data,
+            FormDraftDTO data,
             LocalDate signedOn,
             AccountReferenceRDTO createdBy,
-            Instant createdAt
+            Instant createdAt,
+            Instant completedAt,
+            AccountReferenceRDTO completedBy,
+            Instant revokedAt,
+            AccountReferenceRDTO revokedBy
     ) {
     }
 
@@ -183,12 +206,35 @@ public final class OratorianoFormApiModels {
     ) {
     }
 
-    public record AttachmentRDTO(
+    public record PrintSnapshotMetadataRDTO(
+            @Schema(format = "uuid", requiredMode = Schema.RequiredMode.REQUIRED)
             UUID id,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            long draftRevision,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            PrintMode mode,
+            @Schema(format = "date-time", requiredMode = Schema.RequiredMode.REQUIRED)
+            Instant generatedAt,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            String templateVersion,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            int pageCount
+    ) {
+    }
+
+    public record AttachmentRDTO(
+            @Schema(format = "uuid", requiredMode = Schema.RequiredMode.REQUIRED)
+            UUID id,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String originalFilename,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String verifiedMimeType,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             long byteLength,
-            int pageOrder
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            int pageOrder,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            int pageCount
     ) {
     }
 }

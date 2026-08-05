@@ -27,6 +27,7 @@ import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.tags.Tag;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -96,7 +97,8 @@ public class OpenApiConfig {
             "getMemberPresences",
             "searchMembershipSolicitations",
             "searchOratorianos",
-            "getOratorianoFormHistory"
+            "getOratorianoFormHistory",
+            "getOratorianoFormPrintSnapshots"
     );
 
     private static final List<String> COMMON_ERROR_CODES = List.of(
@@ -128,6 +130,50 @@ public class OpenApiConfig {
             "PRESENCE_REMOVAL_NOT_ALLOWED"
     );
 
+    private static final List<String> NULLABLE_FORM_DRAFT_OBJECT_SCHEMAS = List.of(
+            "AddressDTO",
+            "ResponsibleDTO",
+            "ParentDTO",
+            "HealthDTO",
+            "DeclarationsDTO",
+            "HealthQuestionDTO"
+    );
+
+    private static final Map<String, List<String>> NULLABLE_FORM_DRAFT_NESTED_PROPERTIES = Map.of(
+            "AddressDTO", List.of("addressLine", "addressNumber", "neighborhood", "cep", "city"),
+            "ResponsibleDTO", List.of(
+                    "relationship", "relationshipComplement", "firstName", "surname", "cpf",
+                    "phoneNumber", "email", "atLeast18"
+            ),
+            "ParentDTO", List.of("firstName", "surname", "cpf"),
+            "HealthDTO", List.of(
+                    "medicalFollowUp", "physicalActivityRestriction", "medicineUse", "allergies",
+                    "convulsions", "frequentFainting", "heartCondition", "otherHealthCondition", "otherCare"
+            ),
+            "DeclarationsDTO", List.of(
+                    "signerRelationshipConfirmed", "informationTruthConfirmed",
+                    "healthInformationCurrentConfirmed", "informationUseUnderstood", "formReviewed",
+                    "imageAndVoiceAuthorizationAccepted"
+            ),
+            "HealthQuestionDTO", List.of("answer", "explanation", "importantInstructions")
+    );
+
+    private static final List<String> NULLABLE_FORM_LIFECYCLE_SCHEMAS = List.of(
+            "FormRDTO",
+            "FormHistoryRDTO"
+    );
+
+    private static final Map<String, List<String>> REQUIRED_FORM_RESPONSE_FIELDS = Map.of(
+            "FormRDTO", List.of(
+                    "id", "oratorianoId", "version", "status", "origin", "draftRevision", "data",
+                    "signedOn", "createdBy", "createdAt", "completedAt", "completedBy", "revokedAt", "revokedBy"
+            ),
+            "FormHistoryRDTO", List.of(
+                    "id", "version", "status", "origin", "signedOn", "createdAt", "createdBy",
+                    "completedAt", "completedBy", "revokedAt", "revokedBy", "attachmentExists", "attachmentPageCount"
+            )
+    );
+
     @Value("${spring.application.version}")
     private String applicationVersion;
 
@@ -157,6 +203,8 @@ public class OpenApiConfig {
             requireCsrfBootstrapResponseFields(components);
             requireCurrentAccountContextResponseFields(components);
             configureSharedSearchSchemas(components);
+            configureNullableFormDraftObjectSchemas(components);
+            configureNullableFormLifecycleSchemas(components);
             components.getSchemas().remove("Pageable");
 
             openApi.getPaths().forEach((path, pathItem) -> pathItem.readOperationsMap().forEach((method, operation) -> {
@@ -176,6 +224,93 @@ public class OpenApiConfig {
                 addExamples(openApi, operation);
             }));
         };
+    }
+
+    private void configureNullableFormDraftObjectSchemas(Components components) {
+        for (String schemaName : NULLABLE_FORM_DRAFT_OBJECT_SCHEMAS) {
+            Schema<?> schema = components.getSchemas().get(schemaName);
+            makeSchemaNullable(schema);
+        }
+
+        for (Map.Entry<String, List<String>> entry : NULLABLE_FORM_DRAFT_NESTED_PROPERTIES.entrySet()) {
+            Schema<?> schema = components.getSchemas().get(entry.getKey());
+            if (schema == null || schema.getProperties() == null) {
+                continue;
+            }
+            for (String propertyName : entry.getValue()) {
+                makeSchemaNullable(schema.getProperties().get(propertyName));
+            }
+        }
+    }
+
+    private void makeSchemaNullable(Schema<?> schema) {
+        if (schema == null) {
+            return;
+        }
+
+        Set<String> types = schema.getTypes();
+        if (types == null || types.isEmpty()) {
+            String type = schema.getType();
+            if (type == null && schema.get$ref() != null) {
+                type = "object";
+            }
+            if (type == null) {
+                return;
+            }
+            schema.setTypes(Set.of(type, "null"));
+        } else if (!types.contains("null")) {
+            Set<String> nullableTypes = new HashSet<>(types);
+            nullableTypes.add("null");
+            schema.setTypes(nullableTypes);
+        }
+
+        includeNullInEnum(schema);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void includeNullInEnum(Schema<?> schema) {
+        List<?> enumValues = schema.getEnum();
+        if (enumValues == null || enumValues.contains(null)) {
+            return;
+        }
+
+        List<Object> nullableEnumValues = new ArrayList<>(enumValues);
+        nullableEnumValues.add(null);
+        ((Schema<Object>) schema).setEnum(nullableEnumValues);
+    }
+
+    private void configureNullableFormLifecycleSchemas(Components components) {
+        for (String schemaName : NULLABLE_FORM_LIFECYCLE_SCHEMAS) {
+            Schema<?> schema = components.getSchemas().get(schemaName);
+            if (schema == null || schema.getProperties() == null) {
+                continue;
+            }
+
+            schema.setRequired(REQUIRED_FORM_RESPONSE_FIELDS.get(schemaName));
+            makeSchemaNullable(schema.getProperties().get("signedOn"));
+            makeNullableReferenceProperty(schema, "createdBy");
+            makeSchemaNullable(schema.getProperties().get("completedAt"));
+            makeNullableReferenceProperty(schema, "completedBy");
+            makeSchemaNullable(schema.getProperties().get("revokedAt"));
+            makeNullableReferenceProperty(schema, "revokedBy");
+        }
+    }
+
+    private void makeNullableReferenceProperty(Schema<?> objectSchema, String propertyName) {
+        Schema<?> property = objectSchema.getProperties().get(propertyName);
+        if (property == null || property.get$ref() == null) {
+            return;
+        }
+
+        Schema<?> nullSchema = new Schema<>();
+        nullSchema.setTypes(Set.of("null"));
+
+        ComposedSchema nullableReference = new ComposedSchema();
+        nullableReference.setAnyOf(List.of(
+                new Schema<>().$ref(property.get$ref()),
+                nullSchema
+        ));
+        objectSchema.getProperties().put(propertyName, nullableReference);
     }
 
     private void requireGamLocationResponseFields(Components components) {
@@ -745,6 +880,7 @@ public class OpenApiConfig {
             case "getMemberPresences" ->
                     List.of("eventBeginDate,desc");
             case "searchOratorianos" -> null;
+            case "getOratorianoFormPrintSnapshots" -> List.of("generatedAt,desc");
             default -> List.of("name,asc");
         });
         String description = "Repeat this parameter as field,direction. Allowed fields: "
@@ -762,6 +898,8 @@ public class OpenApiConfig {
             description += " The default is normalized name ascending, then Oratoriano UUID ascending. "
                     + "The oratorioYearAttendances sort in either direction also appends normalized name and UUID "
                     + "tie-breakers.";
+        } else if ("getOratorianoFormPrintSnapshots".equals(operationId)) {
+            description += " The default is generatedAt descending, then snapshot UUID descending. ";
         }
         return new Parameter()
                 .in("query")
@@ -784,6 +922,7 @@ public class OpenApiConfig {
             case "searchMembers" -> List.of("firstName", "surname", "birthDate", "status");
             case "searchMembershipSolicitations" -> List.of("status", "createdAt", "updatedAt");
             case "searchOratorianos" -> List.of("oratorioYearAttendances");
+            case "getOratorianoFormPrintSnapshots" -> List.of("generatedAt");
             default -> List.of();
         };
     }
@@ -1455,6 +1594,39 @@ public class OpenApiConfig {
         });
         addStructuredSearchRequestExample(operation);
         correctGamLocationMutationSuccessExample(operation);
+        correctPrintSnapshotMetadataSuccessExample(operation);
+    }
+
+    private void correctPrintSnapshotMetadataSuccessExample(
+            io.swagger.v3.oas.models.Operation operation
+    ) {
+        if (!"getOratorianoFormPrintSnapshots".equals(operation.getOperationId())) {
+            return;
+        }
+
+        ApiResponse response = operation.getResponses().get("200");
+        if (response == null || response.getContent() == null) {
+            return;
+        }
+
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("id", "019f6343-321a-7c90-a096-a551e8f88eb4");
+        snapshot.put("draftRevision", 2);
+        snapshot.put("mode", "PREFILLED");
+        snapshot.put("generatedAt", "2026-07-15T12:00:00Z");
+        snapshot.put("templateVersion", "oratoriano-additional-form-v1");
+        snapshot.put("pageCount", 1);
+
+        Map<String, Object> example = new LinkedHashMap<>();
+        example.put("items", List.of(snapshot));
+        example.put("page", 0);
+        example.put("size", 20);
+        example.put("totalElements", 1);
+        example.put("totalPages", 1);
+        example.put("first", true);
+        example.put("last", true);
+
+        response.getContent().values().forEach(mediaType -> mediaType.setExample(example));
     }
 
     private void correctGamLocationMutationSuccessExample(

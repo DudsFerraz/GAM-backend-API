@@ -15,6 +15,7 @@ import br.org.gam.api.oratoriano.application.OratorianoFormApiModels.HealthAnswe
 import br.org.gam.api.oratoriano.application.OratorianoFormApiModels.HealthQuestionDTO;
 import br.org.gam.api.oratoriano.application.OratorianoFormApiModels.ParentDTO;
 import br.org.gam.api.oratoriano.application.OratorianoFormApiModels.PrintMode;
+import br.org.gam.api.oratoriano.application.OratorianoFormApiModels.PrintSnapshotMetadataRDTO;
 import br.org.gam.api.oratoriano.application.OratorianoFormApiModels.PrintSnapshotRDTO;
 import br.org.gam.api.oratoriano.application.OratorianoFormApiModels.ResponsibleDTO;
 import br.org.gam.api.oratoriano.application.OratorianoFormApiModels.ResponsibleRelationship;
@@ -153,7 +154,7 @@ public class OratorianoForms {
         assertDraft(row);
         Map<String, Object> data = draftData(dto);
         if (Objects.equals(row.data(), data)) {
-            return row.toRDTO();
+            return toRDTO(row);
         }
         long revision = row.draftRevision() + 1;
         UUID actor = auditorAware.getCurrentAuditor().orElse(null);
@@ -337,7 +338,8 @@ public class OratorianoForms {
                     replacement.originalFilename(),
                     replacement.verifiedMimeType(),
                     replacement.bytes().length,
-                    pageOrder
+                    pageOrder,
+                    replacement.pageCount()
             ));
         }
         activity(
@@ -351,6 +353,25 @@ public class OratorianoForms {
                 )
         );
         return List.copyOf(result);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AttachmentRDTO> attachments(UUID oratorianoId, UUID formId) {
+        required(oratorianoId, formId);
+        return jdbcTemplate.query(
+                "SELECT id, original_filename, verified_mime_type, byte_length, page_order, page_count "
+                        + "FROM oratoriano_form_attachments "
+                        + "WHERE form_id = ? AND deleted_at IS NULL ORDER BY page_order ASC",
+                (rs, rowNum) -> new AttachmentRDTO(
+                        rs.getObject("id", UUID.class),
+                        rs.getString("original_filename"),
+                        rs.getString("verified_mime_type"),
+                        rs.getLong("byte_length"),
+                        rs.getInt("page_order"),
+                        rs.getInt("page_count")
+                ),
+                formId
+        );
     }
 
     @Transactional
@@ -442,6 +463,55 @@ public class OratorianoForms {
                 TEMPLATE_VERSION,
                 pageCount,
                 fingerprint
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public PagedResponse<PrintSnapshotMetadataRDTO> printSnapshots(
+            UUID oratorianoId,
+            UUID formId,
+            int page,
+            int size,
+            List<String> sorts
+    ) {
+        required(oratorianoId, formId);
+        validatePage(page, size);
+        String orderBy = snapshotOrderBy(sorts);
+        Long total = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM oratoriano_form_print_snapshots "
+                        + "WHERE form_id = ? AND deleted_at IS NULL",
+                Long.class,
+                formId
+        );
+        List<PrintSnapshotMetadataRDTO> items = jdbcTemplate.query(
+                "SELECT id, draft_revision, mode::text, generated_at, template_version, page_count "
+                        + "FROM oratoriano_form_print_snapshots "
+                        + "WHERE form_id = ? AND deleted_at IS NULL ORDER BY " + orderBy
+                        + " LIMIT ? OFFSET ?",
+                (rs, rowNum) -> new PrintSnapshotMetadataRDTO(
+                        rs.getObject("id", UUID.class),
+                        rs.getLong("draft_revision"),
+                        PrintMode.valueOf(rs.getString("mode")),
+                        rs.getTimestamp("generated_at").toInstant(),
+                        rs.getString("template_version"),
+                        rs.getInt("page_count")
+                ),
+                formId,
+                size,
+                (long) page * size
+        );
+        long totalElements = total == null ? 0 : total;
+        int totalPages = totalElements == 0
+                ? 0
+                : (int) Math.ceil((double) totalElements / size);
+        return new PagedResponse<>(
+                items,
+                page,
+                size,
+                totalElements,
+                totalPages,
+                page == 0,
+                totalPages == 0 || page >= totalPages - 1
         );
     }
 
@@ -587,7 +657,7 @@ public class OratorianoForms {
                 "Sensitive Oratoriano form detail read",
                 Map.of("oratorianoId", oratorianoId)
         );
-        return row.toRDTO();
+        return toRDTO(row);
     }
 
     @Transactional
@@ -625,7 +695,7 @@ public class OratorianoForms {
     }
 
     private FormRDTO getRow(UUID oratorianoId, UUID formId) {
-        return required(oratorianoId, formId).toRDTO();
+        return toRDTO(required(oratorianoId, formId));
     }
 
     private OratorianoEntity requireActiveOratorianoForUpdate(UUID oratorianoId) {
@@ -636,7 +706,8 @@ public class OratorianoForms {
     private FormRow required(UUID oratorianoId, UUID formId) {
         List<FormRow> rows = jdbcTemplate.query(
                 "SELECT id, oratoriano_id, version, status::text, origin::text, draft_revision, "
-                        + "draft_data::text, signed_on, created_by, created_at "
+                        + "draft_data::text, signed_on, created_by, created_at, "
+                        + "completed_at, completed_by, revoked_at, revoked_by "
                         + "FROM oratoriano_additional_forms "
                         + "WHERE id = ? AND oratoriano_id = ? AND deleted_at IS NULL",
                 (rs, rowNum) -> new FormRow(
@@ -649,7 +720,11 @@ public class OratorianoForms {
                         map(rs.getString("draft_data")),
                         rs.getObject("signed_on", LocalDate.class),
                         rs.getObject("created_by", UUID.class),
-                        rs.getTimestamp("created_at").toInstant()
+                        rs.getTimestamp("created_at").toInstant(),
+                        instant(rs.getTimestamp("completed_at")),
+                        rs.getObject("completed_by", UUID.class),
+                        instant(rs.getTimestamp("revoked_at")),
+                        rs.getObject("revoked_by", UUID.class)
                 ),
                 formId,
                 oratorianoId
@@ -663,7 +738,8 @@ public class OratorianoForms {
     private FormRow requiredForUpdate(UUID oratorianoId, UUID formId) {
         List<FormRow> rows = jdbcTemplate.query(
                 "SELECT id, oratoriano_id, version, status::text, origin::text, draft_revision, "
-                        + "draft_data::text, signed_on, created_by, created_at "
+                        + "draft_data::text, signed_on, created_by, created_at, "
+                        + "completed_at, completed_by, revoked_at, revoked_by "
                         + "FROM oratoriano_additional_forms "
                         + "WHERE id = ? AND oratoriano_id = ? AND deleted_at IS NULL FOR UPDATE",
                 (rs, rowNum) -> new FormRow(
@@ -676,7 +752,11 @@ public class OratorianoForms {
                         map(rs.getString("draft_data")),
                         rs.getObject("signed_on", LocalDate.class),
                         rs.getObject("created_by", UUID.class),
-                        rs.getTimestamp("created_at").toInstant()
+                        rs.getTimestamp("created_at").toInstant(),
+                        instant(rs.getTimestamp("completed_at")),
+                        rs.getObject("completed_by", UUID.class),
+                        instant(rs.getTimestamp("revoked_at")),
+                        rs.getObject("revoked_by", UUID.class)
                 ),
                 formId,
                 oratorianoId
@@ -1577,7 +1657,71 @@ public class OratorianoForms {
     }
 
     private AccountReferenceRDTO accountReference(UUID accountId) {
-        return accountId == null ? null : new AccountReferenceRDTO(accountId);
+        if (accountId == null) {
+            return null;
+        }
+        String displayName = jdbcTemplate.query(
+                "SELECT display_name FROM accounts WHERE id = ?",
+                rs -> rs.next() ? rs.getString("display_name") : null,
+                accountId
+        );
+        return new AccountReferenceRDTO(accountId, displayName);
+    }
+
+    private FormRDTO toRDTO(FormRow row) {
+        return new FormRDTO(
+                row.id(),
+                row.oratorianoId(),
+                row.version(),
+                row.status(),
+                row.origin(),
+                row.draftRevision(),
+                objectMapper.convertValue(row.data(), FormDraftDTO.class),
+                row.signedOn(),
+                accountReference(row.createdBy()),
+                row.createdAt(),
+                row.completedAt(),
+                accountReference(row.completedBy()),
+                row.revokedAt(),
+                accountReference(row.revokedBy())
+        );
+    }
+
+    private void validatePage(int page, int size) {
+        if (page < 0) {
+            throw new RequestValidationException("query", "page", "RANGE");
+        }
+        if (size < 1 || size > 100) {
+            throw new RequestValidationException("query", "size", "RANGE");
+        }
+    }
+
+    private String snapshotOrderBy(List<String> rawSorts) {
+        if (rawSorts == null || rawSorts.isEmpty()) {
+            return "generated_at DESC, id DESC";
+        }
+        List<String> sorts = rawSorts;
+        if (rawSorts.stream().noneMatch(sort -> sort.contains(","))) {
+            if (rawSorts.size() % 2 != 0) {
+                throw new RequestValidationException("query", "sort", "ALLOWED_VALUE");
+            }
+            List<String> reconstructed = new ArrayList<>();
+            for (int index = 0; index < rawSorts.size(); index += 2) {
+                reconstructed.add(rawSorts.get(index) + "," + rawSorts.get(index + 1));
+            }
+            sorts = reconstructed;
+        }
+        List<String> order = new ArrayList<>();
+        for (String sort : sorts) {
+            String[] parts = sort.split(",", -1);
+            if (parts.length != 2 || !"generatedAt".equals(parts[0])
+                    || !("asc".equalsIgnoreCase(parts[1]) || "desc".equalsIgnoreCase(parts[1]))) {
+                throw new RequestValidationException("query", "sort", "ALLOWED_VALUE");
+            }
+            order.add("generated_at " + parts[1].toUpperCase(java.util.Locale.ROOT));
+        }
+        order.add("id DESC");
+        return String.join(", ", order);
     }
 
     private void activity(
@@ -1607,22 +1751,12 @@ public class OratorianoForms {
             Map<String, Object> data,
             LocalDate signedOn,
             UUID createdBy,
-            Instant createdAt
+            Instant createdAt,
+            Instant completedAt,
+            UUID completedBy,
+            Instant revokedAt,
+            UUID revokedBy
     ) {
-        FormRDTO toRDTO() {
-            return new FormRDTO(
-                    id,
-                    oratorianoId,
-                    version,
-                    status,
-                    origin,
-                    draftRevision,
-                    data,
-                    signedOn,
-                    new AccountReferenceRDTO(createdBy),
-                    createdAt
-            );
-        }
     }
 
     public record AttachmentDownload(

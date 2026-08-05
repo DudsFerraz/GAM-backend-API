@@ -242,11 +242,18 @@ public class SecurityConfig {
                         .hasAuthority(PermissionEnum.Code.ORATORIANO_FORM_MANAGE)
                         .requestMatchers(HttpMethod.POST, "/oratorianos/*/forms/*/print-snapshots")
                         .hasAuthority(PermissionEnum.Code.ORATORIANO_FORM_PDF_GENERATE)
+                        .requestMatchers(HttpMethod.GET, "/oratorianos/*/forms/*/print-snapshots")
+                        .hasAuthority(PermissionEnum.Code.ORATORIANO_FORM_PDF_GENERATE)
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/oratorianos/*/forms/*/print-snapshots/*/pdf"
                         )
                         .hasAuthority(PermissionEnum.Code.ORATORIANO_FORM_PDF_GENERATE)
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/oratorianos/*/forms/*/signed-attachments"
+                        )
+                        .hasAuthority(PermissionEnum.Code.ORATORIANO_FORM_ATTACHMENT_GET)
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/oratorianos/*/forms/*/signed-attachments/*"

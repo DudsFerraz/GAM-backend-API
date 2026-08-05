@@ -94,6 +94,9 @@ public class PaginationWebConfiguration implements WebMvcConfigurer {
         }
 
         private Set<String> allowedSortFields(String requestUri) {
+            if (requestUri.matches("/oratorianos/[^/]+/forms/[^/]+/print-snapshots")) {
+                return Set.of("generatedAt");
+            }
             if (requestUri.matches("/events/[^/]+/presences")) {
                 return Set.of("memberFirstName", "memberSurname", "registeredAt");
             }

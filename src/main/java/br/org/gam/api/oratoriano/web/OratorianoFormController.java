@@ -8,6 +8,7 @@ import br.org.gam.api.oratoriano.application.OratorianoFormApiModels.FormDraftDT
 import br.org.gam.api.oratoriano.application.OratorianoFormApiModels.FormHistoryRDTO;
 import br.org.gam.api.oratoriano.application.OratorianoFormApiModels.FormRDTO;
 import br.org.gam.api.oratoriano.application.OratorianoFormApiModels.PrintSnapshotRDTO;
+import br.org.gam.api.oratoriano.application.OratorianoFormApiModels.PrintSnapshotMetadataRDTO;
 import br.org.gam.api.oratoriano.application.useCases.OratorianoForms;
 import br.org.gam.api.rbac.permission.domain.PermissionEnum;
 import br.org.gam.api.shared.web.PagedResponse;
@@ -141,6 +142,23 @@ public class OratorianoFormController {
         return ResponseEntity.status(201).body(forms.createPrintSnapshot(oratorianoId, formId));
     }
 
+    @Operation(
+            operationId = "getOratorianoFormPrintSnapshots",
+            summary = "Recover print-snapshot metadata",
+            description = "Lists every active immutable print snapshot for the form, including older draft revisions."
+    )
+    @GetMapping("/{formId}/print-snapshots")
+    @PreAuthorize("hasAuthority('" + PermissionEnum.Code.ORATORIANO_FORM_PDF_GENERATE + "')")
+    public ResponseEntity<PagedResponse<PrintSnapshotMetadataRDTO>> printSnapshots(
+            @PathVariable UUID oratorianoId,
+            @PathVariable UUID formId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) List<String> sort
+    ) {
+        return ResponseEntity.ok(forms.printSnapshots(oratorianoId, formId, page, size, sort));
+    }
+
     @Operation(operationId = "renderOratorianoFormPdf", summary = "Render a disposable identified PDF")
     @GetMapping("/{formId}/print-snapshots/{printSnapshotId}/pdf")
     @PreAuthorize("hasAuthority('" + PermissionEnum.Code.ORATORIANO_FORM_PDF_GENERATE + "')")
@@ -174,6 +192,20 @@ public class OratorianoFormController {
             @RequestPart("files") List<MultipartFile> files
     ) {
         return ResponseEntity.ok(forms.replaceAttachments(oratorianoId, formId, files));
+    }
+
+    @Operation(
+            operationId = "getOratorianoFormSignedAttachments",
+            summary = "Recover active signed-attachment metadata",
+            description = "Lists the form's active signed-attachment collection in page order without reading file bytes."
+    )
+    @GetMapping("/{formId}/signed-attachments")
+    @PreAuthorize("hasAuthority('" + PermissionEnum.Code.ORATORIANO_FORM_ATTACHMENT_GET + "')")
+    public ResponseEntity<List<AttachmentRDTO>> signedAttachments(
+            @PathVariable UUID oratorianoId,
+            @PathVariable UUID formId
+    ) {
+        return ResponseEntity.ok(forms.attachments(oratorianoId, formId));
     }
 
     @Operation(

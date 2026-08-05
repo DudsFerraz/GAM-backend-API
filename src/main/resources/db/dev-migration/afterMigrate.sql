@@ -2059,7 +2059,7 @@ BEGIN
          v_today - 5, NULL, NULL),
         ('01950000-000c-7000-8000-000000000007',
          '01950000-0008-7000-8000-000000000006', 1, 'DRAFT',
-         'PAPER_TRANSCRIPTION', 1, '{}'::JSONB, NULL, NULL, NULL),
+         'PAPER_TRANSCRIPTION', 2, '{}'::JSONB, NULL, NULL, NULL),
         ('01950000-000c-7000-8000-000000000008',
          '01950000-0008-7000-8000-000000000007', 1, 'DRAFT',
          'DIRECT_SYSTEM_ENTRY', 1, '{}'::JSONB, NULL, NULL, NULL),
@@ -2177,7 +2177,7 @@ BEGIN
     SELECT
         '01950000-000f-7000-8000-000000000002'::UUID,
         '01950000-000c-7000-8000-000000000007'::UUID,
-        1,
+        2,
         'IDENTIFIED_BLANK'::oratoriano_form_print_mode_enum,
         (v_today - 1 + TIME '12:00') AT TIME ZONE 'America/Sao_Paulo',
         '{}'::JSONB
@@ -2209,7 +2209,17 @@ BEGIN
              '01950000-000c-7000-8000-000000000009'::UUID,
              'IDENTIFIED_BLANK', 46)
     ) AS mapping(snapshot_id, form_id, mode, generated_days_before)
-      ON mapping.form_id = form_record.id;
+      ON mapping.form_id = form_record.id
+    UNION ALL
+    SELECT
+        '01950000-000f-7000-8000-000000000007'::UUID,
+        form_record.id,
+        form_record.draft_revision - 1,
+        'IDENTIFIED_BLANK'::oratoriano_form_print_mode_enum,
+        (v_today - 47 + TIME '12:00') AT TIME ZONE 'America/Sao_Paulo',
+        '{}'::JSONB
+    FROM fixture_forms_manifest form_record
+    WHERE form_record.id = '01950000-000c-7000-8000-000000000007';
 
     IF EXISTS (
         SELECT 1
@@ -2285,7 +2295,8 @@ BEGIN
         form_id UUID NOT NULL,
         snapshot_id UUID NOT NULL,
         signed_on DATE NOT NULL,
-        original_filename TEXT NOT NULL
+        original_filename TEXT NOT NULL,
+        active BOOLEAN NOT NULL
     ) ON COMMIT DROP;
 
     INSERT INTO fixture_attachments_manifest
@@ -2294,27 +2305,38 @@ BEGIN
          '01950000-000c-7000-8000-000000000006',
          '01950000-000f-7000-8000-000000000001',
          v_today - 5,
-         'formulario-sintetico-desenvolvimento.pdf'),
+         'formulario-sintetico-desenvolvimento.pdf',
+         TRUE),
         ('01950000-000d-7000-8000-000000000002',
          '01950000-000c-7000-8000-000000000001',
          '01950000-000f-7000-8000-000000000003',
          v_today - 180,
-         'formulario-sintetico-historico-1.pdf'),
+         'formulario-sintetico-historico-1.pdf',
+         TRUE),
         ('01950000-000d-7000-8000-000000000003',
          '01950000-000c-7000-8000-000000000002',
          '01950000-000f-7000-8000-000000000004',
          v_today - 30,
-         'formulario-sintetico-historico-2.pdf'),
+         'formulario-sintetico-historico-2.pdf',
+         TRUE),
         ('01950000-000d-7000-8000-000000000004',
          '01950000-000c-7000-8000-000000000003',
          '01950000-000f-7000-8000-000000000005',
          v_today - 90,
-         'formulario-sintetico-historico-3.pdf'),
+         'formulario-sintetico-historico-3.pdf',
+         TRUE),
         ('01950000-000d-7000-8000-000000000005',
          '01950000-000c-7000-8000-000000000009',
          '01950000-000f-7000-8000-000000000006',
          v_today - 45,
-         'formulario-sintetico-historico-9.pdf');
+         'formulario-sintetico-historico-9.pdf',
+         TRUE),
+        ('01950000-000d-7000-8000-000000000006',
+         '01950000-000c-7000-8000-000000000009',
+         '01950000-000f-7000-8000-000000000006',
+         v_today - 46,
+         'formulario-sintetico-substituido-9.pdf',
+         FALSE);
 
     IF EXISTS (
         SELECT 1
@@ -2351,7 +2373,12 @@ BEGIN
         1,
         encode(sha256(generated.pdf_bytes), 'hex'),
         generated.pdf_bytes,
-        v_now, NULL, v_now, NULL, NULL, NULL
+        v_now, NULL, v_now, NULL,
+        CASE
+            WHEN active THEN NULL
+            ELSE (v_today - 45 + TIME '13:00') AT TIME ZONE 'America/Sao_Paulo'
+        END,
+        NULL
     FROM fixture_attachments_manifest
     CROSS JOIN LATERAL (
         SELECT convert_to(
@@ -2382,7 +2409,7 @@ BEGIN
         bytes = EXCLUDED.bytes,
         updated_at = v_now,
         updated_by = NULL,
-        deleted_at = NULL,
+        deleted_at = EXCLUDED.deleted_at,
         deleted_by = NULL
     WHERE (
         current_attachment.form_id,
@@ -2404,7 +2431,7 @@ BEGIN
         EXCLUDED.page_count,
         EXCLUDED.sha256,
         EXCLUDED.bytes,
-        NULL,
+        EXCLUDED.deleted_at,
         NULL
     );
 END
