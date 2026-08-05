@@ -1,0 +1,24 @@
+1- Current, GAM organizes member information with a spreadsheet (docs\private-data\member_info_2026.csv).
+
+2- These are private data, it can't be git versioned.
+
+3- The data was collected via google forms that gam members fulfilled.
+
+4- Probably database new columns should be created, maybe even new entities or records.
+Some objective questions should have answears standardized in fixed possibilites, such as "Você já pensou ou tem vontade de ser da coordenação ou de alguma pasta mais a frente do GAM?" possible data would be "Yes", "No", "Maybe". Other might even to simplified to a boolean value or some more suitable primitive data structure.
+I think we could divide the spreadsheet info between permanent (or rarely changed) member info and specific form fulfilling info, for example:
+Name, Birth date, city, gam member since, phoneNumber, food restriction, etc would be part of the member entity (or new record that are part of member entity);
+"O que você gostaria de ver mais nas formações/reuniões do GAM ao longo do ano? O que gostaria de aprender?", "Sugestões de atividades/brincadeiras diferentes para realizar no ORATÓRIO:", "Sugestões de posts para o INSTAGRAM";
+ 
+Is creating a new "yearly form" entity relevant? Form completion is a future feature to include, besides it being out of scope for first release, we should know that is intended.
+
+5-Both prod and dev environments should include this data by default. Dev environment should also include extra data to fulfill all possible seams, as already stated by the requirements.
+
+6- The first release of the project do not intends that members actively use the system yet. The objective now is just provide the registrations so Coord can manage them, performing all coord actions available. So a decision must be made:
+
+I- Member entities should be created, but not linked to an account yet. Is there any issue with it?
+II- Member entities and accounts should be created (using the email informed in the form). How to manage the passwords (with first access, members should be able to create their passwords)? How to manage email changes (This wil probably be rare, but among 70 people it is very possible that someone want to change their email, since thos info was provided by the beginning of 2026 and the plan is to release member actively use by the beginning of 2027, or later)?
+
+Is there any other alternatives? 
+
+7- What else to consider?
