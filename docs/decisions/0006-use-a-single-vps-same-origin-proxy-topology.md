@@ -10,7 +10,7 @@ The browser frontend and backend API need a stable integration boundary. Hosting
 
 One VPS concentrates cost and operations, but it also concentrates failure. A host outage, compromise, resource exhaustion, or failed deployment can affect the proxy, frontend, backend, and database together. Provider ownership of the physical infrastructure does not by itself provide application backups, monitoring, or restoration.
 
-No official GAM-controlled domain or proxy product has been selected.
+No official GAM-controlled domain has been selected. ADR-0024 subsequently selects containerized Caddy as the initial proxy implementation without changing this topology.
 
 ## Decision
 Use one provider-neutral VPS for the initial production proxy, static frontend assets, backend service, and database service.
@@ -26,7 +26,7 @@ Use `/` for the static SPA and `/api` as the public API base. The proxy is GAM's
 - apply the accepted public browser-delivery policy; and
 - avoid logging credentials, session cookies, or security tokens.
 
-The proxy product may be Caddy, Nginx, or another implementation that satisfies the requirements. Product selection and host-versus-container packaging are deferred.
+Use containerized Caddy as selected by ADR-0024. A future proxy replacement must continue satisfying this ADR's public/private and same-origin boundaries.
 
 Only the proxy receives public GAM application traffic. Backend and database application ports remain private. Restricted administrative access is a separate operations channel.
 
@@ -114,6 +114,10 @@ Negative consequences:
 ## Related diagrams
 
 - [`docs/diagrams/initial-production-topology.md`](../diagrams/initial-production-topology.md)
+
+## Related ADRs
+
+- [ADR-0024: Deploy production directly to Hostinger KVM 2](0024-deploy-production-directly-to-hostinger-kvm-2.md)
 
 ## Related videos
 

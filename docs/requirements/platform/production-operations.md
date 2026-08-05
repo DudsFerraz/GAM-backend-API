@@ -8,6 +8,8 @@ GAM's initial production deployment favors a small, understandable operational f
 
 This specification makes the accepted single-host risk measurable through recovery, backup, monitoring, deployment, and rollback requirements. It defines readiness conditions but does not declare that GAM is currently production-ready.
 
+The [Production Backup and Recovery](production-backup-and-recovery.md) Requirement Specification specializes the backup boundary, retention, encryption, WORM, monitoring, audit, and restoration cadence in this specification.
+
 ## Ubiquitous Language
 
 - `production-ready`: Satisfying every required initial production safeguard in this specification in addition to application release criteria.
@@ -78,15 +80,17 @@ Invalid examples:
 ---
 
 ### REQ-OPS-004: Backup retention and isolation
-Production database backups shall be automated, encrypted in transit and at rest, stored outside the VPS, and retained as at least 30 rolling daily recovery points.
+Production database backups shall be automated, encrypted before leaving the VPS and while in transit and at rest, stored outside the VPS in Brazil, and retained as at least 30 rolling daily, 12 weekly, and 12 monthly recovery points.
 
-Backup credentials shall be separate from ordinary application credentials. A failure to create or transfer a scheduled backup shall generate an alert outside the VPS.
+Production recovery points shall receive the formal WORM guarantee, classifications, retain-until periods, data boundary, identity separation, monitoring, and audit required by the Production Backup and Recovery Requirement Specification.
+
+Backup credentials shall be separate from ordinary application credentials. A failure to create, validate, encrypt, transfer, or lock a scheduled backup shall generate an alert outside the VPS.
 
 Rationale:
 Backups on the failed or compromised host do not adequately address the single-VPS failure domain. Separate credentials limit the impact of an application compromise.
 
 Valid examples:
-- Encrypted daily backups are stored in external object storage with 30 recovery points.
+- Encrypted daily backups are stored in Brazilian external object storage with 30 daily, 12 weekly, and 12 monthly recovery points.
 - A failed backup job notifies an independently hosted alerting channel.
 
 Invalid examples:
@@ -95,23 +99,12 @@ Invalid examples:
 
 ---
 
-### REQ-OPS-005: Restoration readiness
-A successful restoration drill shall be completed and documented before the first production deployment and at least quarterly afterward.
+### REQ-OPS-005: Restoration readiness (superseded)
+`REQ-OPS-005` is superseded by `REQ-BACKUP-010`, `REQ-BACKUP-011`, and `REQ-OPS-010`.
 
-The drill shall restore a selected backup into an isolated environment and verify database integrity sufficient for application startup and representative authenticated reads without exposing production secrets or sending production side effects.
+The historical rule required a successful restoration before production and at least quarterly afterward, together with versioned deployment configuration and separately recoverable secrets. The developer explicitly replaced the quarterly cadence with one pre-production restoration, annual scripted restoration, and restoration after material backup-system changes because quarterly manual work is disproportionate for a solo developer.
 
-Proxy, deployment, and database-service configuration shall be versioned in the backend repository. Production secrets shall use a separate recoverable secret-management process and shall not be committed or embedded in database backups.
-
-Rationale:
-A backup is not proven usable until restoration is exercised, and database recovery alone is insufficient when deployment configuration or secrets cannot be reconstructed.
-
-Valid examples:
-- A quarterly drill records the selected backup, restoration outcome, verification, duration, and corrective actions.
-- Versioned deployment configuration can recreate the service topology on a replacement VPS.
-
-Invalid examples:
-- Backup job success is treated as proof that restoration works.
-- Production secrets are committed so a replacement server is easier to create.
+This historical quarterly rule shall not govern current production readiness.
 
 ---
 
@@ -195,14 +188,35 @@ Invalid examples:
 - Rollback depends on a mutable `latest` image.
 - An arbitrary database downgrade is assumed to be safe.
 
+---
+
+### REQ-OPS-010: Recoverable deployment configuration
+Host, proxy, composition, deployment, rollback, backup, monitoring, and restoration configuration shall be versioned and reproducible through the accepted Ansible-only provisioning model.
+
+Provider-account creation, billing, root MFA, initial client MFA enrollment, recovery-key custody, and alert-subscription confirmation may remain documented manual actions.
+
+Production secrets shall use a separate recoverable secret-management process and shall not be committed, embedded in images, or included in database backups.
+
+Rationale:
+Database recovery alone cannot restore service when host configuration, release identity, or required secrets cannot be reconstructed.
+
+Valid examples:
+- Ansible recreates the Caddy, backend, PostgreSQL, backup, and monitoring configuration on a replacement Ubuntu 24.04 host.
+- A recovery operator supplies secrets from approved external custody during provisioning.
+
+Invalid examples:
+- The only copy of a production secret exists on KVM 2.
+- A manual firewall or Compose change is required but absent from versioned configuration and the runbook.
+
 ## Acceptance scenarios
 
 ```gherkin
 Scenario: Production readiness requires off-host recovery
   Given GAM is preparing the first production deployment
   When production readiness is evaluated
-  Then at least 30 rolling daily encrypted backups exist outside the VPS
-  And a successful restoration drill is documented
+  Then the accepted daily, weekly, and monthly encrypted recovery points exist outside the VPS in Brazil
+  And the retained recovery points have the formal WORM guarantee
+  And a successful pre-production restoration is documented
   And the 24-hour RPO and RTO are supported by the runbooks
 
 Scenario: Detect a public outage independently
@@ -229,10 +243,7 @@ Scenario: Roll back a failed application pair
 
 ## Open questions
 
-* Which VPS provider will host the initial production deployment?
-* What CPU, memory, disk, and network capacity shall the initial VPS provide, and what evidence will validate that sizing before production?
-* Which external backup storage and credential-management products will be used?
-* Which monitoring and independent alert-delivery products will be used?
+* Which external availability and host-monitoring products will complement the accepted AWS backup monitor?
 * How far before certificate expiry shall the impending-expiry alert fire?
 * What rollback-window duration and planned maintenance schedule will be adopted before the first production deployment?
 
@@ -240,17 +251,20 @@ Scenario: Roll back a failed application pair
 
 * Declaring the current application production-ready.
 * High availability, database replication, multi-host deployment, and zero-downtime rollout.
-* Selecting a VPS, backup, monitoring, alerting, or secret-management vendor.
+* Reopening the accepted Hostinger KVM 2, Ubuntu 24.04, Caddy, Ansible, GHCR, AWS São Paulo, or formal WORM decisions without new contradictory evidence.
 * Defining tighter recovery objectives than the accepted initial 24-hour RPO and RTO.
 
 ## Related ADRs
 
 * [ADR-0006: Use a single-VPS same-origin proxy topology](../../decisions/0006-use-a-single-vps-same-origin-proxy-topology.md)
 * [ADR-0005: Keep frontend and backend in separate repositories](../../decisions/0005-keep-frontend-and-backend-in-separate-repositories.md)
+* [ADR-0024: Deploy production directly to Hostinger KVM 2](../../decisions/0024-deploy-production-directly-to-hostinger-kvm-2.md)
+* [ADR-0025: Use AWS São Paulo for immutable encrypted production backups](../../decisions/0025-use-aws-sao-paulo-for-immutable-encrypted-production-backups.md)
 
 ## Related requirements
 
 * [Web Delivery and Frontend Contract](web-delivery-and-frontend-contract.md)
+* [Production Backup and Recovery](production-backup-and-recovery.md)
 
 ## Related videos
 
