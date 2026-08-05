@@ -1,40 +1,16 @@
 # VPS Provider Decision: Hostinger
 
+This file is supporting procurement and validation guidance. [ADR-0024](../../decisions/0024-deploy-production-directly-to-hostinger-kvm-2.md) is the accepted source of truth for the direct KVM 2 decision.
+
 **Hostinger VPS with KVM virtualization** is the selected VPS provider for GAM’s initial production infrastructure.
 
-## Selected plans and adoption sequence
+## Selected plan and adoption sequence
 
-GAM will use the Hostinger KVM plans in two stages.
+GAM will acquire Hostinger KVM 2 directly for the initial production environment. KVM 1 will not be purchased as a disposable validation environment.
 
-### Stage 1: KVM 1 validation environment
+Validation, deployment rehearsal, backup testing, monitoring verification, load testing, and the pre-production restoration will run on KVM 2 before it receives real production traffic. Test data and temporary restored production data must remain isolated and be removed before launch.
 
-Hostinger KVM 1 will initially be acquired for a short period and used to:
-
-* Develop and validate the VPS provisioning process.
-* Rehearse production deployment.
-* Validate the reverse-proxy and same-origin topology.
-* Test the backend, frontend, and PostgreSQL composition.
-* Run representative load tests.
-* Test backup and restoration procedures.
-* Test monitoring and alert delivery.
-* Rehearse deployment and rollback.
-* Measure actual CPU, memory, storage, and network usage.
-* Confirm that the complete host can be rebuilt from versioned configuration.
-
-Hostinger currently documents KVM 1 with:
-
-* 1 vCPU
-* 4 GB RAM
-* 50 GB NVMe storage
-* 4 TB network transfer
-
-These specifications are procurement facts that must be verified again when the plan is purchased because provider plans, prices, limits, and commercial terms may change. ([Hostinger][1])
-
-KVM 1 is considered appropriate for development, infrastructure rehearsal, load testing, and potentially a brief controlled initial-production validation. It is not assumed to be sufficient for long-term production until supported by measurements.
-
-### Stage 2: KVM 2 initial production environment
-
-Hostinger KVM 2 is the intended conservative production configuration after the KVM 1 validation period.
+This direct adoption replaces the older two-stage KVM 1-to-KVM 2 proposal. The accepted decision is recorded in [ADR-0024](../../decisions/0024-deploy-production-directly-to-hostinger-kvm-2.md).
 
 Hostinger currently documents KVM 2 with:
 
@@ -43,9 +19,11 @@ Hostinger currently documents KVM 2 with:
 * 100 GB NVMe storage
 * 8 TB network transfer
 
-Hostinger currently applies the same documented 300 MB/s I/O limit to KVM 1 and KVM 2. ([Hostinger][1])
+Hostinger currently documents a 300 MB/s I/O limit for KVM 2. ([Hostinger][1])
 
-KVM 2 is preferred for initial production because the additional resources provide operational headroom for running all of the following on one host:
+These specifications are procurement facts that must be verified again when the plan is purchased because provider plans, prices, limits, and commercial terms may change. ([Hostinger][1])
+
+KVM 2 is selected for initial production because its resources provide operational headroom for running all of the following on one host:
 
 * Operating system services
 * Docker Engine and Docker Compose
@@ -65,7 +43,7 @@ KVM 2 must therefore still be validated using production-like data and represent
 
 ### vCPU
 
-KVM 1 provides one vCPU. This may be sufficient during normal low-traffic operation, but all CPU-dependent activities must share the same virtual CPU, including:
+KVM 2's currently documented two vCPUs must be shared by all CPU-dependent activities, including:
 
 * Backend request processing
 * JVM garbage collection
@@ -76,22 +54,13 @@ KVM 1 provides one vCPU. This may be sufficient during normal low-traffic operat
 * Container startup and image extraction
 * Monitoring processes
 
-KVM 2 provides two vCPUs, allowing the backend and PostgreSQL to make progress concurrently and reducing interference between normal requests and operational work.
+Two vCPUs allow the backend and PostgreSQL to make progress concurrently and reduce interference between normal requests and operational work.
 
 The initial plans use regular virtual CPUs rather than dedicated CPU infrastructure. Dedicated CPU capacity is not currently justified by GAM’s expected average workload. A future move to additional or dedicated CPU resources must be based on evidence such as sustained CPU saturation, high CPU-steal time, unstable response latency, or unacceptable interference from backups and maintenance tasks.
 
 ### RAM
 
-KVM 1 provides 4 GB RAM. This is expected to be usable for validation if memory is explicitly controlled, including:
-
-* A bounded JVM heap
-* Conservative PostgreSQL memory settings
-* Container memory limits
-* Controlled log retention
-* No unnecessary host services
-* Minimal or no swap dependence
-
-KVM 2 provides 8 GB RAM and is the safer production target because it gives more room for:
+KVM 2's currently documented 8 GB RAM gives room for:
 
 * JVM heap and native JVM memory
 * PostgreSQL memory and filesystem cache
@@ -106,7 +75,7 @@ The production configuration must not assume that all available memory can be as
 
 ### Storage
 
-KVM 1 provides 50 GB of total VPS disk space, while KVM 2 provides 100 GB. This capacity is shared by the entire host, including:
+KVM 2's currently documented 100 GB is shared by the entire host, including:
 
 * Operating system
 * Installed packages
@@ -134,7 +103,7 @@ If GAM stores user-uploaded documents or media, their expected growth must be es
 
 ### Network
 
-Hostinger currently advertises a 1 Gbps network connection for its VPS plans, while KVM 1 and KVM 2 currently include 4 TB and 8 TB of transfer, respectively. ([Hostinger][2])
+Hostinger currently advertises a 1 Gbps network connection and 8 TB of transfer for KVM 2. ([Hostinger][2])
 
 These allowances are expected to exceed GAM’s initial requirements unless the application begins serving large files or other bandwidth-intensive content.
 
@@ -210,9 +179,9 @@ The automated configuration should include:
 
 The application composition should remain portable and versioned. Hostinger-specific information must not be embedded in frontend URLs, backend artifacts, database schema, or application code.
 
-## Transition from KVM 1 to KVM 2
+## KVM 2 replacement or future plan change
 
-Hostinger supports upgrades between eligible KVM plans. Therefore, moving from KVM 1 to KVM 2 may be possible without manually configuring a completely separate VPS. ([Hostinger][3])
+Hostinger supports upgrades between eligible KVM plans. Any future KVM 2 replacement or upgrade may therefore use an in-place provider operation or a newly provisioned VPS. ([Hostinger][3])
 
 However, the availability of an in-place upgrade must not be treated as a substitute for reproducible provisioning.
 
@@ -240,14 +209,11 @@ After upgrading:
 
 The plan upgrade must be treated as a controlled infrastructure change with possible downtime.
 
-## Development-to-production transition
+## Validation-to-production transition
 
-The KVM 1 validation VPS must not be converted into production merely by changing its environment variables.
+The KVM 2 host used for pre-production validation must not receive real production traffic merely because environment variables are changed.
 
-Before it receives real production traffic, one of the following must occur:
-
-* The VPS is rebuilt from a clean operating-system image using the approved provisioning automation; or
-* A separate clean VPS is provisioned using the same automation.
+Before launch, the accepted provisioning automation must produce and verify the complete production configuration. Temporary validation data and access must be removed. A clean operating-system reinstall is required only when the developer cannot prove that validation state and informal configuration have been removed.
 
 The clean production preparation must ensure that the server does not retain:
 
@@ -265,7 +231,7 @@ The clean production preparation must ensure that the server does not retain:
 
 Reinstalling a Hostinger VPS operating system deletes the server’s existing data and may also delete an existing snapshot. A verified off-host backup is therefore required before any reinstall operation involving data that must be preserved. ([Hostinger][4])
 
-Because GAM currently has no production data, the preferred approach is to treat KVM 1 as disposable and prove that a clean environment can be reconstructed from the operations repository before the first production release.
+Because GAM currently has no production data, validation should use generated production-like data and preserve the option to reinstall KVM 2 cleanly before the first production release when isolation cannot otherwise be demonstrated.
 
 ## Hostinger backups and snapshots
 
@@ -291,7 +257,7 @@ Before production, GAM must independently implement:
 * Documented retention
 * Backup-age monitoring
 * Failure alerts
-* Isolated restoration drills
+* The isolated pre-production restoration and accepted annual restoration procedure
 * Verification of restored application access and data
 
 A Hostinger backup or snapshot must not be considered valid solely because it appears in hPanel. Its restoration process must be tested before production.
@@ -326,7 +292,7 @@ The VPS must be treated as self-managed infrastructure. Provider tooling, includ
 
 ## Validation criteria
 
-KVM 1 must be tested with production-like data and representative user behavior before final production sizing is accepted.
+KVM 2 must be tested with production-like data and representative user behavior before production traffic is accepted.
 
 The test should include:
 
@@ -361,11 +327,7 @@ At minimum, the test must measure:
 * Backup duration
 * Application behavior during backup
 
-The final decision must be evidence-based:
-
-* KVM 1 may remain temporarily in production if tests demonstrate acceptable performance and sufficient safety margin.
-* KVM 2 should be selected when KVM 1 lacks CPU, memory, storage, or operational headroom.
-* Additional capacity should be considered only after measurements identify the limiting resource.
+The KVM 2 selection is accepted. Measurements determine safe resource limits and whether a future upgrade is needed; they do not reopen KVM 1 as a temporary environment.
 
 The project must avoid assuming that a particular plan is sufficient merely because its advertised resources appear large relative to the number of monthly users.
 
@@ -406,13 +368,13 @@ Hostinger KVM VPS is accepted as GAM’s initial infrastructure provider.
 
 The adopted sequence is:
 
-1. Use KVM 1 as a temporary development, provisioning, deployment, recovery, and capacity-validation environment.
-2. Rebuild or provision a clean environment before accepting real production traffic.
-3. Use production-like load and recovery testing to validate resource requirements.
-4. Adopt KVM 2 as the conservative initial production plan when the tests demonstrate that KVM 1 lacks adequate operational headroom.
+1. Acquire Hostinger KVM 2 directly in a Brazilian location with Ubuntu Server 24.04 LTS.
+2. Apply the accepted Ansible-only provisioning model.
+3. Use generated production-like load and recovery testing on KVM 2 before launch.
+4. Remove all validation data and informal access before accepting real production traffic.
 5. Keep all host configuration, application composition, deployment procedures, and recovery procedures versioned and reproducible.
 6. Treat Hostinger backups and snapshots as supplementary recovery mechanisms.
-7. Maintain independent encrypted PostgreSQL backups and tested restoration procedures.
+7. Maintain the accepted AWS São Paulo encrypted WORM PostgreSQL backups and restoration procedure.
 8. Preserve the ability to rebuild the complete system and migrate away from Hostinger if required.
 
 This can serve as the provider-decision section in the backend-owned operations or production architecture documentation.

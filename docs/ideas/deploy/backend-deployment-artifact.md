@@ -52,7 +52,7 @@ The backend pipeline will:
 1. Compile and test the Java application.
 2. Produce the backend JAR.
 3. Package that JAR into an OCI image.
-4. Publish the OCI image to an approved container registry.
+4. Publish the OCI image to private GitHub Container Registry (GHCR).
 5. Record the image version and immutable digest.
 6. Deploy the image by digest through the canonical production composition.
 
@@ -228,6 +228,8 @@ The base image version must not rely only on a floating tag. The build process s
 ---
 
 ## Registry requirements
+
+Private GHCR is the selected initial production registry.
 
 The selected container registry must support:
 
@@ -589,9 +591,9 @@ This decision is considered implemented when:
 - The image contains the approved Java runtime.
 - The image runs as a non-root user.
 - The image contains no production secrets.
-- The image is published to the approved registry.
+- The image is published to private GHCR.
 - The image digest is recorded.
-- The Hostinger validation VPS can pull and run the image.
+- Hostinger KVM 2 can pull and run the image before production traffic is enabled.
 - Docker Compose references an explicit version and digest.
 - Backend and PostgreSQL ports remain private.
 - Health checks verify readiness.

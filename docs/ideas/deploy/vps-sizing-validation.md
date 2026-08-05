@@ -2,7 +2,7 @@
 
 This document defines how GAM will validate whether a Hostinger KVM VPS has sufficient CPU, memory, storage, and network capacity for initial production.
 
-If the KVM 1 is discarded this validation could become unnecessary or, at least, adpted and less relevant.
+Hostinger KVM 2 is the accepted direct production plan. This validation therefore determines safe resource limits, production readiness, and future upgrade triggers on KVM 2; it does not compare KVM 1 against KVM 2.
 
 The sizing decision must be based on measured production-like behavior rather than only on:
 
@@ -21,8 +21,7 @@ The current working assumptions are:
 - One VPS hosting the reverse proxy, static frontend, backend, and PostgreSQL
 - Planned maintenance downtime is acceptable
 - High availability and multi-host scaling are outside the initial scope
-- Hostinger KVM 1 is the initial validation environment
-- Hostinger KVM 2 is the conservative initial production candidate
+- Hostinger KVM 2 is the validation and direct initial production environment
 
 ---
 
@@ -30,12 +29,12 @@ The current working assumptions are:
 
 The validation process must answer the following questions:
 
-1. Can KVM 1 safely run the complete production-like composition?
+1. Can KVM 2 safely run the complete production-like composition?
 2. Can the system handle the expected 100-user peak with acceptable response times?
 3. Does the application retain sufficient capacity while backups, monitoring, and other operational work are running?
-4. Is 4 GB RAM sufficient, or is KVM 2's 8 GB required?
-5. Is one vCPU sufficient, or do two vCPUs materially improve stability?
-6. Is 50 GB storage sufficient for the operating system, containers, PostgreSQL, logs, releases, and recovery work?
+4. Which explicit JVM, PostgreSQL, container, and host memory limits preserve safe margin within KVM 2?
+5. Do KVM 2's two vCPUs provide stable latency during peak and operational work?
+6. Does KVM 2 storage preserve enough free space for the operating system, containers, PostgreSQL, logs, releases, and recovery work?
 7. What resource reaches its limit first?
 8. What thresholds should trigger a future VPS upgrade?
 9. Can the complete environment recover and return to service within the accepted RTO?
@@ -76,15 +75,9 @@ The sizing model must therefore use workload characteristics such as:
 
 ## Decision model
 
-KVM 1 must be treated as a hypothesis:
+KVM 2 is the accepted initial plan rather than a hypothesis competing with KVM 1.
 
-> A Hostinger KVM 1 VPS may be sufficient for GAM's initial production workload if realistic testing demonstrates acceptable performance, reliability, and operational headroom.
-
-KVM 2 must be treated as the conservative fallback:
-
-> GAM should use Hostinger KVM 2 when KVM 1 lacks sufficient CPU, memory, storage, or operational margin under representative peak and maintenance conditions.
-
-The project must not upgrade or retain a plan solely because of intuition. The decision must cite recorded test evidence.
+Testing must demonstrate whether the selected resource limits and composition preserve production headroom. Evidence determines configuration changes and future upgrade triggers; it does not reopen a disposable KVM 1 phase.
 
 ---
 
@@ -612,9 +605,9 @@ This is a planning margin, not a strict mathematical guarantee.
 
 ---
 
-## KVM 1 decision criteria
+## KVM 2 production-readiness criteria
 
-KVM 1 may be accepted for limited initial production only when all of the following are true:
+KVM 2 may receive production traffic only when all of the following are true:
 
 - The full production-like composition runs reliably.
 - The expected 100-user test meets the agreed latency and error criteria.
@@ -626,16 +619,9 @@ KVM 1 may be accepted for limited initial production only when all of the follow
 - Restoration has sufficient working space.
 - The extended test shows no memory or connection leaks.
 - At least 20% practical headroom remains in the limiting resource.
-- The team documents the conditions under which an upgrade must occur.
-- KVM 2 can be acquired or activated within an acceptable operational period.
+- Future upgrade triggers are documented.
 
-KVM 1 should not be accepted merely because it successfully starts the application or handles a few manual users.
-
----
-
-## KVM 2 decision criteria
-
-KVM 2 should be selected when any of the following occurs on KVM 1:
+KVM 2 requires a capacity review or future upgrade when any of the following occurs:
 
 - Memory usage approaches the safe limit.
 - JVM memory must be constrained so heavily that application performance suffers.
@@ -651,7 +637,7 @@ KVM 2 should be selected when any of the following occurs on KVM 1:
 - The expected peak passes only without meaningful safety margin.
 - Shared operational work interferes excessively with user requests.
 
-KVM 2 should also be selected when its additional cost is small relative to the operational risk avoided.
+A future larger plan should be selected only after evidence identifies the limiting resource and shows that configuration or application correction is insufficient.
 
 ---
 
@@ -670,7 +656,7 @@ Likely indicators:
 
 Likely responses:
 
-- Move from one vCPU to two vCPUs
+- Move beyond KVM 2 only after confirming a CPU limit rather than an application or query defect
 - Optimize expensive queries
 - Reduce unnecessary application work
 - Review report generation
@@ -693,7 +679,7 @@ Likely indicators:
 
 Likely responses:
 
-- Move from 4 GB to 8 GB
+- Move beyond KVM 2 only after confirming that memory tuning or leak correction cannot preserve safe margin
 - Review JVM heap and native memory
 - Review thread count
 - Review connection-pool size
@@ -947,7 +933,7 @@ Approved by:
 
 The current validation sequence is:
 
-1. Provision Hostinger KVM 1.
+1. Provision Hostinger KVM 2 directly with Ubuntu Server 24.04 LTS.
 2. Deploy the complete production-like stack.
 3. Validate normal 1–8-user behavior.
 4. Validate the expected 100-user peak.
@@ -956,10 +942,10 @@ The current validation sequence is:
 7. Rehearse deployment and rollback.
 8. Restore the system in an isolated environment.
 9. Evaluate CPU, memory, storage, disk I/O, and network evidence.
-10. Retain KVM 1 only if it passes with sufficient operational headroom.
-11. Otherwise, move to KVM 2 and repeat the relevant tests.
+10. Record safe KVM 2 resource limits and production headroom.
+11. Upgrade beyond KVM 2 only when evidence shows that the selected plan cannot meet the accepted criteria.
 
-KVM 2 remains the conservative initial production candidate because two vCPUs, 8 GB RAM, and 100 GB storage provide more room for the Java backend, PostgreSQL, backups, deployments, and workload variation.
+KVM 2 is the accepted direct initial production plan because its currently documented two vCPUs, 8 GB RAM, and 100 GB storage provide room for the Java backend, PostgreSQL, backups, deployments, and workload variation.
 
 The final size must remain evidence-based.
 
@@ -967,7 +953,7 @@ The final size must remain evidence-based.
 
 ## Final decision rule
 
-GAM will use the smallest Hostinger KVM plan that:
+GAM will launch on Hostinger KVM 2 when it:
 
 - Meets functional requirements
 - Meets the agreed latency and error objectives

@@ -1,6 +1,6 @@
-# 6. Repeatable provisioning: you should not configure it manually twice
+# 6. Repeatable provisioning: rebuild without undocumented manual configuration
 
-You will operate two separate VPS instances, but you should not perform two separate manual configurations.
+GAM will operate one Hostinger KVM 2 production VPS initially, but the host must remain reproducible for recovery, replacement, or migration. The accepted automation choice is Ansible only; Terraform is deferred.
 
 Structure the deployment repository into four layers:
 
@@ -41,7 +41,7 @@ Keep this thin:
 * DNS records
 * Optional provider snapshot schedule
 
-Use Terraform where the provider support is dependable. Where it is not, document the small number of manual provider-console operations.
+Use Ansible for the accepted automated configuration surface. Document the small number of provider-account, billing, MFA, purchase, region, operating-system image, initial SSH, firewall, and email-confirmation operations that remain manual. Do not introduce Terraform state for the initial deployment.
 
 ### Provider-neutral host configuration
 
@@ -62,11 +62,11 @@ Use Ansible or an equivalent idempotent system to configure:
 
 ### Application composition
 
-The same Docker Compose and Caddy configuration should run on both VPSs with only environment-specific secrets and origin values changing.
+The same Docker Compose and Caddy configuration should run on KVM 2 and any future isolated recovery or replacement environment, with only environment-specific secrets and origin values changing.
 
 ## Migration rehearsal
 
-At the end of the validation month:
+When GAM performs a future provider migration or full host replacement:
 
 1. Create a backup.
 2. Provision a completely new VPS.

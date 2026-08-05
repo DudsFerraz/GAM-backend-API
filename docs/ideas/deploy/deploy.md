@@ -2,6 +2,8 @@
 
 This file is a non-normative collection of ideas for later deployment requirements and runbooks. Accepted Requirement Specifications remain the source of truth.
 
+Current accepted deployment decisions are documented in [ADR-0024](../../decisions/0024-deploy-production-directly-to-hostinger-kvm-2.md), [ADR-0025](../../decisions/0025-use-aws-sao-paulo-for-immutable-encrypted-production-backups.md), and the [Production Backup and Recovery Requirement Specification](../../requirements/platform/production-backup-and-recovery.md). Where older ideas in this file conflict with those artifacts, the accepted artifacts win.
+
 The priority should be **reproducibility, recovery and security**, not high availability.
 
 ---
@@ -22,6 +24,13 @@ These should not be reopened during provider selection unless new evidence creat
 * RPO and RTO are both 24 hours.
 * Provider snapshots are supplementary, not the primary backup mechanism.
 * Production CORS and cross-origin frontend/API deployment are unsupported.
+* Hostinger KVM 2 in Brazil is the direct production target; KVM 1 will not be acquired.
+* Ubuntu Server 24.04 LTS is the host operating system.
+* Caddy runs in the canonical Docker Compose composition.
+* The backend is pulled from private GHCR by immutable OCI digest.
+* Ansible is the only initial provisioning automation; Terraform is deferred.
+* AWS S3 in `sa-east-1` is the selected off-host backup destination.
+* Production recovery points use Compliance-mode Object Lock as a formal WORM guarantee.
 
 Those decisions form a coherent initial-production model.
 
@@ -77,7 +86,9 @@ Keep host software minimal:
 * `curl`
 * `jq`
 * `rsync`
-* `restic` or equivalent backup client
+* PostgreSQL client backup tools
+* `age`
+* AWS CLI or the approved S3 upload client
 * Monitoring agent
 * Basic troubleshooting utilities
 * Time synchronization
@@ -190,9 +201,10 @@ Use two different identities:
 ### Recovery administrator
 
 * Can read and restore backups
-* Can alter retention or Object Lock configuration
 * Does not live on the VPS
 * Is stored in the team password manager with MFA-protected provider access
+
+Production recovery objects use Compliance-mode Object Lock, so no recovery administrator, including AWS root, can alter or shorten active retention. Two named client custodians receive individual read-only recovery identities.
 
 This reduces the impact of complete VPS compromise.
 
@@ -207,26 +219,27 @@ Run a daily PostgreSQL logical backup using `pg_dump` in custom format, together
 Suggested process:
 
 1. Create a consistent custom-format dump.
-2. Capture database roles and required metadata.
-3. Verify that the dump completed successfully.
-4. Encrypt it client-side using restic or an equivalent repository format.
-5. Upload it off-host.
-6. Record checksum, timestamp, size and database version.
-7. Send a successful backup heartbeat.
-8. Alert when no successful backup occurs within 26 hours.
+2. Exclude refresh-token rows while preserving the table schema.
+3. Capture database roles without passwords and the required manifest metadata.
+4. Verify that the dump completed and can be structurally inspected.
+5. Encrypt it client-side to the independent developer and client `age` recipients.
+6. Upload one standalone object to AWS S3 in `sa-east-1`.
+7. Verify checksum, timestamp, size, classification, and Compliance retention.
+8. Remove local plaintext and staging files.
+9. Allow the independent AWS monitor to validate the current-day object.
 
 ## Suggested retention
 
-* 7 daily backups
-* 5 weekly backups
+* 30 daily backups
+* 12 weekly backups selected from Monday's successful daily artifact
 * 12 monthly backups
-* Pre-migration backup retained for at least 30 days
+* 31/85/370-day Compliance-mode retain-until periods
 
-Use immutable retention or Object Lock for 14–30 days where available.
+Select weekly and monthly recovery points from the same daily artifacts instead of creating duplicate backup executions.
 
 ## Off-host destination
 
-When the VPS is on Hostinger, Vultr or Akamai, use an object-storage account from a different provider. A strong default is **AWS S3 in São Paulo**, especially when Brazilian data location is important.
+Use **AWS S3 in São Paulo (`sa-east-1`)** under the developer's existing AWS account. All recovery objects remain in Brazil.
 
 Amazon S3 applies server-side encryption by default, and S3 Object Lock can prevent objects from being overwritten or deleted for a configured retention period. ([AWS Documentation][10])
 
@@ -263,23 +276,9 @@ Before purchasing any provider, test:
 
 A backup is not accepted as successful until it has been restored.
 
-Before production:
+Before production, run the scripted restoration into an isolated environment, verify representative application behavior, record the result, and destroy temporary plaintext and restored data.
 
-1. Provision an isolated disposable VPS.
-2. Install the canonical configuration.
-3. Restore the PostgreSQL backup.
-4. Deploy the selected application pair.
-5. Verify user login.
-6. Exercise representative reads and writes.
-7. Verify database row counts or application invariants.
-8. Record restoration duration.
-9. Destroy the isolated environment.
-
-Perform restoration:
-
-* Monthly during the initial production period
-* Quarterly after the process has repeatedly succeeded
-* After major PostgreSQL, operating-system or backup-tool changes
+After production, perform the scripted restoration annually and after PostgreSQL major-version, backup-format, encryption-scheme, or recovery-key changes. Quarterly restoration and scheduled annual fresh-host reconstruction are not required for the solo-developer operating model.
 
 Although the accepted RTO is 24 hours, the operational procedure should target restoring service in approximately four hours. That leaves margin for diagnosis and approval delays.
 
@@ -298,6 +297,8 @@ Monitor:
 * Domain expiry
 * Daily backup heartbeat
 * Optional deployment heartbeat
+
+The selected backup-specific monitor is AWS EventBridge Scheduler plus Lambda and SNS. It checks at 04:30 São Paulo time, alerts the developer immediately, and escalates an unresolved failure to the client custodians at 12:00. Better Stack remains only a non-normative candidate for public availability, host, TLS, and domain monitoring.
 
 Better Stack’s HTTP monitoring checks expected HTTP responses and creates incidents on failure. It also supports SSL certificate and domain-expiration monitoring. ([Better Stack][12])
 
