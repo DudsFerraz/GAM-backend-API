@@ -362,6 +362,12 @@ class OratorianoAdditionalFormsApiIT extends OratorioModuleApiTestSupport {
                 .statusCode(201)
                 .extract();
         UUID snapshotId = UUID.fromString(snapshot.path("id"));
+        UUID attachmentId = UUID.fromString(replaceAttachments(
+                caller,
+                oratorianoId,
+                formId,
+                List.of(new TestAttachment("signed-form.pdf", "application/pdf", pdfBytes(64)))
+        ).path("[0].id"));
         clearActivities();
 
         ExtractableResponse<Response> deletion = authenticatedJsonRequest(caller)
@@ -376,6 +382,15 @@ class OratorianoAdditionalFormsApiIT extends OratorioModuleApiTestSupport {
                 .get(formPath(oratorianoId, formId)).statusCode()).isEqualTo(404);
         assertThat(authenticatedJsonRequest(caller)
                 .get(formPath(oratorianoId, formId) + "/print-snapshots/{snapshotId}/pdf", snapshotId)
+                .statusCode()).isEqualTo(404);
+        assertThat(authenticatedJsonRequest(caller)
+                .get(formPath(oratorianoId, formId) + "/print-snapshots")
+                .statusCode()).isEqualTo(404);
+        assertThat(authenticatedJsonRequest(caller)
+                .get(formPath(oratorianoId, formId) + "/signed-attachments")
+                .statusCode()).isEqualTo(404);
+        assertThat(authenticatedJsonRequest(caller)
+                .get(formPath(oratorianoId, formId) + "/signed-attachments/{attachmentId}", attachmentId)
                 .statusCode()).isEqualTo(404);
     }
 
@@ -719,6 +734,277 @@ class OratorianoAdditionalFormsApiIT extends OratorioModuleApiTestSupport {
     }
 
     @Test
+    @DisplayName("REQ-ORATORIANO-FORM-020 and REQ-OPENAPI-007 - recoverable snapshots -> exact newest-first paged metadata without audit")
+    void printSnapshotMetadataShouldRecoverEveryRevisionNewestFirstWithoutAudit() {
+        AuthSession caller = sudoSession();
+        UUID oratorianoId = createOratoriano(caller, "Snapshot", "Recovery");
+        UUID formId = draftId(createDraft(caller, oratorianoId, "DIRECT_SYSTEM_ENTRY"));
+        setCurrentInstant(Instant.parse("2026-07-25T13:00:00Z"));
+        ExtractableResponse<Response> older = authenticatedJsonRequest(caller)
+                .post(formPath(oratorianoId, formId) + "/print-snapshots")
+                .then()
+                .statusCode(201)
+                .extract();
+        authenticatedJsonRequest(caller)
+                .body(Map.of("firstName", "Snapshot"))
+                .put(formPath(oratorianoId, formId))
+                .then()
+                .statusCode(200);
+        setCurrentInstant(Instant.parse("2026-07-25T14:00:00Z"));
+        ExtractableResponse<Response> newer = authenticatedJsonRequest(caller)
+                .post(formPath(oratorianoId, formId) + "/print-snapshots")
+                .then()
+                .statusCode(201)
+                .extract();
+        clearActivities();
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .get(formPath(oratorianoId, formId) + "/print-snapshots")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(200);
+        Map<String, Object> page = response.jsonPath().getMap("$");
+        assertThat(page).containsOnlyKeys(
+                "items", "page", "size", "totalElements", "totalPages", "first", "last"
+        );
+        assertThat(page)
+                .containsEntry("page", 0)
+                .containsEntry("size", 20)
+                .containsEntry("totalElements", 2)
+                .containsEntry("totalPages", 1)
+                .containsEntry("first", true)
+                .containsEntry("last", true);
+        List<Map<String, Object>> items = response.path("items");
+        assertThat(items).hasSize(2);
+        assertThat(items)
+                .allSatisfy(item -> assertThat(item).containsOnlyKeys(
+                        "id", "draftRevision", "mode", "generatedAt", "templateVersion", "pageCount"
+                ));
+        assertThat(items).extracting(item -> item.get("id"))
+                .containsExactly(newer.path("id"), older.path("id"));
+        assertThat(items).extracting(item -> ((Number) item.get("draftRevision")).longValue())
+                .containsExactly(newer.<Number>path("draftRevision").longValue(),
+                        older.<Number>path("draftRevision").longValue());
+
+        List<Map<String, Object>> ascending = authenticatedJsonRequest(caller)
+                .queryParam("sort", "generatedAt,asc")
+                .get(formPath(oratorianoId, formId) + "/print-snapshots")
+                .then()
+                .statusCode(200)
+                .extract()
+                .path("items");
+        assertThat(ascending).extracting(item -> item.get("id"))
+                .containsExactly(older.path("id"), newer.path("id"));
+        assertThat(activityLogCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-FORM-020 and REQ-OPENAPI-007 - equal generation times -> snapshot UUID descending tie-breaker")
+    void printSnapshotMetadataShouldUseStableUuidDescendingTieBreaker() {
+        AuthSession caller = sudoSession();
+        UUID oratorianoId = createOratoriano(caller, "Snapshot", "Tie Breaker");
+        UUID formId = draftId(createDraft(caller, oratorianoId, "PAPER_TRANSCRIPTION"));
+        setCurrentInstant(Instant.parse("2026-07-25T13:00:00Z"));
+        String firstId = authenticatedJsonRequest(caller)
+                .post(formPath(oratorianoId, formId) + "/print-snapshots")
+                .then()
+                .statusCode(201)
+                .extract()
+                .path("id");
+        String secondId = authenticatedJsonRequest(caller)
+                .post(formPath(oratorianoId, formId) + "/print-snapshots")
+                .then()
+                .statusCode(201)
+                .extract()
+                .path("id");
+        List<String> expected = Stream.of(firstId, secondId)
+                .sorted(java.util.Comparator.reverseOrder())
+                .toList();
+        clearActivities();
+
+        List<Map<String, Object>> items = authenticatedJsonRequest(caller)
+                .get(formPath(oratorianoId, formId) + "/print-snapshots")
+                .then()
+                .statusCode(200)
+                .extract()
+                .path("items");
+
+        assertThat(items).extracting(item -> item.get("id").toString())
+                .containsExactlyElementsOf(expected);
+        assertThat(activityLogCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-FORM-020 and REQ-OPENAPI-007 - empty and far non-negative pages -> stable empty page")
+    void printSnapshotMetadataShouldRepresentEmptyAndFarPagesWithoutOverflow() {
+        AuthSession caller = sudoSession();
+        UUID oratorianoId = createOratoriano(caller, "Snapshot", "Empty Page");
+        UUID formId = draftId(createDraft(caller, oratorianoId, "PAPER_TRANSCRIPTION"));
+
+        ExtractableResponse<Response> empty = authenticatedJsonRequest(caller)
+                .get(formPath(oratorianoId, formId) + "/print-snapshots")
+                .then()
+                .statusCode(200)
+                .extract();
+        assertThat(empty.<List<Object>>path("items")).isEmpty();
+        assertThat(empty.<Number>path("totalElements").longValue()).isZero();
+        assertThat(empty.<Number>path("totalPages").intValue()).isZero();
+        assertThat(empty.<Boolean>path("first")).isTrue();
+        assertThat(empty.<Boolean>path("last")).isTrue();
+
+        ExtractableResponse<Response> farPage = authenticatedJsonRequest(caller)
+                .queryParam("page", Integer.MAX_VALUE)
+                .queryParam("size", 100)
+                .get(formPath(oratorianoId, formId) + "/print-snapshots")
+                .then()
+                .extract();
+
+        assertThat(farPage.statusCode()).as(farPage.asString()).isEqualTo(200);
+        assertThat(farPage.<List<Object>>path("items")).isEmpty();
+        assertThat(farPage.<Number>path("page").intValue()).isEqualTo(Integer.MAX_VALUE);
+        assertThat(farPage.<Number>path("size").intValue()).isEqualTo(100);
+        assertThat(farPage.<Boolean>path("first")).isFalse();
+        assertThat(farPage.<Boolean>path("last")).isTrue();
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"size=101", "sort=id,asc", "sort=generatedAt,sideways"})
+    @DisplayName("REQ-ORATORIANO-FORM-020 and REQ-OPENAPI-007 - invalid snapshot paging or sorting -> HTTP 400")
+    void invalidPrintSnapshotPagingShouldBeRejected(String query) {
+        AuthSession caller = sudoSession();
+        UUID oratorianoId = createOratoriano(caller, "Snapshot", "Boundary");
+        UUID formId = draftId(createDraft(caller, oratorianoId, "PAPER_TRANSCRIPTION"));
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .get(formPath(oratorianoId, formId) + "/print-snapshots?" + query)
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(400);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"DRAFT", "COMPLETED", "SUPERSEDED", "REVOKED"})
+    @DisplayName("REQ-ORATORIANO-FORM-020 and REQ-ORATORIANO-FORM-021 - artifact metadata remains readable in every non-deleted lifecycle state")
+    void artifactMetadataShouldRemainReadableInEveryLifecycleState(String status) {
+        AuthSession caller = sudoSession();
+        UUID oratorianoId = createOratoriano(caller, "Artifact", status);
+        UUID formId = draftId(createDraft(caller, oratorianoId, "PAPER_TRANSCRIPTION"));
+        if (!"DRAFT".equals(status)) {
+            jdbcTemplate.update(
+                    "UPDATE oratoriano_additional_forms SET status = ?::oratoriano_form_status_enum WHERE id = ?",
+                    status,
+                    formId
+            );
+        }
+
+        assertThat(authenticatedJsonRequest(caller)
+                .get(formPath(oratorianoId, formId) + "/print-snapshots").statusCode())
+                .isEqualTo(200);
+        assertThat(authenticatedJsonRequest(caller)
+                .get(formPath(oratorianoId, formId) + "/signed-attachments").statusCode())
+                .isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-FORM-020 and REQ-ORATORIANO-FORM-021 - recovery metadata -> authenticated and permission-protected")
+    void artifactMetadataShouldRequireItsDedicatedPermissions() {
+        AuthSession caller = sudoSession();
+        AuthSession member = newSession("MEMBER");
+        UUID oratorianoId = createOratoriano(caller, "Artifact", "Security");
+        UUID formId = draftId(createDraft(caller, oratorianoId, "PAPER_TRANSCRIPTION"));
+        String snapshots = formPath(oratorianoId, formId) + "/print-snapshots";
+        String attachments = formPath(oratorianoId, formId) + "/signed-attachments";
+
+        assertThat(jsonRequest().get(snapshots).statusCode()).isEqualTo(401);
+        assertThat(authenticatedJsonRequest(member).get(snapshots).statusCode()).isEqualTo(403);
+        assertThat(authenticatedJsonRequest(caller).get(snapshots).statusCode()).isEqualTo(200);
+        assertThat(jsonRequest().get(attachments).statusCode()).isEqualTo(401);
+        assertThat(authenticatedJsonRequest(member).get(attachments).statusCode()).isEqualTo(403);
+        assertThat(authenticatedJsonRequest(caller).get(attachments).statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-FORM-022 and REQ-ORATORIANO-FORM-023 - typed partial detail and history -> current actor display name")
+    void formResponsesShouldPreservePartialTypedDataAndCurrentActorDisplayName() {
+        AuthSession caller = sudoSession();
+        UUID oratorianoId = createOratoriano(caller, "Typed", "Response");
+        ExtractableResponse<Response> created = createDraft(
+                caller,
+                oratorianoId,
+                "DIRECT_SYSTEM_ENTRY"
+        );
+        UUID formId = draftId(created);
+        String currentDisplayName = "Current Form Actor";
+        jdbcTemplate.update(
+                "UPDATE accounts SET display_name = ? WHERE id = ?",
+                currentDisplayName,
+                caller.accountId()
+        );
+        ExtractableResponse<Response> replaced = authenticatedJsonRequest(caller)
+                .body(Map.of(
+                        "firstName", "Typed",
+                        "address", Map.of("city", "Piracicaba")
+                ))
+                .put(formPath(oratorianoId, formId))
+                .then()
+                .statusCode(200)
+                .extract();
+        jdbcTemplate.update(
+                "UPDATE oratoriano_additional_forms SET status = 'REVOKED', "
+                        + "completed_at = ?, completed_by = ?, revoked_at = ?, revoked_by = ? WHERE id = ?",
+                java.sql.Timestamp.from(Instant.parse("2026-07-25T14:00:00Z")),
+                caller.accountId(),
+                java.sql.Timestamp.from(Instant.parse("2026-07-25T15:00:00Z")),
+                caller.accountId(),
+                formId
+        );
+
+        assertThat(replaced.<String>path("data.firstName")).isEqualTo("Typed");
+        assertThat(replaced.<String>path("data.address.city")).isEqualTo("Piracicaba");
+        assertThat(replaced.<Object>path("data.cpf")).isNull();
+        clearActivities();
+
+        ExtractableResponse<Response> history = authenticatedJsonRequest(caller)
+                .get("/oratorianos/{oratorianoId}/forms", oratorianoId)
+                .then()
+                .statusCode(200)
+                .extract();
+        Map<String, Object> historyActor = history.path("items[0].createdBy");
+        assertThat(historyActor)
+                .containsOnlyKeys("id", "displayName")
+                .containsEntry("id", caller.accountId().toString())
+                .containsEntry("displayName", currentDisplayName);
+        for (String actorProperty : List.of("completedBy", "revokedBy")) {
+            assertThat(history.<Map<String, Object>>path("items[0]." + actorProperty))
+                    .containsOnlyKeys("id", "displayName")
+                    .containsEntry("id", caller.accountId().toString())
+                    .containsEntry("displayName", currentDisplayName);
+        }
+        assertThat(activityLogCount()).isZero();
+
+        ExtractableResponse<Response> detail = authenticatedJsonRequest(caller)
+                .get(formPath(oratorianoId, formId))
+                .then()
+                .statusCode(200)
+                .extract();
+        assertThat(detail.<String>path("data.firstName")).isEqualTo("Typed");
+        assertThat(detail.<String>path("data.address.city")).isEqualTo("Piracicaba");
+        Map<String, Object> detailActor = detail.path("createdBy");
+        assertThat(detailActor)
+                .containsOnlyKeys("id", "displayName")
+                .containsEntry("id", caller.accountId().toString())
+                .containsEntry("displayName", currentDisplayName);
+        for (String actorProperty : List.of("completedBy", "revokedBy")) {
+            assertThat(detail.<Map<String, Object>>path(actorProperty))
+                    .containsOnlyKeys("id", "displayName")
+                    .containsEntry("id", caller.accountId().toString())
+                    .containsEntry("displayName", currentDisplayName);
+        }
+    }
+
+    @Test
     @DisplayName("REQ-ACTIVITY-011 and REQ-ORATORIANO-FORM-015 - detail-read audit failure -> sensitive form is withheld")
     void detailReadShouldWithholdSensitiveDataWhenItsActivityCannotPersist() {
         AuthSession caller = sudoSession();
@@ -862,6 +1148,7 @@ class OratorianoAdditionalFormsApiIT extends OratorioModuleApiTestSupport {
                 .containsEntry("verifiedMimeType", "application/pdf")
                 .containsEntry("byteLength", bytes.length)
                 .containsEntry("pageOrder", 1)
+                .containsEntry("pageCount", 1)
                 .doesNotContainKeys("sha256", "digest", "bytes", "url", "path");
         assertThat(activityCountForActionAndTarget(
                 "ORATORIANO_FORM_ATTACHMENTS_REPLACED",
@@ -953,6 +1240,48 @@ class OratorianoAdditionalFormsApiIT extends OratorioModuleApiTestSupport {
                         "bytes",
                         "JVBER"
                 );
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-FORM-021 - upload and recovery -> identical active attachment metadata without audit")
+    void signedAttachmentMetadataShouldRecoverOnlyTheActiveOrderedCollection() {
+        AuthSession caller = sudoSession();
+        UUID oratorianoId = createOratoriano(caller, "Attachment", "Recovery");
+        UUID formId = draftId(createDraft(caller, oratorianoId, "PAPER_TRANSCRIPTION"));
+        UUID replacedId = UUID.fromString(replaceAttachments(
+                caller,
+                oratorianoId,
+                formId,
+                List.of(new TestAttachment("replaced.pdf", "application/pdf", pdfBytes(64)))
+        ).path("[0].id"));
+        ExtractableResponse<Response> upload = replaceAttachments(
+                caller,
+                oratorianoId,
+                formId,
+                imagePages(2, 64)
+        );
+        List<Map<String, Object>> uploaded = upload.jsonPath().getList("$");
+        clearActivities();
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .get(formPath(oratorianoId, formId) + "/signed-attachments")
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(200);
+        List<Map<String, Object>> recovered = response.jsonPath().getList("$");
+        assertThat(recovered).isEqualTo(uploaded);
+        assertThat(recovered).hasSize(2).allSatisfy(item -> assertThat(item)
+                .containsOnlyKeys(
+                        "id", "originalFilename", "verifiedMimeType", "byteLength", "pageOrder", "pageCount"
+                )
+                .containsEntry("pageCount", 1)
+                .doesNotContainKeys("sha256", "digest", "bytes"));
+        assertThat(recovered).extracting(item -> ((Number) item.get("pageOrder")).intValue())
+                .containsExactly(1, 2);
+        assertThat(recovered).extracting(item -> item.get("id").toString())
+                .doesNotContain(replacedId.toString());
+        assertThat(activityLogCount()).isZero();
     }
 
     @Test

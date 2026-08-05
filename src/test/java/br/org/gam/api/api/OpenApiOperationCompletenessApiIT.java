@@ -5,6 +5,7 @@ import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.IntegrationTest;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,6 +28,49 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
             "Authentication", "Accounts", "Members", "Membership Solicitations", "Events", "GamLocations",
             "Presences", "RBAC", "Oratorios", "Oratorianos", "Oratoriano Forms"
     );
+    private static final List<String> NULLABLE_OBJECT_DRAFT_FIELDS = List.of(
+            "address", "responsible", "father", "mother", "health", "declarations"
+    );
+    private static final List<String> NULLABLE_FORM_LIFECYCLE_FIELDS = List.of(
+            "completedAt", "completedBy", "revokedAt", "revokedBy"
+    );
+    private static final Map<String, List<String>> REQUIRED_FORM_RESPONSE_FIELDS = Map.of(
+            "FormRDTO", List.of(
+                    "id", "oratorianoId", "version", "status", "origin", "draftRevision", "data",
+                    "signedOn", "createdBy", "createdAt", "completedAt", "completedBy", "revokedAt", "revokedBy"
+            ),
+            "FormHistoryRDTO", List.of(
+                    "id", "version", "status", "origin", "signedOn", "createdAt", "createdBy",
+                    "completedAt", "completedBy", "revokedAt", "revokedBy", "attachmentExists", "attachmentPageCount"
+            )
+    );
+    private static final Map<String, List<String>> NULLABLE_FORM_RESPONSE_FIELDS = Map.of(
+            "FormRDTO", List.of("signedOn", "createdBy"),
+            "FormHistoryRDTO", List.of("signedOn", "createdBy")
+    );
+    private static final Map<String, List<String>> NULLABLE_NESTED_FORM_DRAFT_FIELDS = Map.of(
+            "AddressDTO", List.of("addressLine", "addressNumber", "neighborhood", "cep", "city"),
+            "ResponsibleDTO", List.of(
+                    "relationship", "relationshipComplement", "firstName", "surname", "cpf",
+                    "phoneNumber", "email", "atLeast18"
+            ),
+            "ParentDTO", List.of("firstName", "surname", "cpf"),
+            "HealthDTO", List.of(
+                    "medicalFollowUp", "physicalActivityRestriction", "medicineUse", "allergies",
+                    "convulsions", "frequentFainting", "heartCondition", "otherHealthCondition", "otherCare"
+            ),
+            "DeclarationsDTO", List.of(
+                    "signerRelationshipConfirmed", "informationTruthConfirmed",
+                    "healthInformationCurrentConfirmed", "informationUseUnderstood", "formReviewed",
+                    "imageAndVoiceAuthorizationAccepted"
+            ),
+            "HealthQuestionDTO", List.of("answer", "explanation", "importantInstructions")
+    );
+    private static final Map<String, List<String>> NULLABLE_ENUM_NESTED_FORM_DRAFT_FIELDS = Map.of(
+            "ResponsibleDTO", List.of("relationship"),
+            "HealthQuestionDTO", List.of("answer")
+    );
+    private static final String SCHEMA_REF_PREFIX = "#/components/schemas/";
 
     private static final List<Route> ORATORIO_MODULE_ROUTES = List.of(
             route("patch", "/members/{memberId}/oratorio-coordinator/grant"),
@@ -65,8 +109,10 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
             route("patch", "/oratorianos/{oratorianoId}/forms/{formId}/complete"),
             route("patch", "/oratorianos/{oratorianoId}/forms/{formId}/revoke"),
             route("post", "/oratorianos/{oratorianoId}/forms/{formId}/print-snapshots"),
+            route("get", "/oratorianos/{oratorianoId}/forms/{formId}/print-snapshots"),
             route("get", "/oratorianos/{oratorianoId}/forms/{formId}/print-snapshots/{printSnapshotId}/pdf"),
             route("put", "/oratorianos/{oratorianoId}/forms/{formId}/signed-attachments"),
+            route("get", "/oratorianos/{oratorianoId}/forms/{formId}/signed-attachments"),
             route("get", "/oratorianos/{oratorianoId}/forms/{formId}/signed-attachments/{attachmentId}")
     );
 
@@ -252,6 +298,12 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
 
         for (Route route : ORATORIO_MODULE_ROUTES) {
             Map<String, Object> operation = operation(paths, route);
+            assertions.assertThat(operation)
+                    .as("%s %s operation", route.method().toUpperCase(), route.path())
+                    .isNotNull();
+            if (operation == null) {
+                continue;
+            }
             assertions.assertThat(strings(operation, "tags"))
                     .as("%s %s tag", route.method().toUpperCase(), route.path())
                     .containsExactly(expectedModuleTag(route.path()));
@@ -313,6 +365,12 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
                 route("get", "/oratorianos/{oratorianoId}/forms"),
                 assertions,
                 "oratorianoId", "page", "size"
+        );
+        assertParameterNames(
+                paths,
+                route("get", "/oratorianos/{oratorianoId}/forms/{formId}/print-snapshots"),
+                assertions,
+                "oratorianoId", "formId", "page", "size", "sort"
         );
         assertParameterNames(
                 paths,
@@ -403,9 +461,412 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
         assertions.assertAll();
     }
 
+    @Test
+    @DisplayName("REQ-ORATORIANO-FORM-021 through REQ-ORATORIANO-FORM-023 and REQ-OPENAPI-004/012 - form schemas -> typed data, shared attachment metadata, and actor labels")
+    void oratorianoFormSchemasShouldExposeTheAcceptedTypedRepresentations() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> schemas = object(object(contract, "components"), "schemas");
+        Map<String, Object> form = object(schemas, "FormRDTO");
+        Map<String, Object> formProperties = object(form, "properties");
+        assertThat(object(formProperties, "data").get("$ref"))
+                .isEqualTo("#/components/schemas/FormDraftDTO");
+
+        Map<String, Object> draft = object(schemas, "FormDraftDTO");
+        assertThat(draft.get("required")).isNull();
+        Map<String, Object> draftProperties = object(draft, "properties");
+        assertThat(draftProperties).containsKeys(
+                "firstName", "surname", "birthDate", "cpf", "rg", "address", "phoneNumber",
+                "schoolName", "schoolGrade", "responsible", "father", "mother", "health",
+                "declarations", "signedOn"
+        );
+
+        Map<String, Object> accountReference = object(schemas, "AccountReferenceRDTO");
+        assertThat(object(accountReference, "properties")).containsOnlyKeys("id", "displayName");
+
+        Map<String, Object> attachment = object(schemas, "AttachmentRDTO");
+        assertThat(object(attachment, "properties")).containsOnlyKeys(
+                "id", "originalFilename", "verifiedMimeType", "byteLength", "pageOrder", "pageCount"
+        );
+
+        Map<String, Object> printSnapshot = object(schemas, "PrintSnapshotMetadataRDTO");
+        assertThat(object(printSnapshot, "properties")).containsOnlyKeys(
+                "id", "draftRevision", "mode", "generatedAt", "templateVersion", "pageCount"
+        );
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-FORM-003/023 and REQ-OPENAPI-004/012 - FormRDTO lifecycle fields -> effective nullable schemas")
+    void formLifecycleFieldsShouldRemainNullableAfterResolvingReferences() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> schemas = object(object(contract, "components"), "schemas");
+        Map<String, Object> formProperties = object(object(schemas, "FormRDTO"), "properties");
+        SoftAssertions assertions = new SoftAssertions();
+
+        for (String propertyName : NULLABLE_FORM_LIFECYCLE_FIELDS) {
+            assertions.assertThat(schemaEffectivelyAllowsNull(
+                            object(formProperties, propertyName),
+                            schemas,
+                            Set.of()
+                    ))
+                    .as("FormRDTO.%s accepts null after resolving sibling $ref", propertyName)
+                    .isTrue();
+        }
+
+        assertions.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-FORM-016/022/023 and REQ-OPENAPI-004/012 - form response schemas -> every serialized property required")
+    void formResponseSchemasShouldRequireEverySerializedProperty() {
+        Map<String, Object> schemas = object(
+                object(openApiContract().jsonPath().getMap("$"), "components"),
+                "schemas"
+        );
+        SoftAssertions assertions = new SoftAssertions();
+
+        for (Map.Entry<String, List<String>> schemaEntry : REQUIRED_FORM_RESPONSE_FIELDS.entrySet()) {
+            assertExactRequiredProperties(
+                    assertions,
+                    object(schemas, schemaEntry.getKey()),
+                    schemaEntry.getValue().toArray(new String[0])
+            );
+        }
+
+        assertions.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-FORM-003/010/016/023 and REQ-OPENAPI-004/012 - draft and history response fields -> effective nullability")
+    void formResponseNullableFieldsShouldRemainNullableAfterResolvingReferences() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> schemas = object(object(contract, "components"), "schemas");
+        SoftAssertions assertions = new SoftAssertions();
+
+        for (Map.Entry<String, List<String>> schemaEntry : NULLABLE_FORM_RESPONSE_FIELDS.entrySet()) {
+            Map<String, Object> properties = object(object(schemas, schemaEntry.getKey()), "properties");
+            for (String propertyName : schemaEntry.getValue()) {
+                assertions.assertThat(schemaEffectivelyAllowsNull(
+                                object(properties, propertyName),
+                                schemas,
+                                Set.of()
+                        ))
+                        .as("%s.%s accepts null after resolving sibling $ref", schemaEntry.getKey(), propertyName)
+                        .isTrue();
+            }
+        }
+
+        assertions.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-FORM-022 and REQ-OPENAPI-004/012 - FormDraftDTO properties -> explicit nullable schemas")
+    void formDraftSchemaShouldExplicitlyAllowNullForEveryField() {
+        Map<String, Object> schemas = object(
+                object(openApiContract().jsonPath().getMap("$"), "components"),
+                "schemas"
+        );
+        Map<String, Object> draftProperties = object(object(schemas, "FormDraftDTO"), "properties");
+
+        assertThat(draftProperties)
+                .allSatisfy((propertyName, propertySchema) -> assertThat(schemaAllowsNull(propertySchema))
+                        .as("FormDraftDTO.%s explicitly admits null", propertyName)
+                        .isTrue());
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-FORM-022 and REQ-OPENAPI-004/012 - object-valued draft fields -> effective nullability after $ref resolution")
+    void nullableObjectDraftFieldsShouldRemainNullableAfterResolvingReferences() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> schemas = object(object(contract, "components"), "schemas");
+        Map<String, Object> draftProperties = object(object(schemas, "FormDraftDTO"), "properties");
+        SoftAssertions assertions = new SoftAssertions();
+
+        for (String propertyName : NULLABLE_OBJECT_DRAFT_FIELDS) {
+            assertions.assertThat(schemaEffectivelyAllowsNull(
+                            object(draftProperties, propertyName),
+                            schemas,
+                            Set.of()
+                    ))
+                    .as("FormDraftDTO.%s accepts null after resolving sibling $ref", propertyName)
+                    .isTrue();
+        }
+
+        assertions.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-FORM-022 and REQ-OPENAPI-004/012 - nullable enum-backed draft fields -> enum includes null")
+    void nullableEnumDraftFieldsShouldIncludeNullInEffectiveEnum() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> schemas = object(object(contract, "components"), "schemas");
+        SoftAssertions assertions = new SoftAssertions();
+
+        for (Map.Entry<String, List<String>> schemaEntry : NULLABLE_ENUM_NESTED_FORM_DRAFT_FIELDS.entrySet()) {
+            Map<String, Object> properties = object(object(schemas, schemaEntry.getKey()), "properties");
+            for (String propertyName : schemaEntry.getValue()) {
+                Object schemaValue = object(properties, propertyName);
+                boolean effectivelyAllowsNull = schemaEffectivelyAllowsNull(schemaValue, schemas, Set.of());
+                assertions.assertThat(effectivelyAllowsNull)
+                        .as("%s.%s remains effectively nullable", schemaEntry.getKey(), propertyName)
+                        .isTrue();
+                if (effectivelyAllowsNull) {
+                    assertions.assertThat(schemaEffectivelyIncludesNullInEnum(
+                                    schemaValue,
+                                    schemas,
+                                    Set.of()
+                            ))
+                            .as("%s.%s effective enum includes JSON null", schemaEntry.getKey(), propertyName)
+                            .isTrue();
+                }
+            }
+        }
+
+        assertions.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-FORM-003/022 and REQ-OPENAPI-004/012 - nested draft fields -> effective nullable schemas")
+    void nestedFormDraftFieldsShouldRemainNullableAfterResolvingReferences() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> schemas = object(object(contract, "components"), "schemas");
+        SoftAssertions assertions = new SoftAssertions();
+
+        for (Map.Entry<String, List<String>> schemaEntry : NULLABLE_NESTED_FORM_DRAFT_FIELDS.entrySet()) {
+            Map<String, Object> properties = object(object(schemas, schemaEntry.getKey()), "properties");
+            assertions.assertThat(properties.keySet())
+                    .as("%s nested properties", schemaEntry.getKey())
+                    .containsAll(schemaEntry.getValue());
+            for (String propertyName : schemaEntry.getValue()) {
+                assertions.assertThat(schemaEffectivelyAllowsNull(
+                                object(properties, propertyName),
+                                schemas,
+                                Set.of()
+                        ))
+                        .as("%s.%s accepts null after resolving references", schemaEntry.getKey(), propertyName)
+                        .isTrue();
+            }
+        }
+
+        assertions.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-FORM-020/021/023 and REQ-OPENAPI-004/012 - exact metadata records -> every property required")
+    void formMetadataSchemasShouldRequireEveryExactProperty() {
+        Map<String, Object> schemas = object(
+                object(openApiContract().jsonPath().getMap("$"), "components"),
+                "schemas"
+        );
+
+        assertExactRequiredProperties(
+                object(schemas, "AccountReferenceRDTO"),
+                "id", "displayName"
+        );
+        assertExactRequiredProperties(
+                object(schemas, "AttachmentRDTO"),
+                "id", "originalFilename", "verifiedMimeType", "byteLength", "pageOrder", "pageCount"
+        );
+        assertExactRequiredProperties(
+                object(schemas, "PrintSnapshotMetadataRDTO"),
+                "id", "draftRevision", "mode", "generatedAt", "templateVersion", "pageCount"
+        );
+    }
+
+    @Test
+    @DisplayName("REQ-ORATORIANO-FORM-020 and REQ-OPENAPI-007/012 - print-snapshot success example -> coherent zero-based page")
+    void printSnapshotMetadataExampleShouldBeACoherentZeroBasedPage() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> operation = operation(
+                object(contract, "paths"),
+                route("get", "/oratorianos/{oratorianoId}/forms/{formId}/print-snapshots")
+        );
+        Map<String, Object> response = object(object(operation, "responses"), "200");
+        Map<String, Object> example = object(
+                object(object(response, "content"), "*/*"),
+                "example"
+        );
+        int page = ((Number) example.get("page")).intValue();
+        int size = ((Number) example.get("size")).intValue();
+        long totalElements = ((Number) example.get("totalElements")).longValue();
+        int totalPages = ((Number) example.get("totalPages")).intValue();
+        boolean first = (Boolean) example.get("first");
+        boolean last = (Boolean) example.get("last");
+        int expectedTotalPages = totalElements == 0
+                ? 0
+                : (int) Math.ceil((double) totalElements / size);
+
+        assertThat(page).isGreaterThanOrEqualTo(0);
+        assertThat(size).isBetween(1, 100);
+        assertThat(totalElements).isGreaterThanOrEqualTo(0);
+        assertThat(totalPages).isEqualTo(expectedTotalPages);
+        assertThat(first).isEqualTo(page == 0);
+        assertThat(last).isEqualTo(totalPages == 0 || page >= totalPages - 1);
+        assertThat(objects(example, "items")).hasSizeLessThanOrEqualTo(size);
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, Object> mapOrEmpty(Object value) {
         return value instanceof Map<?, ?> ? (Map<String, Object>) value : Map.of();
+    }
+
+    private void assertExactRequiredProperties(Map<String, Object> schema, String... propertyNames) {
+        assertThat(object(schema, "properties")).containsOnlyKeys(propertyNames);
+        assertThat(strings(schema, "required")).containsExactlyInAnyOrder(propertyNames);
+    }
+
+    private void assertExactRequiredProperties(
+            SoftAssertions assertions,
+            Map<String, Object> schema,
+            String... propertyNames
+    ) {
+        assertions.assertThat(object(schema, "properties")).containsOnlyKeys(propertyNames);
+        assertions.assertThat(strings(schema, "required")).containsExactlyInAnyOrder(propertyNames);
+    }
+
+    private boolean schemaAllowsNull(Object schemaValue) {
+        if (!(schemaValue instanceof Map<?, ?> rawSchema)) {
+            return false;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> schema = (Map<String, Object>) rawSchema;
+        if (Boolean.TRUE.equals(schema.get("nullable"))) {
+            return true;
+        }
+        Object type = schema.get("type");
+        if (type instanceof Collection<?> types && types.contains("null")) {
+            return true;
+        }
+        for (String composition : List.of("anyOf", "oneOf")) {
+            Object alternatives = schema.get(composition);
+            if (alternatives instanceof Collection<?> choices
+                    && choices.stream().anyMatch(this::isNullSchema)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean schemaEffectivelyAllowsNull(
+            Object schemaValue,
+            Map<String, Object> schemas,
+            Set<String> resolvingRefs
+    ) {
+        if (!(schemaValue instanceof Map<?, ?> rawSchema)) {
+            return false;
+        }
+        Map<String, Object> schema = (Map<String, Object>) rawSchema;
+        if (Boolean.FALSE.equals(schema.get("nullable"))) {
+            return false;
+        }
+
+        Object type = schema.get("type");
+        boolean typeAllowsNull = type == null
+                || "null".equals(type)
+                || type instanceof Collection<?> types && types.contains("null");
+        if (!typeAllowsNull) {
+            return false;
+        }
+
+        Object reference = schema.get("$ref");
+        if (reference != null) {
+            if (!(reference instanceof String referenceValue)
+                    || !referenceValue.startsWith(SCHEMA_REF_PREFIX)
+                    || resolvingRefs.contains(referenceValue)) {
+                return false;
+            }
+            Set<String> nextResolvingRefs = new HashSet<>(resolvingRefs);
+            nextResolvingRefs.add(referenceValue);
+            if (!schemaEffectivelyAllowsNull(
+                    schemas.get(referenceValue.substring(SCHEMA_REF_PREFIX.length())),
+                    schemas,
+                    nextResolvingRefs
+            )) {
+                return false;
+            }
+        }
+
+        Object anyOf = schema.get("anyOf");
+        if (anyOf instanceof Collection<?> alternatives
+                && alternatives.stream().noneMatch(
+                        alternative -> schemaEffectivelyAllowsNull(alternative, schemas, resolvingRefs)
+                )) {
+            return false;
+        }
+
+        Object oneOf = schema.get("oneOf");
+        if (oneOf instanceof Collection<?> alternatives
+                && alternatives.stream().filter(
+                        alternative -> schemaEffectivelyAllowsNull(alternative, schemas, resolvingRefs)
+                ).count() != 1) {
+            return false;
+        }
+
+        Object allOf = schema.get("allOf");
+        if (allOf instanceof Collection<?> alternatives
+                && alternatives.stream().anyMatch(
+                        alternative -> !schemaEffectivelyAllowsNull(alternative, schemas, resolvingRefs)
+                )) {
+            return false;
+        }
+
+        return true;
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean schemaEffectivelyIncludesNullInEnum(
+            Object schemaValue,
+            Map<String, Object> schemas,
+            Set<String> resolvingRefs
+    ) {
+        if (!(schemaValue instanceof Map<?, ?> rawSchema)) {
+            return false;
+        }
+        Map<String, Object> schema = (Map<String, Object>) rawSchema;
+        Object enumValue = schema.get("enum");
+        if (enumValue instanceof Collection<?> enumValues && enumValues.contains(null)) {
+            return true;
+        }
+
+        Object reference = schema.get("$ref");
+        if (reference instanceof String referenceValue
+                && referenceValue.startsWith(SCHEMA_REF_PREFIX)
+                && !resolvingRefs.contains(referenceValue)) {
+            Set<String> nextResolvingRefs = new HashSet<>(resolvingRefs);
+            nextResolvingRefs.add(referenceValue);
+            if (schemaEffectivelyIncludesNullInEnum(
+                    schemas.get(referenceValue.substring(SCHEMA_REF_PREFIX.length())),
+                    schemas,
+                    nextResolvingRefs
+            )) {
+                return true;
+            }
+        }
+
+        for (String composition : List.of("anyOf", "oneOf", "allOf")) {
+            Object alternatives = schema.get(composition);
+            if (alternatives instanceof Collection<?> choices
+                    && choices.stream().anyMatch(
+                            alternative -> schemaEffectivelyIncludesNullInEnum(
+                                    alternative,
+                                    schemas,
+                                    resolvingRefs
+                            )
+                    )) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean isNullSchema(Object schemaValue) {
+        if (!(schemaValue instanceof Map<?, ?> schema)) {
+            return false;
+        }
+        Object type = schema.get("type");
+        return "null".equals(type)
+                || type instanceof Collection<?> types && types.contains("null");
     }
 
     @Test
@@ -586,7 +1047,14 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
             SoftAssertions assertions,
             String... expectedNames
     ) {
-        List<Map<String, Object>> parameters = objects(operation(paths, route), "parameters");
+        Map<String, Object> operation = operation(paths, route);
+        assertions.assertThat(operation)
+                .as("%s %s operation", route.method().toUpperCase(), route.path())
+                .isNotNull();
+        if (operation == null) {
+            return;
+        }
+        List<Map<String, Object>> parameters = objects(operation, "parameters");
         assertions.assertThat(parameters)
                 .as("%s %s parameters", route.method().toUpperCase(), route.path())
                 .extracting(parameter -> parameter.get("name"))

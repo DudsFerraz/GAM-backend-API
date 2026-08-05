@@ -326,6 +326,31 @@ class DevelopmentFixtureMigrationPersistenceIT {
                 .contains("SCHEDULED", "COMPLETED", "LOCKED", "FINALIZED", "CANCELLED");
         assertThat(formStatuses(schema))
                 .contains("DRAFT", "COMPLETED", "SUPERSEDED", "REVOKED");
+        assertThat(jdbcTemplate.queryForList(
+                "SELECT form_id FROM " + schema + ".oratoriano_form_print_snapshots "
+                        + "WHERE deleted_at IS NULL GROUP BY form_id "
+                        + "HAVING COUNT(*) >= 2 AND COUNT(DISTINCT draft_revision) >= 2",
+                UUID.class
+        )).as("a stable form with recoverable snapshots across draft revisions")
+                .isNotEmpty();
+        assertThat(jdbcTemplate.queryForList(
+                "SELECT snapshot.id, snapshot.form_id, snapshot.draft_revision, "
+                        + "form.draft_revision AS current_draft_revision "
+                        + "FROM " + schema + ".oratoriano_form_print_snapshots snapshot "
+                        + "JOIN " + schema + ".oratoriano_additional_forms form "
+                        + "ON form.id = snapshot.form_id AND form.deleted_at IS NULL "
+                        + "WHERE snapshot.deleted_at IS NULL "
+                        + "AND (snapshot.draft_revision < 1 OR snapshot.draft_revision > form.draft_revision)"
+        )).as("every seeded snapshot revision is reachable from revision 1 through the form's current revision")
+                .isEmpty();
+        assertThat(jdbcTemplate.queryForList(
+                "SELECT active.form_id FROM " + schema + ".oratoriano_form_attachments active "
+                        + "WHERE active.deleted_at IS NULL AND EXISTS ("
+                        + "SELECT 1 FROM " + schema + ".oratoriano_form_attachments replaced "
+                        + "WHERE replaced.form_id = active.form_id AND replaced.deleted_at IS NOT NULL)",
+                UUID.class
+        )).as("a stable form whose active attachment collection excludes replaced files")
+                .isNotEmpty();
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM " + schema + ".events WHERE type = 'MISSA'",
                 Long.class
