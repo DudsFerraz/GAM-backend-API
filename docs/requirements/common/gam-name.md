@@ -8,6 +8,9 @@ GAM stores personal names in multiple features, including Members and Oratoriano
 
 The `GamName` primitive defines the valid shape of a present personal name. Whether a feature requires a name, allows it to be absent, or displays it in a specific context belongs to that feature's Requirement Specification.
 
+Canonical letter casing is governed by `REQ-GAM-NAME-008` in the accepted
+[GamName Canonical Capitalization](gam-name-capitalization.md) specification.
+
 ## Ubiquitous Language
 - `separator`: A single internal space, hyphen, or apostrophe used between letters.
 
@@ -181,6 +184,10 @@ Scenario: Reject a name with repeated separators
 ## Related ADRs
 
 * None.
+
+## Related requirements
+
+* [GamName Canonical Capitalization](gam-name-capitalization.md)
 
 ## Related videos
 

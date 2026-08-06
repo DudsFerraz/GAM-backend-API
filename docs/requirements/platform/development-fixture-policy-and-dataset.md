@@ -282,6 +282,12 @@ In particular, an inactive Member shall never retain `MEMBER`, `COORD`, or
 `ORATORIO_COORD`, and an Account without a Member shall not begin with
 `MEMBER`, `VISITOR`, `COORD`, or `ORATORIO_COORD`.
 
+The fixture shall additionally provide the fictional Account-less Member,
+eligible Account, and link-conflict personas required by
+`REQ-MEMBER-INFO-FIXTURE-002` and `REQ-MEMBER-INFO-FIXTURE-003`. Synthetic
+Account-less Members shall be owned by the isolated fixture manifest and shall
+not pretend to have production import-batch provenance.
+
 ---
 
 ### REQ-DEV-FIXTURE-008: Dataset scale and searchable variation
@@ -305,6 +311,11 @@ The dataset shall include distinct examples of:
 
 - accented, hyphenated, and apostrophe-bearing names;
 - active and inactive Member status;
+- linked and Account-less Member state;
+- Member core, dietary, experience, sacrament, and contribution-profile
+  variation across every accepted catalog;
+- immutable annual Member information covering every accepted answer catalog,
+  nullability seam, and protected-read path;
 - Account Role variation;
 - public, Member-restricted, and Coordinator-restricted Events;
 - Event types `GENERIC` and `ORATORIO`;
@@ -326,7 +337,7 @@ initial states:
 | Area | Required initial fixture states |
 | --- | --- |
 | Membership solicitations | At least two `PENDING` solicitations for independent approve and reject operations; at least one `REJECTED` historical solicitation; at least one `APPROVED` historical solicitation linked to its resulting active Member; and one eligible Account with no solicitation for self-submission. |
-| Members | Active non-Coordinator, inactive, current Coordinator, current Oratorio Coordinator, grantable responsibility targets, revocable responsibility targets, an Account eligible for direct registration, and personal Presence histories with both empty and non-empty results. |
+| Members | Active non-Coordinator, inactive, current Coordinator, current Oratorio Coordinator, active and inactive Account-less Members, eligible and conflicting Account-link targets, complete current-information catalog variation, annual responses with protected-read seams, a Member without an annual response, grantable and revocable responsibility targets, an Account eligible for direct registration, and personal Presence histories with both empty and non-empty results. |
 | GamLocations | Current production-safe system locations; active ordinary linked and unlinked locations; an ordinary update target; an unused removal target; and a soft-deleted ordinary location hidden from normal reads. |
 | Generic Events | Public, Member-restricted, and Coordinator-restricted Events; relative `SCHEDULED` and `COMPLETED` Events; explicit `LOCKED`, `FINALIZED`, and `CANCELLED` Events; editable and deletable sacrificial Events; an Event blocked from deletion by active Presence; and an Event with only removed Presence history. |
 | Member Presences | Active Presences with null and non-null observations, an eligible missing pair for registration, a removed pair eligible for re-registration, an inactive Member's preserved Presence, and roster data suitable for name filtering and ordering. |
@@ -350,8 +361,8 @@ months and at least two calendar years.
 ### REQ-DEV-FIXTURE-010: User-facing endpoint readiness
 
 Every current user-facing endpoint shall be represented by this readiness
-matrix. The accepted controller surface contains 89 endpoint methods when this
-specification is accepted. Endpoint readiness requires a successful starting
+matrix. The accepted controller surface contains 99 endpoint methods. Endpoint
+readiness requires a successful starting
 path; representative authorization, visibility, duplicate, in-use, and
 invalid-lifecycle paths shall also exist per workflow family. Exhaustive
 invalid-input permutations remain an automated-test responsibility.
@@ -389,6 +400,16 @@ invalid-input permutations remain an automated-test responsibility.
 | `POST /members` | `beatriz.registration@example.com` is an eligible Account without Member or pending solicitation. |
 | `GET /members/{id}` | Own active, own inactive, other active, and other inactive Member records exist. |
 | `POST /members/search` | More than one page of Members varies across every accepted public filter family. |
+| `GET /members/{memberId}/experiences-and-sacraments` | A visible Member has varied current experience and sacrament statuses. |
+| `GET /members/{memberId}/contribution-profile` | Visible Members have empty, fixed, and custom contribution profiles. |
+| `PUT /members/{memberId}` | A dedicated core-profile target has a current ETag and valid replacement values. |
+| `PUT /members/{memberId}/gam-entry-date` | A dedicated target has a non-future alternative date. |
+| `PUT /members/{memberId}/dietary-restriction` | A dedicated target supports a valid conditional-details transition. |
+| `PUT /members/{memberId}/experiences` | A dedicated target can replace the complete four-key map. |
+| `PUT /members/{memberId}/sacraments` | A dedicated target can replace the complete three-key map. |
+| `PUT /members/{memberId}/contribution-profile` | A dedicated target can replace fixed and custom collections. |
+| `PATCH /members/{memberId}/account/link` | Independent active and inactive Account-less Members and eligible Accounts exist. |
+| `GET /members/{memberId}/annual-information/{surveyCycle}` | A visible protected response exists for successful audited read, and another Member has no response. |
 | `PATCH /members/{id}/coordinator/grant` | An active non-Coordinator Member has a valid `MEMBER`-only projection. |
 | `PATCH /members/{id}/coordinator/revoke` | The sacrificial Coordinator may be revoked while the primary Coordinator remains. |
 | `PATCH /members/{id}/oratorio-coordinator/grant` | An active Member without `ORATORIO_COORD` is reserved for the grant. |
@@ -485,6 +506,9 @@ This includes, at minimum:
 - solicitation approval and rejection;
 - Coordinator and Oratorio Coordinator grant and revoke;
 - Member activation and deactivation;
+- Member core, GAM-entry-date, dietary, experience, sacrament, and
+  contribution-profile replacement;
+- active-Member link, inactive-Member link, and Account-less lifecycle changes;
 - custom Role add and drop;
 - GamLocation update and removal;
 - Generic Event lock, finalize, reopen, cancel, and delete;
@@ -509,6 +533,8 @@ fixture verification shall be updated together when a change affects:
 - an accepted Role, Permission, or role-permission bundle;
 - a Member, Event, Oratorio, Oratoriano, form, attendance, or soft-delete
   lifecycle;
+- a Member-information catalog, annual-response contract, Account-link
+  workflow, or Member aggregate ETag;
 - database columns, constraints, enum mirrors, audit fields, or relationship
   ownership;
 - a fixture persona, stable fixture UUID, relative-date rule, or sacrificial
@@ -681,6 +707,9 @@ Scenario: Existing local database uses the clean replacement path
 * [RBAC Catalog](../rbac/rbac-catalog.md)
 * [Member Records and Lifecycle](../members/member-records-and-lifecycle.md)
 * [Membership Solicitations](../members/membership-solicitations.md)
+* [Member Information](../members/member-information.md)
+* [Member Information Import and Account Linking](../members/member-information-import-and-account-linking.md)
+* [Member Information Development Fixture Extension](member-information-development-fixture.md)
 * [GamLocation Records](../gam-locations/gam-location-records.md)
 * [System GamLocation Catalog](../gam-locations/system-gam-location-catalog.md)
 * [Event Records and Generic Event Lifecycle](../events/event-records-and-generic-lifecycle.md)
@@ -699,6 +728,8 @@ Scenario: Existing local database uses the clean replacement path
 * [ADR-0013: Make Member lifecycle own Coordinator designation](../../decisions/0013-make-member-lifecycle-own-coordinator-designation.md)
 * [ADR-0014: Make Member lifecycle own Oratorio Coordinator designation](../../decisions/0014-make-member-lifecycle-own-oratorio-coordinator-designation.md)
 * [ADR-0015: Compose Oratorio permission bundles in code](../../decisions/0015-compose-oratorio-permission-bundles-in-code.md)
+* [ADR-0026: Use an isolated Member-information import with explicit Account linking](../../decisions/0026-use-isolated-member-information-import-with-explicit-account-linking.md)
+* [ADR-0027: Model Member information as normalized components and immutable annual responses](../../decisions/0027-model-member-information-as-normalized-components-and-immutable-annual-responses.md)
 * [ADR-0016: Store signed Oratoriano form attachments in PostgreSQL](../../decisions/0016-store-signed-oratoriano-form-attachments-in-postgresql.md)
 * [ADR-0018: Standardize persistence auditing, soft deletion, and relationship enforcement](../../decisions/0018-standardize-persistence-auditing-soft-deletion-and-relationship-enforcement.md)
 * [ADR-0021: Use Flyway repeatable migrations for code-owned system reference data](../../decisions/0021-use-flyway-repeatable-migrations-for-system-reference-data.md)

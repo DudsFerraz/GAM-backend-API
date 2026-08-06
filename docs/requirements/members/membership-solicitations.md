@@ -6,7 +6,7 @@ Accepted
 ## Context
 An authenticated Account needs a way to express interest in becoming a GAM Member without becoming a Member automatically. A Coordinator must review the submitted information and explicitly approve or reject the request.
 
-A membership solicitation is separate from a Member. Only approval creates membership. This preserves the distinction between Account identity, requested membership, and accepted lifetime membership.
+A membership solicitation is separate from a Member. Only approval creates membership. This preserves the distinction between Account identity, requested membership, and accepted lifetime membership. When an Account belongs to an existing Account-less imported Member, a human Coordinator rejects any mistaken pending solicitation and uses the separate explicit Account-link workflow; approval must not create a duplicate Member.
 
 The current implementation does not define this intended workflow. Existing Member and Account behavior was used only as discovery material and conversation prompts.
 
@@ -40,6 +40,12 @@ Invalid examples:
 ---
 
 ### REQ-MEMBER-SOL-002: Self-service submission and form contract
+The submitted Member-information field contract in this requirement is
+expanded by `REQ-MEMBER-INFO-003` to include `gamEntryDate`,
+`residentialCity`, and independent `contactEmail`. The route, authenticated
+Account ownership, justification, age, lifecycle, and success semantics below
+remain accepted.
+
 The system shall expose `POST /membership-solicitations` to authenticated Accounts. The Account identifier shall be derived from the authenticated caller and shall not be accepted in the request body.
 
 The caller's Account shall be existing and non-soft-deleted, shall not already be linked to a Member, and shall not have another pending membership solicitation.
@@ -51,12 +57,15 @@ The request shall require:
   "firstName": "Ana",
   "surname": "Silva",
   "birthDate": "2000-01-01",
+  "gamEntryDate": "2023-01-01",
+  "residentialCity": "Piracicaba",
   "phoneNumber": "+5519998877665",
+  "contactEmail": "ana.contato@example.com",
   "justification": "I want to participate in GAM activities"
 }
 ```
 
-The name and phone number shall satisfy the accepted common primitive requirements. The birth date shall not be in the future, and the applicant shall be at least 17 years old on the submission date. The seventeenth birthday shall be accepted.
+The name, phone number, and contact email shall satisfy the accepted common primitive requirements. Birth date, age, GAM entry date, residential city, and contact-email independence shall satisfy `REQ-MEMBER-INFO-002`. The applicant shall be at least 17 years old on the submission date, and the seventeenth birthday shall be accepted.
 
 The system shall trim leading and trailing whitespace from `justification`. After trimming, it shall contain between 1 and 2,000 characters.
 
@@ -105,7 +114,11 @@ The system shall enforce this invariant under concurrent submissions so that at 
 
 An Account with a rejected solicitation may submit a new solicitation. The new solicitation shall have a new UUID and shall not overwrite, restore, or reopen the rejected record.
 
-A pending solicitation shall block direct Member registration for the same Account. The Coordinator shall approve or reject the existing solicitation instead.
+A pending solicitation shall block direct Member registration and explicit
+existing-Member Account linking for the same Account. The Coordinator shall
+approve or reject the existing solicitation instead. When the applicant is
+confirmed as an existing imported Member, `REQ-MEMBER-IMPORT-006` shall require
+human rejection before the separate link workflow.
 
 Rationale:
 One pending request avoids conflicting reviews while immutable reapplication history preserves earlier decisions.
@@ -141,6 +154,10 @@ Invalid examples:
 ---
 
 ### REQ-MEMBER-SOL-006: Solicitation response contract
+The submitted-field portion of this response is expanded by
+`REQ-MEMBER-INFO-003` to include immutable `gamEntryDate`,
+`residentialCity`, and `contactEmail` values.
+
 Solicitation creation, lookup, search, approval, and rejection shall return this shape:
 
 ```json
@@ -154,7 +171,10 @@ Solicitation creation, lookup, search, approval, and rejection shall return this
   "firstName": "Ana",
   "surname": "Silva",
   "birthDate": "2000-01-01",
+  "gamEntryDate": "2023-01-01",
+  "residentialCity": "Piracicaba",
   "phoneNumber": "+5519998877665",
+  "contactEmail": "ana.contato@example.com",
   "justification": "I want to participate in GAM activities",
   "status": "PENDING",
   "submittedAt": "2026-07-13T12:00:00Z",
@@ -262,6 +282,11 @@ Approval establishes lifetime membership and rejection denies the current reques
 
 The lifecycle Role precondition and projection portions of this requirement are superseded by `REQ-MEMBER-SOL-014`. Its remaining approval, response, atomicity, and audit contract remains accepted.
 
+The Member-information copy set in this requirement is expanded by
+`REQ-MEMBER-INFO-003`. Approval shall copy the immutable submitted GAM entry
+date, residential city, and contact email together with the fields listed
+below.
+
 Approval shall revalidate that:
 
 - the solicitation is `PENDING`;
@@ -271,7 +296,7 @@ Approval shall revalidate that:
 
 Successful approval shall atomically:
 
-1. create one UUID v7 `ACTIVE` Member linked permanently to the soliciting Account using the submitted name, birth date, and phone number;
+1. create one UUID v7 `ACTIVE` Member linked permanently to the soliciting Account using the complete immutable Member-information submission defined by `REQ-MEMBER-INFO-003`;
 2. assign `MEMBER` and remove `VISITOR` while preserving all other Account roles;
 3. mark the solicitation `APPROVED` with the reviewing Account, decision timestamp, normalized review reason, and Member identifier; and
 4. emit exactly one `MEMBERSHIP_SOLICITATION_APPROVED` activity event.
@@ -317,7 +342,8 @@ Invalid examples:
 ### REQ-MEMBER-SOL-011: Decision and registration concurrency
 Only one valid decision or competing Member-creation outcome shall commit for an Account.
 
-Concurrent approval, rejection, or direct Member registration shall preserve:
+Concurrent approval, rejection, direct Member registration, or explicit
+existing-Member Account linking shall preserve:
 
 - at most one lifetime Member for the Account;
 - one immutable outcome for each solicitation;
@@ -514,7 +540,9 @@ Scenario: Historical Account filters remain within authorized visibility
 * Withdrawing, cancelling, reopening, or reversing a solicitation.
 * Invitations or automatic approval.
 * Creating an Account through a solicitation.
-* Member profile editing, deletion, restoration, or Account relinking.
+* Member deletion, restoration, unlinking, relinking, or Account-link transfer.
+* Automatic existing-Member PII matching or combined solicitation decision and
+  Account linking.
 * Account deactivation, deletion, or restoration workflows.
 * Legal erasure, redaction, or physical-deletion policy for retained historical Account values.
 * Reading activity-log history through solicitation endpoints.
@@ -525,10 +553,13 @@ Scenario: Historical Account filters remain within authorized visibility
 * [ADR-0013: Make Member lifecycle own Coordinator designation](../../decisions/0013-make-member-lifecycle-own-coordinator-designation.md)
 * [ADR-0014: Make Member lifecycle own Oratorio Coordinator designation](../../decisions/0014-make-member-lifecycle-own-oratorio-coordinator-designation.md)
 * [ADR-0018: Standardize persistence auditing, soft deletion, and relationship enforcement](../../decisions/0018-standardize-persistence-auditing-soft-deletion-and-relationship-enforcement.md)
+* [ADR-0026: Use an isolated Member-information import with explicit Account linking](../../decisions/0026-use-isolated-member-information-import-with-explicit-account-linking.md)
 
 ## Related requirements
 
 * [Member Records and Lifecycle](member-records-and-lifecycle.md)
+* [Member Information](member-information.md)
+* [Member Information Import and Account Linking](member-information-import-and-account-linking.md)
 * [GamName](../common/gam-name.md)
 * [GamPhoneNumber](../common/gam-phone-number.md)
 * [UUID Identity](../common/uuid.md)

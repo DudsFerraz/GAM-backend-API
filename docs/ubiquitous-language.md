@@ -22,6 +22,10 @@ them.
 | **Gincana**        | Organized recreational games and challenges conducted during a GAM activity.                                                                                                                 | None                 | Competition                      |
 | **Oratoriano**     | A person who attends an Oratorio. Oratorianos are usually between 5 and 20 years old, but adults can also be Oratorianos; an Oratoriano older than 25 is rare but expected at least monthly. | None                 | Oratorio frequenter, attendee    |
 | **Member**         | A lifetime member of GAM Piracicaba. A Member may become active or inactive, but does not stop being a Member because of inactivity.                                                         | None                 | Participant                      |
+| **Account-less Member** | A Member whose identity is not currently linked to an Account. In production, this state may be created only by the accepted one-time Member-information import; the isolated development fixture may also exercise the seam with fictional data. | None | Unregistered user, orphan Member |
+| **Member contribution profile** | The Member-owned current collection of fixed and custom areas in which the person can contribute to GAM. | contribution profile | Skills list |
+| **Annual Member Information Response** | One immutable set of survey answers associated with exactly one Member and one annual survey cycle. | annual response | Member profile, current Member information |
+| **Member Information Import Batch** | The immutable, non-sensitive provenance record for one successfully applied approved Member-information dataset. | import batch | CSV import, seed batch |
 | **Membership Solicitation** | An Account's immutable request to become a Member, submitted for Coordinator review. The Account does not become a Member until the solicitation is approved. | solicitation | Membership application |
 | **Coordinator**    | An active Member whose linked active Account has the current active `COORD` lifecycle-owned Role. Coordinator designation represents responsibility for coordinating a GAM activity, team, responsibility area, or system capability. | coord                | Admin, director                  |
 | **Coordenador do Oratório** | An active Member with current responsibility for Oratorio operations whose linked active Account has the `ORATORIO_COORD` lifecycle-owned Role. | oratorio coord, coordenador de oratório | Oratorio responsible, Mr Oratorio, Oratorio steward |
@@ -65,6 +69,10 @@ source-code symbols remain unchanged at the API boundary.
 | **Gincana** | **Gincana** | User-facing cultural term. |
 | **Oratoriano** | **Oratoriano** | User-facing person term. Use **Oratorianos** as the regular plural. |
 | **Member** | **Membro** | User-facing person term. |
+| **Account-less Member** | **Membro sem conta vinculada** | User-facing person state. It does not mean that the Member is incomplete or inactive. |
+| **Member contribution profile** | **perfil de contribuição do membro** | User-facing capability-profile term. |
+| **Annual Member Information Response** | **resposta anual de informações do membro** | Protected annual-response term. |
+| **Member Information Import Batch** | **lote de importação de informações de membros** | Technical provenance term; not ordinary interface copy. |
 | **Membership Solicitation** | **Solicitação para se tornar membro** | Use the complete expression when the kind of solicitation is not already clear from the surrounding context; **solicitação** is acceptable after that context is established. |
 | **Coordinator** | **Coordenador** | Refers to the person. **Coordenação** may describe the corresponding responsibility or access presentation, but must not replace the person term. |
 | **Coordenador do Oratório** | **Coordenador do Oratório** | User-facing person term. **Coordenação do Oratório** describes the responsibility or access presentation. |
@@ -104,7 +112,11 @@ source-code symbols remain unchanged at the API boundary.
 - A **Coordinator** may deactivate a **Member** in the system because of real-life inactivity in GAM actions and events.
 - An **Account** may submit a **Membership Solicitation** only for itself.
 - An approved **Membership Solicitation** creates the lifetime **Member** linked to its submitting **Account**.
-- An active **Member** requires the `MEMBER` **lifecycle-owned Role** on the linked **Account**; an inactive **Member** requires `VISITOR` instead and cannot remain a **Coordinator** or **Coordenador do Oratório**.
+- An **Account-less Member** may later be linked to one eligible existing **Account** through the explicit accepted linking workflow; contact information never creates that link automatically.
+- A **Member** with a linked **Account** requires the `MEMBER` **lifecycle-owned Role** while active and `VISITOR` while inactive, and cannot remain a **Coordinator** or **Coordenador do Oratório** while inactive.
+- A **Member contribution profile** is current Member-owned information and is independent from every **Annual Member Information Response**.
+- An **Annual Member Information Response** references exactly one **Member** and belongs to one annual survey cycle.
+- A **Member Information Import Batch** records successful import provenance without retaining source rows or ordinary Member information.
 - An **Account** may authenticate to GAM and may receive roles or permissions through RBAC workflows.
 - An **Account** is not automatically a **Member** or **Coordinator**.
 - A **User** may have an **Account**, but product-facing User language must not be used for the **Developer** interacting with agents.

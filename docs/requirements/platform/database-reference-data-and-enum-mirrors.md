@@ -324,6 +324,13 @@ The current database enum mirrors and their owning requirements are:
 | `event_type_enum` | [`REQ-EVENT-001`](../events/event-records-and-generic-lifecycle.md#req-event-001-shared-event-identity-and-type-model) |
 | `event_status_enum` | [`REQ-EVENT-006`](../events/event-records-and-generic-lifecycle.md#req-event-006-effective-temporal-status) and [`REQ-EVENT-011`](../events/event-records-and-generic-lifecycle.md#req-event-011-generic-event-lifecycle-transitions) |
 | `membership_solicitation_status_enum` | [`REQ-MEMBER-SOL-003`](../members/membership-solicitations.md#req-member-sol-003-solicitation-status-and-immutability) |
+| `member_information_status_enum` | [`REQ-MEMBER-INFO-004`](../members/member-information.md#req-member-info-004-information-status-fields-and-creation-defaults) and [`REQ-MEMBER-INFO-014`](../members/member-information.md#req-member-info-014-annual-response-contract-and-answer-catalogs) |
+| `member_experience_type_enum` | [`REQ-MEMBER-INFO-005`](../members/member-information.md#req-member-info-005-member-experience-and-sacrament-catalogs) |
+| `member_sacrament_type_enum` | [`REQ-MEMBER-INFO-005`](../members/member-information.md#req-member-info-005-member-experience-and-sacrament-catalogs) |
+| `member_contribution_area_enum` | [`REQ-MEMBER-INFO-006`](../members/member-information.md#req-member-info-006-member-contribution-profile) |
+| `member_occupation_enum` | [`REQ-MEMBER-INFO-014`](../members/member-information.md#req-member-info-014-annual-response-contract-and-answer-catalogs) |
+| `member_mass_attendance_frequency_enum` | [`REQ-MEMBER-INFO-014`](../members/member-information.md#req-member-info-014-annual-response-contract-and-answer-catalogs) |
+| `member_coordination_interest_enum` | [`REQ-MEMBER-INFO-014`](../members/member-information.md#req-member-info-014-annual-response-contract-and-answer-catalogs) |
 | `oratorio_team_type_enum` | [`REQ-ORATORIO-006`](../oratorio/oratorio-occurrences-and-planning.md#req-oratorio-006-standard-member-teams) and [`REQ-ORATORIO-012`](../oratorio/oratorio-occurrences-and-planning.md#req-oratorio-012-specialized-route-catalog) |
 | `oratoriano_form_status_enum` | [`REQ-ORATORIANO-FORM-002`](../oratorianos/oratoriano-additional-forms.md#req-oratoriano-form-002-lifecycle-and-current-authority) |
 | `oratoriano_form_origin_enum` | [`REQ-ORATORIANO-FORM-001`](../oratorianos/oratoriano-additional-forms.md#req-oratoriano-form-001-optional-versioned-form) |
@@ -510,12 +517,15 @@ flowchart TD
 * [ADR-0021: Use Flyway repeatable migrations for code-owned system reference data](../../decisions/0021-use-flyway-repeatable-migrations-for-system-reference-data.md)
 * [ADR-0003: Keep stale RBAC registry data fail-closed](../../decisions/0003-keep-stale-rbac-registry-data-fail-closed.md)
 * [ADR-0015: Compose Oratorio permission bundles in code](../../decisions/0015-compose-oratorio-permission-bundles-in-code.md)
+* [ADR-0027: Model Member information as normalized components and immutable annual responses](../../decisions/0027-model-member-information-as-normalized-components-and-immutable-annual-responses.md)
 
 ## Related requirements
 
 * [RBAC Catalog](../rbac/rbac-catalog.md)
 * [System GamLocation Catalog](../gam-locations/system-gam-location-catalog.md)
 * [Member Records and Lifecycle](../members/member-records-and-lifecycle.md)
+* [Member Information](../members/member-information.md)
+* [Member Information Import and Account Linking](../members/member-information-import-and-account-linking.md)
 * [Event Records and Generic Lifecycle](../events/event-records-and-generic-lifecycle.md)
 * [Membership Solicitations](../members/membership-solicitations.md)
 * [Oratorio Occurrences and Planning](../oratorio/oratorio-occurrences-and-planning.md)

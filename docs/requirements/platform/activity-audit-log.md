@@ -287,6 +287,9 @@ All identifiers below have status `Registered`. Action-to-target assignment, rea
 | `EVENT_CREATED`, `EVENT_UPDATED`, `EVENT_CANCELLED`, `EVENT_LOCKED`, `EVENT_FINALIZED`, `EVENT_REOPENED`, `EVENT_DELETED` | `ACCOUNT` | [Event Records and Generic Lifecycle](../events/event-records-and-generic-lifecycle.md) |
 | `GAM_LOCATION_CREATED`, `GAM_LOCATION_UPDATED`, `GAM_LOCATION_REMOVED` | `ACCOUNT` | [GamLocation Records](../gam-locations/gam-location-records.md) |
 | `MEMBER_REGISTERED`, `MEMBER_ACTIVATED`, `MEMBER_DEACTIVATED`, `COORDINATOR_GRANTED`, `COORDINATOR_REVOKED` | `ACCOUNT` | [Member Records and Lifecycle](../members/member-records-and-lifecycle.md) |
+| `MEMBER_PROFILE_UPDATED`, `MEMBER_GAM_ENTRY_DATE_UPDATED`, `MEMBER_DIETARY_RESTRICTION_UPDATED`, `MEMBER_EXPERIENCES_UPDATED`, `MEMBER_SACRAMENTS_UPDATED`, `MEMBER_CONTRIBUTION_PROFILE_UPDATED`, `MEMBER_ANNUAL_INFORMATION_READ` | `ACCOUNT` | [Member Information](../members/member-information.md) |
+| `MEMBER_ACCOUNT_LINKED` | `ACCOUNT` | [Member Information Import and Account Linking](../members/member-information-import-and-account-linking.md) |
+| `MEMBER_INFORMATION_IMPORTED` | `DEVELOPER` | [Member Information Import and Account Linking](../members/member-information-import-and-account-linking.md) |
 | `ORATORIO_COORDINATOR_GRANTED`, `ORATORIO_COORDINATOR_REVOKED` | `ACCOUNT` | [Oratorio Coordinator Designation](../oratorio/oratorio-coordinator-designation.md) |
 | `MEMBERSHIP_SOLICITATION_SUBMITTED`, `MEMBERSHIP_SOLICITATION_APPROVED`, `MEMBERSHIP_SOLICITATION_REJECTED` | `ACCOUNT` | [Membership Solicitations](../members/membership-solicitations.md) |
 | `ORATORIO_CREATED`, `ORATORIO_PLANNING_UPDATED`, `ORATORIO_TEAM_MEMBER_ASSIGNED`, `ORATORIO_TEAM_MEMBER_REMOVED`, `ORATORIO_CANCELLED`, `ORATORIO_LOCKED`, `ORATORIO_FINALIZED`, `ORATORIO_REOPENED`, `ORATORIO_DELETED` | `ACCOUNT` | [Oratorio Occurrences and Planning](../oratorio/oratorio-occurrences-and-planning.md) |
@@ -311,6 +314,8 @@ All identifiers below have status `Registered`. Registration does not assign any
 | `EVENT` | An Event resource. |
 | `GAM_LOCATION` | A GamLocation resource. |
 | `MEMBER` | A Member resource. |
+| `MEMBER_ANNUAL_INFORMATION_RESPONSE` | An immutable Annual Member Information Response resource. |
+| `MEMBER_INFORMATION_IMPORT_BATCH` | An immutable Member Information Import Batch resource. |
 | `MEMBERSHIP_SOLICITATION` | A Membership Solicitation resource. |
 | `ORATORIO` | An Oratorio occurrence resource. |
 | `ORATORIANO` | An Oratoriano resource. |

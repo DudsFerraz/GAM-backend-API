@@ -9,7 +9,7 @@ Some objective questions should have answears standardized in fixed possibilites
 I think we could divide the spreadsheet info between permanent (or rarely changed) member info and specific form fulfilling info, for example:
 Name, Birth date, city, gam member since, phoneNumber, food restriction, etc would be part of the member entity (or new record that are part of member entity);
 "O que você gostaria de ver mais nas formações/reuniões do GAM ao longo do ano? O que gostaria de aprender?", "Sugestões de atividades/brincadeiras diferentes para realizar no ORATÓRIO:", "Sugestões de posts para o INSTAGRAM";
- 
+
 Is creating a new "yearly form" entity relevant? Form completion is a future feature to include, besides it being out of scope for first release, we should know that is intended.
 
 5-Both prod and dev environments should include this data by default. Dev environment should also include extra data to fulfill all possible seams, as already stated by the requirements.
@@ -19,6 +19,29 @@ Is creating a new "yearly form" entity relevant? Form completion is a future fea
 I- Member entities should be created, but not linked to an account yet. Is there any issue with it?
 II- Member entities and accounts should be created (using the email informed in the form). How to manage the passwords (with first access, members should be able to create their passwords)? How to manage email changes (This wil probably be rare, but among 70 people it is very possible that someone want to change their email, since thos info was provided by the beginning of 2026 and the plan is to release member actively use by the beginning of 2027, or later)?
 
-Is there any other alternatives? 
+Is there any other alternatives?
 
 7- What else to consider?
+
+8- Planning outcome (2026-08-06)
+
+This idea was resolved into accepted durable artifacts:
+
+- docs/requirements/members/member-information.md
+- docs/requirements/members/member-information-import-and-account-linking.md
+- docs/requirements/common/gam-name-capitalization.md
+- docs/requirements/platform/member-information-development-fixture.md
+- docs/decisions/0026-use-isolated-member-information-import-with-explicit-account-linking.md
+- docs/decisions/0027-model-member-information-as-normalized-components-and-immutable-annual-responses.md
+- docs/diagrams/member-information/ownership.md
+- docs/diagrams/member-information/import-and-account-linking.md
+- docs/diagrams/member-information/update-concurrency.md
+
+The real reviewed dataset is production-only and remains ignored under
+docs/private-data/. Development uses expanded fictional fixtures instead of a
+copy of the real data. Imported production Members are initially Account-less;
+ordinary Member creation still requires an Account, and a permanent explicit
+workflow links a later existing Account to the existing Member.
+
+This notepad entry remains discovery context. The linked accepted Requirement
+Specifications, ADRs, and diagrams are the durable source of truth.

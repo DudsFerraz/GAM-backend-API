@@ -6,7 +6,7 @@ Accepted
 ## Context
 GAM needs a durable contract for registering lifetime Members, reading and searching Member records, reading a Member's presence history, changing a Member between active and inactive participation, and granting or revoking Coordinator responsibility.
 
-Account registration creates an identity only. It does not create membership. A Coordinator may register a Member directly, while an Account may separately use the membership-solicitation workflow. Both paths must preserve one lifetime Member per Account and keep Member status and Coordinator designation synchronized with the Account's lifecycle-owned authorization Roles.
+Account registration creates an identity only. It does not create membership. A Coordinator may register a Member directly, while an Account may separately use the membership-solicitation workflow. Both paths must preserve one lifetime Member per Account and keep Member status and Coordinator designation synchronized with the Account's lifecycle-owned authorization Roles. The accepted one-time Member-information import may create production Members without Accounts; a later explicit link workflow establishes the same immutable one-to-one relationship and lifecycle Role projection.
 
 The current implementation and tests predate this Requirement Specification and were used only as discovery material and conversation prompts. This document defines the intended behavior.
 
@@ -23,15 +23,24 @@ The current implementation and tests predate this Requirement Specification and 
 ### REQ-MEMBER-001: Lifetime Member identity and Account linkage
 Each Member shall have a UUID v7 identifier in accordance with `REQ-GAM-ID-001` through `REQ-GAM-ID-003`.
 
-Each Member shall be linked to exactly one existing, non-soft-deleted Account. One Account shall be linked to at most one lifetime Member.
+A production Member shall ordinarily be linked to exactly one existing,
+non-soft-deleted Account. The sole production exception is an Account-less
+Member created by the accepted one-time maintenance import under
+`REQ-MEMBER-IMPORT-001`. The isolated development fixture may create fictional
+Account-less seam records under `REQ-MEMBER-INFO-FIXTURE-001`.
 
-The Member-to-Account linkage shall be immutable. Deactivation shall not remove or release the linkage, and a previously linked Account shall not be eligible for another Member registration.
+One Account shall be linked to at most one lifetime Member. An Account-less
+Member may later receive one link only through `REQ-MEMBER-IMPORT-003` through
+`REQ-MEMBER-IMPORT-005`.
+
+Once present, the Member-to-Account linkage shall be immutable. Deactivation shall not remove or release the linkage, and a previously linked Account shall not be eligible for another Member registration.
 
 Rationale:
-Membership is lifelong even when participation becomes inactive. An immutable one-to-one link prevents two people from sharing one Account identity or one person from gaining multiple Member identities through lifecycle changes.
+Membership is lifelong even when participation becomes inactive. The narrow Account-less import state preserves existing real-world membership without manufacturing Accounts, while an immutable one-to-one link prevents two people from sharing one Account identity or one person from gaining multiple Member identities through lifecycle changes.
 
 Valid examples:
 - An eligible Account is linked to one newly registered Member.
+- An imported Member remains Account-less until a confirmed existing Account is explicitly linked.
 - An inactive Member remains linked to the same Account.
 
 Invalid examples:
@@ -41,7 +50,11 @@ Invalid examples:
 
 ---
 
-### REQ-MEMBER-002: Required Member information and age eligibility
+### REQ-MEMBER-002: Required Member information and age eligibility (superseded)
+This requirement is superseded by `REQ-MEMBER-INFO-002`, which preserves the
+name, birth-date, phone, and age rules while adding GAM entry date, residential
+city, and independent Member contact email.
+
 A Member shall have a `GamName`, birth date, and `GamPhoneNumber`.
 
 The name shall satisfy the accepted GamName requirements. The phone number shall satisfy the accepted GamPhoneNumber requirements and shall be exposed in its canonical E.164 representation.
@@ -62,25 +75,16 @@ Invalid examples:
 
 ---
 
-### REQ-MEMBER-003: Direct Member registration
+### REQ-MEMBER-003: Direct Member registration (field contract superseded)
 The system shall expose `POST /members` for direct Member registration. The route shall require authentication and the `MEMBER_MANAGE` permission.
 
-The request shall require:
-
-```json
-{
-  "accountId": "<account UUID>",
-  "firstName": "Ana",
-  "surname": "Silva",
-  "birthDate": "2000-01-01",
-  "phoneNumber": "+5519998877665",
-  "reason": "Accepted as a GAM Member"
-}
-```
+The request-field contract is superseded by `REQ-MEMBER-INFO-003`. The route,
+permission, Account eligibility, lifecycle behavior, reason, and success
+semantics in this requirement remain accepted.
 
 The Account shall be existing and non-soft-deleted, shall not already be linked to a Member, and shall not have a pending membership solicitation. Rejected solicitation history shall not prevent direct registration.
 
-Successful direct registration shall create an `ACTIVE` Member, return `201 Created`, set `Location` to `/api/members/{memberId}`, and return the Member record defined by `REQ-MEMBER-009`.
+Successful direct registration shall create an `ACTIVE` Member, return `201 Created`, set `Location` to `/api/members/{memberId}`, and return the Member record defined by `REQ-MEMBER-INFO-007`.
 
 Rationale:
 Direct registration supports a Coordinator-confirmed path while keeping public Account registration and self-solicitation separate.
@@ -211,7 +215,11 @@ An authenticated Account must retain access to its own lifetime Member record an
 
 ---
 
-### REQ-MEMBER-009: Member record response
+### REQ-MEMBER-009: Member record response (superseded)
+This requirement is superseded by `REQ-MEMBER-INFO-007`. The replacement adds
+the complete current core profile, dietary restriction, and nullable Account
+summary while preserving the security exclusions below.
+
 Member lookup, search, and successful direct registration shall return this Member record shape:
 
 ```json
@@ -247,7 +255,12 @@ Invalid examples:
 
 ---
 
-### REQ-MEMBER-010: Member search contract
+### REQ-MEMBER-010: Member search contract (superseded)
+This requirement is superseded by `REQ-MEMBER-INFO-012`. The replacement adds
+the accepted current-information filters, distinguishes `contactEmail` from
+`accountEmail`, removes the ambiguous historical `email` alias, and explicitly
+excludes annual answers, dietary restriction, and custom contribution text.
+
 `POST /members/search` shall accept only these public filter fields and
 comparison methods:
 
@@ -318,6 +331,11 @@ Invalid examples:
 ---
 
 ### REQ-MEMBER-011: Member API error semantics
+The Member-information update and read outcomes in `REQ-MEMBER-INFO-016` and
+the Account-link outcomes in `REQ-MEMBER-IMPORT-016` extend this lifecycle
+error contract, including `412 Precondition Failed` and
+`428 Precondition Required` for conditional Member replacement.
+
 Member registration, lookup, search, Member status, and Coordinator lifecycle routes shall use these outcomes:
 
 | Condition | Response |
@@ -337,6 +355,11 @@ Clients need stable distinctions between invalid input, authorization failure, h
 ---
 
 ### REQ-MEMBER-012: Member lifecycle activity audit
+Member information updates, Account linking, annual-information reads, and the
+one-time import use the additional high-level actions and minimized metadata
+defined by `REQ-MEMBER-INFO-010`, `REQ-MEMBER-INFO-015`,
+`REQ-MEMBER-IMPORT-005`, and `REQ-MEMBER-IMPORT-015`.
+
 Successful Member workflows shall emit exactly one high-level activity event:
 
 | Workflow | Activity action |
@@ -459,6 +482,12 @@ Member-domain lifecycle workflows shall exclusively manage the `MEMBER`, `VISITO
 | Active Coordinator | `MEMBER`, `COORD` | `VISITOR` |
 | Inactive Member | `VISITOR` | `MEMBER`, `COORD`, `ORATORIO_COORD` |
 
+An Account-less imported Member has no Account Role projection. Its activation,
+deactivation, responsibility conflict, and later-link behavior shall follow
+`REQ-MEMBER-IMPORT-002` through `REQ-MEMBER-IMPORT-005`. This narrow state does
+not permit generic Account-less Member creation or direct lifecycle-Role
+administration.
+
 An active Member may independently hold or not hold `ORATORIO_COORD` under the dedicated Oratorio Coordinator designation workflow. Direct registration and membership-solicitation approval shall create an active Member without `COORD` or `ORATORIO_COORD`. Reactivation shall restore `MEMBER` and remove `VISITOR`, but shall not restore a previously revoked or deactivation-removed `COORD` or `ORATORIO_COORD` assignment. Deactivation shall remove `MEMBER`, `COORD`, and `ORATORIO_COORD` and assign `VISITOR`.
 
 Before direct registration or membership-solicitation approval, an Account without a Member shall have no active `MEMBER`, `VISITOR`, `COORD`, or `ORATORIO_COORD` assignment. Any such assignment shall be treated as an inconsistent pre-existing projection and shall return `409 Conflict` without repair, Member creation, Role mutation, or activity logging.
@@ -558,6 +587,11 @@ Coordinator authority needs the same fail-safe recovery protection as the prior 
 ### REQ-MEMBER-020: Member activation and deactivation Role effects
 
 This requirement supersedes the lifecycle Role effects in `REQ-MEMBER-007`; its routes, `MEMBER_ACTIVATION` permission, required reason, and `204 No Content` success response remain unchanged.
+
+For an Account-less imported Member, `REQ-MEMBER-IMPORT-002` supersedes only
+the linked-Account Role preconditions and effects below. The status transition,
+authorization, reason, concurrency, and high-level activity requirements remain
+accepted.
 
 Reactivation shall require the valid inactive projection: active `VISITOR`, no active `MEMBER`, no active `COORD`, and no active `ORATORIO_COORD`. It shall change the Member to `ACTIVE`, assign `MEMBER`, remove `VISITOR`, leave both responsibility Roles absent, preserve custom Roles, and emit exactly one `MEMBER_ACTIVATED` event.
 
@@ -771,8 +805,8 @@ flowchart TD
 
 ## Out of scope
 
-* Editing Member name, birth date, phone number, or Account linkage.
 * Deleting, soft-deleting, restoring, or merging Members.
+* Unlinking, relinking, transferring, or repairing an established Member-to-Account link.
 * Creating an Account through Member registration.
 * Account deactivation, deletion, or restoration workflows.
 * Manually adding or dropping lifecycle-owned `MEMBER`, `VISITOR`, `COORD`, and `ORATORIO_COORD` Roles outside their owning Member-domain workflows.
@@ -787,10 +821,14 @@ flowchart TD
 
 * [ADR-0013: Make Member lifecycle own Coordinator designation](../../decisions/0013-make-member-lifecycle-own-coordinator-designation.md)
 * [ADR-0014: Make Member lifecycle own Oratorio Coordinator designation](../../decisions/0014-make-member-lifecycle-own-oratorio-coordinator-designation.md)
+* [ADR-0026: Use an isolated Member-information import with explicit Account linking](../../decisions/0026-use-isolated-member-information-import-with-explicit-account-linking.md)
+* [ADR-0027: Model Member information as normalized components and immutable annual responses](../../decisions/0027-model-member-information-as-normalized-components-and-immutable-annual-responses.md)
 
 ## Related requirements
 
 * [Membership Solicitations](membership-solicitations.md)
+* [Member Information](member-information.md)
+* [Member Information Import and Account Linking](member-information-import-and-account-linking.md)
 * [GamName](../common/gam-name.md)
 * [GamPhoneNumber](../common/gam-phone-number.md)
 * [UUID Identity](../common/uuid.md)

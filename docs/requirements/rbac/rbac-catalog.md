@@ -60,7 +60,7 @@ The RBAC catalog shall maintain a code-defined registry of system permissions. T
 
 | Area | Permission codes |
 | --- | --- |
-| Members | `MEMBER_GET`, `MEMBER_SEARCH`, `MEMBER_ACTIVATION`, `MEMBER_GET_NON_ACTIVE`, `MEMBER_MANAGE`, `COORDINATOR_MANAGE` |
+| Members | `MEMBER_GET`, `MEMBER_SEARCH`, `MEMBER_ACTIVATION`, `MEMBER_GET_NON_ACTIVE`, `MEMBER_MANAGE`, `MEMBER_INFORMATION_GET`, `MEMBER_ACCOUNT_LINK`, `COORDINATOR_MANAGE` |
 | Accounts | `ACCOUNT_GET`, `ACCOUNT_SEARCH`, `ACCOUNT_ROLE_MANAGE` |
 | Events | `EVENT_CREATE`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `EVENT_GET_COORD`, `EVENT_MANAGE` |
 | GamLocations | `GAM_LOCATION_GET`, `GAM_LOCATION_CREATE`, `GAM_LOCATION_MANAGE` |
@@ -83,6 +83,8 @@ The accepted display metadata for every system permission is:
 | `MEMBER_ACTIVATION` | `Activate members` | `Allows activating and deactivating members` |
 | `MEMBER_GET_NON_ACTIVE` | `View inactive members` | `Allows viewing non-active members` |
 | `MEMBER_MANAGE` | `Manage members` | `Allows managing members` |
+| `MEMBER_INFORMATION_GET` | `View annual Member information` | `Allows viewing protected annual Member information` |
+| `MEMBER_ACCOUNT_LINK` | `Link Member accounts` | `Allows linking an existing Account to an existing Account-less Member` |
 | `COORDINATOR_MANAGE` | `Manage coordinators` | `Allows granting and revoking Coordinator designation` |
 | `ACCOUNT_GET` | `View accounts` | `Allows viewing accounts` |
 | `ACCOUNT_SEARCH` | `Search accounts` | `Allows searching accounts` |
@@ -138,7 +140,7 @@ The current baseline shall seed these active permission bundles:
 | Role | Permissions |
 | --- | --- |
 | `SUDO` | Every permission in the accepted system permission registry. |
-| `COORD` | `MEMBER_GET`, `MEMBER_SEARCH`, `MEMBER_ACTIVATION`, `MEMBER_GET_NON_ACTIVE`, `MEMBER_MANAGE`, `COORDINATOR_MANAGE`, `ACCOUNT_GET`, `ACCOUNT_SEARCH`, `ACCOUNT_ROLE_MANAGE`, `EVENT_CREATE`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `EVENT_GET_COORD`, `EVENT_MANAGE`, `GAM_LOCATION_GET`, `GAM_LOCATION_CREATE`, `GAM_LOCATION_MANAGE`, `PRESENCES_SEARCH`, `PRESENCE_REGISTER`, `PRESENCE_EDIT`, `PRESENCE_REMOVE`, `ROLE_GET`, `PERMISSION_GET`, `ORATORIO_GET`, `ORATORIO_CREATE`, `ORATORIO_MANAGE`, `ORATORIO_ATTENDANCE_GET`, `ORATORIO_ATTENDANCE_MANAGE`, `ORATORIO_COORD_MANAGE`, `ORATORIANO_GET`, `ORATORIANO_REGISTER`, `ORATORIANO_MANAGE`, `ORATORIANO_FORM_GET`, `ORATORIANO_FORM_MANAGE`, `ORATORIANO_FORM_PDF_GENERATE`, and `ORATORIANO_FORM_ATTACHMENT_GET`. |
+| `COORD` | `MEMBER_GET`, `MEMBER_SEARCH`, `MEMBER_ACTIVATION`, `MEMBER_GET_NON_ACTIVE`, `MEMBER_MANAGE`, `MEMBER_INFORMATION_GET`, `MEMBER_ACCOUNT_LINK`, `COORDINATOR_MANAGE`, `ACCOUNT_GET`, `ACCOUNT_SEARCH`, `ACCOUNT_ROLE_MANAGE`, `EVENT_CREATE`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `EVENT_GET_COORD`, `EVENT_MANAGE`, `GAM_LOCATION_GET`, `GAM_LOCATION_CREATE`, `GAM_LOCATION_MANAGE`, `PRESENCES_SEARCH`, `PRESENCE_REGISTER`, `PRESENCE_EDIT`, `PRESENCE_REMOVE`, `ROLE_GET`, `PERMISSION_GET`, `ORATORIO_GET`, `ORATORIO_CREATE`, `ORATORIO_MANAGE`, `ORATORIO_ATTENDANCE_GET`, `ORATORIO_ATTENDANCE_MANAGE`, `ORATORIO_COORD_MANAGE`, `ORATORIANO_GET`, `ORATORIANO_REGISTER`, `ORATORIANO_MANAGE`, `ORATORIANO_FORM_GET`, `ORATORIANO_FORM_MANAGE`, `ORATORIANO_FORM_PDF_GENERATE`, and `ORATORIANO_FORM_ATTACHMENT_GET`. |
 | `ORATORIO_COORD` | `ORATORIO_GET`, `ORATORIO_CREATE`, `ORATORIO_MANAGE`, `ORATORIO_ATTENDANCE_GET`, `ORATORIO_ATTENDANCE_MANAGE`, `ORATORIANO_GET`, `ORATORIANO_REGISTER`, `ORATORIANO_MANAGE`, `ORATORIANO_FORM_GET`, `ORATORIANO_FORM_MANAGE`, `ORATORIANO_FORM_PDF_GENERATE`, and `ORATORIANO_FORM_ATTACHMENT_GET`. |
 | `MEMBER` | `MEMBER_GET`, `ACCOUNT_GET`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `GAM_LOCATION_GET`, and `ORATORIO_GET`. |
 | `VISITOR` | No permissions. |
@@ -673,10 +675,13 @@ flowchart LR
 * [ADR-0013: Make Member lifecycle own Coordinator designation](../../decisions/0013-make-member-lifecycle-own-coordinator-designation.md)
 * [ADR-0014: Make Member lifecycle own Oratorio Coordinator designation](../../decisions/0014-make-member-lifecycle-own-oratorio-coordinator-designation.md)
 * [ADR-0015: Compose Oratorio permission bundles in code](../../decisions/0015-compose-oratorio-permission-bundles-in-code.md)
+* [ADR-0026: Use an isolated Member-information import with explicit Account linking](../../decisions/0026-use-isolated-member-information-import-with-explicit-account-linking.md)
 
 ## Related requirements
 
 * [API Error and Authorization Contract](../platform/api-error-and-authorization-contract.md)
+* [Member Information](../members/member-information.md)
+* [Member Information Import and Account Linking](../members/member-information-import-and-account-linking.md)
 * [Member Event Presences](../presences/member-event-presences.md)
 * [Oratorio Coordinator Designation](../oratorio/oratorio-coordinator-designation.md)
 * [Oratorio Occurrences and Planning](../oratorio/oratorio-occurrences-and-planning.md)
