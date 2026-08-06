@@ -1,25 +1,5 @@
 Run Agent R for:
 
-1-
-$gam-review
-
-Primary authoritative artifact:
-docs/requirements/platform/api-error-and-authorization-contract.mdStatus: Accepted
-Requirements: REQ-API-ERROR-001 through REQ-API-ERROR-012
-Contains the authoritative inline decision-flow diagram
-Open questions: None
-
-Related Accepted Requirement Specifications to validate:
-docs/requirements/platform/openapi-and-frontend-api-documentation.md
-docs/requirements/platform/search-and-filter-framework.md
-docs/requirements/authentication/authentication-and-registration.md
-docs/requirements/authentication/browser-session-and-frontend-integration.md
-docs/requirements/accounts/account-records.md
-docs/requirements/members/member-records-and-lifecycle.md
-docs/requirements/members/membership-solicitations.md
-docs/requirements/rbac/account-role-management.md
-docs/requirements/rbac/rbac-catalog.md
-
 2-
 $gam-review
 
