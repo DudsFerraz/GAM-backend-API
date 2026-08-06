@@ -559,6 +559,44 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
     }
 
     @Test
+    @DisplayName("REQ-OPENAPI-004/012 - nullable form actor examples -> AccountReferenceRDTO objects")
+    void formResponseActorExamplesShouldMatchTheirNullableReferenceSchemas() {
+        Map<String, Object> paths = object(openApiContract().jsonPath().getMap("$"), "paths");
+        SoftAssertions assertions = new SoftAssertions();
+
+        assertFormActorExample(
+                paths,
+                route("get", "/oratorianos/{oratorianoId}/forms/{formId}"),
+                "200",
+                false,
+                assertions
+        );
+        assertFormActorExample(
+                paths,
+                route("put", "/oratorianos/{oratorianoId}/forms/{formId}"),
+                "200",
+                false,
+                assertions
+        );
+        assertFormActorExample(
+                paths,
+                route("get", "/oratorianos/{oratorianoId}/forms"),
+                "200",
+                true,
+                assertions
+        );
+        assertFormActorExample(
+                paths,
+                route("post", "/oratorianos/{oratorianoId}/forms"),
+                "201",
+                false,
+                assertions
+        );
+
+        assertions.assertAll();
+    }
+
+    @Test
     @DisplayName("REQ-ORATORIANO-FORM-022 and REQ-OPENAPI-004/012 - FormDraftDTO properties -> explicit nullable schemas")
     void formDraftSchemaShouldExplicitlyAllowNullForEveryField() {
         Map<String, Object> schemas = object(
@@ -1015,6 +1053,51 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
         return mediaTypes.stream()
                 .map(mediaType -> (Map<String, Object>) mediaType)
                 .anyMatch(mediaType -> mediaType.containsKey("example") || mediaType.containsKey("examples"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertFormActorExample(
+            Map<String, Object> paths,
+            Route route,
+            String status,
+            boolean paged,
+            SoftAssertions assertions
+    ) {
+        Map<String, Object> response = object(
+                object(operation(paths, route), "responses"),
+                status
+        );
+        Map<String, Object> content = object(response, "content");
+        Map<String, Object> mediaType = (Map<String, Object>) content.values().iterator().next();
+        Map<String, Object> example = object(mediaType, "example");
+        Map<String, Object> form = example;
+        if (paged) {
+            Object itemsValue = example.get("items");
+            assertions.assertThat(itemsValue)
+                    .as("%s %s response example items", route.method().toUpperCase(), route.path())
+                    .isInstanceOf(List.class);
+            if (!(itemsValue instanceof List<?> items)
+                    || items.isEmpty()
+                    || !(items.getFirst() instanceof Map<?, ?>)) {
+                return;
+            }
+            form = (Map<String, Object>) items.getFirst();
+        }
+
+        for (String actorField : List.of("createdBy", "completedBy", "revokedBy")) {
+            Object actor = form.get(actorField);
+            assertions.assertThat(actor)
+                    .as("%s %s response example %s", route.method().toUpperCase(), route.path(), actorField)
+                    .isInstanceOf(Map.class);
+            if (actor instanceof Map<?, ?> actorReference) {
+                assertions.assertThat(actorReference.containsKey("id"))
+                        .as("%s %s response example %s fields", route.method().toUpperCase(), route.path(), actorField)
+                        .isTrue();
+                assertions.assertThat(actorReference.containsKey("displayName"))
+                        .as("%s %s response example %s fields", route.method().toUpperCase(), route.path(), actorField)
+                        .isTrue();
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")

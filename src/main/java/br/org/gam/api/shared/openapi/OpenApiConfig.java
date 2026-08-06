@@ -1707,6 +1707,12 @@ public class OpenApiConfig {
         if (schema.getExample() != null) {
             return schema.getExample();
         }
+        if (schema instanceof ComposedSchema composedSchema) {
+            List<Schema> alternatives = firstComposedSchemaAlternatives(composedSchema);
+            if (!alternatives.isEmpty()) {
+                return exampleForSchema(openApi, alternatives.getFirst(), propertyName, resolvingReferences);
+            }
+        }
         if (schema.getEnum() != null && !schema.getEnum().isEmpty()) {
             return schema.getEnum().getFirst();
         }
@@ -1731,6 +1737,19 @@ public class OpenApiConfig {
             return true;
         }
         return stringExample(schema, propertyName);
+    }
+
+    private List<Schema> firstComposedSchemaAlternatives(ComposedSchema schema) {
+        if (schema.getAnyOf() != null && !schema.getAnyOf().isEmpty()) {
+            return schema.getAnyOf();
+        }
+        if (schema.getOneOf() != null && !schema.getOneOf().isEmpty()) {
+            return schema.getOneOf();
+        }
+        if (schema.getAllOf() != null && !schema.getAllOf().isEmpty()) {
+            return schema.getAllOf();
+        }
+        return List.of();
     }
 
     private Map<String, Object> ordinaryGamLocationExample(Map<?, ?> gamLocation) {
