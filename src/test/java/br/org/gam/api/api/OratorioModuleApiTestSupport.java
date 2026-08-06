@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -159,7 +160,19 @@ abstract class OratorioModuleApiTestSupport extends MemberApiTestSupport {
     }
 
     protected void setCurrentInstant(Instant instant) {
+        TestClockConfiguration.SCRIPTED_INSTANTS.clear();
         TestClockConfiguration.CURRENT_INSTANT.set(instant);
+    }
+
+    protected void setCurrentInstants(Instant... instants) {
+        if (instants.length == 0) {
+            throw new IllegalArgumentException("At least one instant is required");
+        }
+        TestClockConfiguration.SCRIPTED_INSTANTS.clear();
+        for (Instant instant : instants) {
+            TestClockConfiguration.SCRIPTED_INSTANTS.add(instant);
+        }
+        TestClockConfiguration.CURRENT_INSTANT.set(instants[instants.length - 1]);
     }
 
     @TestConfiguration
@@ -167,6 +180,8 @@ abstract class OratorioModuleApiTestSupport extends MemberApiTestSupport {
 
         private static final AtomicReference<Instant> CURRENT_INSTANT =
                 new AtomicReference<>(Instant.parse("2026-07-25T12:00:00Z"));
+        private static final ConcurrentLinkedQueue<Instant> SCRIPTED_INSTANTS =
+                new ConcurrentLinkedQueue<>();
 
         @Bean
         @Primary
@@ -184,7 +199,8 @@ abstract class OratorioModuleApiTestSupport extends MemberApiTestSupport {
 
                 @Override
                 public Instant instant() {
-                    return CURRENT_INSTANT.get();
+                    Instant scripted = SCRIPTED_INSTANTS.poll();
+                    return scripted == null ? CURRENT_INSTANT.get() : scripted;
                 }
             };
         }

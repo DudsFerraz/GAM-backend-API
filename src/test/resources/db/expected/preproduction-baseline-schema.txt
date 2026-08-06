@@ -494,6 +494,7 @@ oratorio_team_assignments.oratorio_team_assignments_oratorio_id_not_null | NOT N
 oratorio_team_assignments.oratorio_team_assignments_pkey | PRIMARY KEY (oratorio_id, member_id, team_type)
 oratorio_team_assignments.oratorio_team_assignments_team_type_not_null | NOT NULL team_type
 oratorios.check_oratorios_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+oratorios.check_oratorios_shared_event_identity | CHECK (id = event_id)
 oratorios.fk_oratorio_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
 oratorios.fk_oratorio_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
 oratorios.fk_oratorio_event | FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE

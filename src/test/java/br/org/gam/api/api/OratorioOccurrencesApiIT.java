@@ -3,11 +3,13 @@ package br.org.gam.api.api;
 import br.org.gam.api.testing.annotation.ApiTest;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.IntegrationTest;
+import br.org.gam.api.testing.annotation.PersistenceTest;
 import br.org.gam.api.testing.annotation.SecurityTest;
 import io.restassured.response.ExtractableResponse;
 import io.restassured.response.Response;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
@@ -26,6 +28,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 @ApiTest
 @FunctionalTest
@@ -70,6 +73,85 @@ class OratorioOccurrencesApiIT extends OratorioModuleApiTestSupport {
                         "Boa Tarde das Crianças", "Boa Tarde dos Jovens", "Lanche"
                 );
         assertThat(activityCountForTarget(id)).isEqualTo(1);
+    }
+
+    @Test
+    @PersistenceTest
+    @DisplayName("REQ-ORATORIO-001 - persistence rejects an Oratorio UUID different from its Event UUID")
+    void persistenceShouldRejectDifferentOratorioAndEventIds() {
+        UUID eventId = createOratorio(sudoSession(), LocalDate.of(2030, 6, 22));
+        UUID mismatchedOratorioId = UUID.randomUUID();
+
+        Throwable violation = catchThrowable(() -> jdbcTemplate.update(
+                "UPDATE oratorios SET id = ? WHERE id = ?",
+                mismatchedOratorioId,
+                eventId
+        ));
+        if (violation == null) {
+            jdbcTemplate.update(
+                    "UPDATE oratorios SET id = ? WHERE id = ?",
+                    eventId,
+                    mismatchedOratorioId
+            );
+        }
+
+        assertThat(violation)
+                .as("The database must enforce the shared Oratorio/Event UUID identity")
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @DisplayName("REQ-EVENT-006 - one request instant governs Oratorio lifecycle validation and response status")
+    void requestCrossingEndBoundaryShouldUseOneInstantThroughout() {
+        AuthSession caller = sudoSession();
+        UUID id = createOratorio(caller, LocalDate.of(2030, 6, 29));
+        Instant end = Instant.parse("2030-06-29T20:00:00Z");
+        ExtractableResponse<Response> response;
+        try {
+            setCurrentInstants(end.minusNanos(1), end);
+            response = authenticatedJsonRequest(caller)
+                    .body(planningPayload(null, null, null, null))
+                    .put(ORATORIOS + "/{id}/planning", id)
+                    .then()
+                    .extract();
+        } finally {
+            setCurrentInstant(Instant.parse("2026-07-25T12:00:00Z"));
+        }
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.<String>path("event.status"))
+                .as("The response must use the same pre-end instant used to validate this request")
+                .isEqualTo("SCHEDULED");
+    }
+
+    @Test
+    @DisplayName("REQ-EVENT-006 - creation crossing end boundary returns its initial request status")
+    void creationCrossingEndBoundaryShouldUseOneInstantThroughout() {
+        AuthSession caller = sudoSession();
+        Instant end = Instant.parse("2030-07-06T20:00:00Z");
+        ExtractableResponse<Response> response;
+        try {
+            setCurrentInstants(end.minusNanos(1), end);
+            response = authenticatedJsonRequest(caller)
+                    .body(Map.of("date", "2030-07-06"))
+                    .post(ORATORIOS)
+                    .then()
+                    .extract();
+        } finally {
+            setCurrentInstant(Instant.parse("2026-07-25T12:00:00Z"));
+        }
+
+        assertThat(response.statusCode()).isEqualTo(201);
+        UUID id = UUID.fromString(response.path("id"));
+        trackOratorio(id);
+        assertThat(response.<String>path("event.status"))
+                .as("Creation must map its response with the same pre-end instant used for initial status")
+                .isEqualTo("SCHEDULED");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status::text FROM events WHERE id = ?",
+                String.class,
+                id
+        )).isEqualTo("SCHEDULED");
     }
 
     @Test

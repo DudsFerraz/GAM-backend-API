@@ -23,6 +23,8 @@ CREATE TABLE oratorios (
         FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL,
     CONSTRAINT fk_oratorio_deleted_by
         FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL,
+    CONSTRAINT check_oratorios_shared_event_identity
+        CHECK (id = event_id),
     CONSTRAINT check_oratorios_deleted_attribution
         CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
 );

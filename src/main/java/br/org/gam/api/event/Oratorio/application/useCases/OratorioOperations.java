@@ -128,6 +128,7 @@ public class OratorioOperations {
 
     @Transactional
     public OratorioRDTO create(CreateOratorioDTO dto) {
+        Instant evaluationInstant = clock.instant();
         LocalDate date = dto.date();
         if (oratorioRepository.existsByLocalDate(date)) {
             throw duplicateDate(date);
@@ -150,7 +151,6 @@ public class OratorioOperations {
                 ));
         Instant begin = ZonedDateTime.of(date, START, SAO_PAULO).toInstant();
         Instant end = ZonedDateTime.of(date, END, SAO_PAULO).toInstant();
-        Instant now = clock.instant();
         UUID id = UUIDGenerator.generateUUIDV7();
 
         EventEntity event = new EventEntity();
@@ -160,7 +160,7 @@ public class OratorioOperations {
         event.setLocation(location);
         event.setRequiredPermission(audience);
         event.setType(EventType.ORATORIO);
-        event.setStatus(end.isAfter(now) ? EventStatus.SCHEDULED : EventStatus.COMPLETED);
+        event.setStatus(end.isAfter(evaluationInstant) ? EventStatus.SCHEDULED : EventStatus.COMPLETED);
         event.setBeginDate(begin);
         event.setEndDate(end);
 
@@ -175,25 +175,27 @@ public class OratorioOperations {
             throw duplicateDate(date);
         }
         activityEvents.oratorioCreated(id, id);
-        return detail(oratorio);
+        return detail(oratorio, evaluationInstant);
     }
 
     @Transactional(readOnly = true)
     public OratorioRDTO get(UUID id) {
+        Instant evaluationInstant = clock.instant();
         OratorioEntity oratorio = oratorioRepository.findById(id)
                 .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
         if (!eventSecurity.canGetEvent(oratorio.getEvent())) {
             throw NotFoundException.resource("Oratorio", id);
         }
-        return detail(oratorio);
+        return detail(oratorio, evaluationInstant);
     }
 
     @Transactional
     public OratorioRDTO replacePlanning(UUID id, PlanningDTO dto) {
+        Instant evaluationInstant = clock.instant();
         EventEntity event = eventRepository.findActiveByIdForUpdate(id)
                 .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
         OratorioEntity oratorio = requiredForUpdate(id);
-        EventStatus status = effectiveStatus(event);
+        EventStatus status = effectiveStatus(event, evaluationInstant);
         if (status == EventStatus.FINALIZED || status == EventStatus.CANCELLED) {
             throw lifecycleConflict(id, status, "Planning is closed for this occurrence.");
         }
@@ -205,7 +207,7 @@ public class OratorioOperations {
         );
         PlanningDTO previous = planning(oratorio);
         if (Objects.equals(previous, normalized)) {
-            return detail(oratorio);
+            return detail(oratorio, evaluationInstant);
         }
         oratorio.setLancheDescription(normalized.lancheDescription());
         oratorio.setGincanaDescription(normalized.gincanaDescription());
@@ -232,15 +234,16 @@ public class OratorioOperations {
                 "Oratorio planning replaced",
                 Map.of("changedFields", List.copyOf(changed))
         );
-        return detail(oratorio);
+        return detail(oratorio, evaluationInstant);
     }
 
     @Transactional
     public void assignTeamMember(UUID id, TeamType teamType, UUID memberId) {
+        Instant evaluationInstant = clock.instant();
         EventEntity event = eventRepository.findActiveByIdForUpdate(id)
                 .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
         requiredForUpdate(id);
-        assertPlanningMutable(id, event);
+        assertPlanningMutable(id, event, evaluationInstant);
         MemberEntity member = memberLoader.requiredById(memberId);
         if (member.getStatus() != MemberStatus.ACTIVE) {
             throw ConflictException.resource(
@@ -257,7 +260,7 @@ public class OratorioOperations {
                 id,
                 memberId,
                 teamType.name(),
-                Timestamp.from(clock.instant()),
+                Timestamp.from(evaluationInstant),
                 auditorAware.getCurrentAuditor().orElse(null)
         );
         if (changed > 0) {
@@ -273,10 +276,11 @@ public class OratorioOperations {
 
     @Transactional
     public void removeTeamMember(UUID id, TeamType teamType, UUID memberId) {
+        Instant evaluationInstant = clock.instant();
         EventEntity event = eventRepository.findActiveByIdForUpdate(id)
                 .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
         requiredForUpdate(id);
-        assertPlanningMutable(id, event);
+        assertPlanningMutable(id, event, evaluationInstant);
         int changed = jdbcTemplate.update(
                 "DELETE FROM oratorio_team_assignments "
                         + "WHERE oratorio_id = ? AND member_id = ? AND team_type = ?::oratorio_team_type_enum",
@@ -327,11 +331,12 @@ public class OratorioOperations {
 
     @Transactional
     public void delete(UUID id, String rawReason) {
+        Instant evaluationInstant = clock.instant();
         String reason = RequiredReason.normalize(rawReason, "Oratorio deletion requires an audit reason.");
         EventEntity event = eventRepository.findActiveByIdForUpdate(id)
                 .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
         OratorioEntity oratorio = requiredForUpdate(id);
-        EventStatus status = effectiveStatus(event);
+        EventStatus status = effectiveStatus(event, evaluationInstant);
         if (status == EventStatus.LOCKED || status == EventStatus.FINALIZED) {
             throw lifecycleConflict(id, status, "The occurrence must be reopened before deletion.");
         }
@@ -358,9 +363,10 @@ public class OratorioOperations {
 
     @Transactional
     public AttendanceMutation markMember(UUID oratorioId, UUID memberId) {
-        OratorioEntity occurrence = attendanceOccurrence(oratorioId, true);
+        Instant evaluationInstant = clock.instant();
+        OratorioEntity occurrence = attendanceOccurrence(oratorioId, evaluationInstant);
         return presenceRepository.findByMember_IdAndEvent_Id(memberId, oratorioId)
-                .map(existing -> new AttendanceMutation(false, memberAttendance(existing)))
+                .map(existing -> new AttendanceMutation(false, memberAttendance(existing, evaluationInstant)))
                 .orElseGet(() -> {
                     MemberEntity member = memberLoader.requiredById(memberId);
                     PresenceEntity presence = new PresenceEntity();
@@ -377,13 +383,14 @@ public class OratorioOperations {
                             "Member marked present in Oratorio tracker",
                             Map.of("oratorioId", oratorioId, "memberId", memberId)
                     );
-                    return new AttendanceMutation(true, memberAttendance(presence));
+                    return new AttendanceMutation(true, memberAttendance(presence, evaluationInstant));
                 });
     }
 
     @Transactional
     public AttendanceMutation markOratoriano(UUID oratorioId, UUID oratorianoId) {
-        OratorioEntity occurrence = attendanceOccurrence(oratorioId, true);
+        Instant evaluationInstant = clock.instant();
+        OratorioEntity occurrence = attendanceOccurrence(oratorioId, evaluationInstant);
         return attendanceRepository.findByOratorio_IdAndOratoriano_Id(oratorioId, oratorianoId)
                 .map(existing -> new AttendanceMutation(false, oratorianoAttendance(existing)))
                 .orElseGet(() -> {
@@ -392,7 +399,7 @@ public class OratorioOperations {
                     attendance.setId(UUIDGenerator.generateUUIDV7());
                     attendance.setOratorio(occurrence);
                     attendance.setOratoriano(oratoriano);
-                    attendance.setRegisteredAt(clock.instant());
+                    attendance.setRegisteredAt(evaluationInstant);
                     attendanceRepository.saveAndFlush(attendance);
                     activityEvents.moduleActivity(
                             ActivityAction.ORATORIANO_ATTENDANCE_REGISTERED,
@@ -408,7 +415,8 @@ public class OratorioOperations {
 
     @Transactional
     public void uncheckMember(UUID oratorioId, UUID memberId, String rawReason) {
-        EventStatus status = attendanceMutationStatus(oratorioId);
+        Instant evaluationInstant = clock.instant();
+        EventStatus status = attendanceMutationStatus(oratorioId, evaluationInstant);
         String reason = removalReason(status, rawReason);
         presenceRepository.findByMember_IdAndEvent_Id(memberId, oratorioId).ifPresent(presence -> {
             presenceRepository.delete(presence);
@@ -425,7 +433,8 @@ public class OratorioOperations {
 
     @Transactional
     public void uncheckOratoriano(UUID oratorioId, UUID oratorianoId, String rawReason) {
-        EventStatus status = attendanceMutationStatus(oratorioId);
+        Instant evaluationInstant = clock.instant();
+        EventStatus status = attendanceMutationStatus(oratorioId, evaluationInstant);
         String reason = removalReason(status, rawReason);
         attendanceRepository.findByOratorio_IdAndOratoriano_Id(oratorioId, oratorianoId).ifPresent(attendance -> {
             attendanceRepository.delete(attendance);
@@ -442,7 +451,8 @@ public class OratorioOperations {
 
     @Transactional
     public QuickRegistrationRDTO registerAndMark(UUID oratorioId, RegisterOratorianoDTO dto) {
-        OratorioEntity occurrence = attendanceOccurrence(oratorioId, true);
+        Instant evaluationInstant = clock.instant();
+        OratorioEntity occurrence = attendanceOccurrence(oratorioId, evaluationInstant);
         var oratorianoRDTO = oratorianoRecords.registerWithoutActivity(dto);
         OratorianoEntity oratoriano = oratorianoRepository.findById(oratorianoRDTO.id())
                 .orElseThrow(() -> NotFoundException.resource("Oratoriano", oratorianoRDTO.id()));
@@ -450,7 +460,7 @@ public class OratorioOperations {
         attendance.setId(UUIDGenerator.generateUUIDV7());
         attendance.setOratorio(occurrence);
         attendance.setOratoriano(oratoriano);
-        attendance.setRegisteredAt(clock.instant());
+        attendance.setRegisteredAt(evaluationInstant);
         attendanceRepository.saveAndFlush(attendance);
         activityEvents.moduleActivity(
                 ActivityAction.ORATORIANO_REGISTERED_AND_MARKED_PRESENT,
@@ -592,23 +602,23 @@ public class OratorioOperations {
         return new PresentSummaryRDTO(members, oratorianos);
     }
 
-    private OratorioEntity attendanceOccurrence(UUID id, boolean addition) {
+    private OratorioEntity attendanceOccurrence(UUID id, Instant evaluationInstant) {
         EventEntity event = eventRepository.findActiveByIdForUpdate(id)
                 .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
         OratorioEntity occurrence = oratorioRepository.findById(id)
                 .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
-        EventStatus status = effectiveStatus(event);
+        EventStatus status = effectiveStatus(event, evaluationInstant);
         if (!additionAllowed(status)) {
             throw lifecycleConflict(id, status, "New attendance is not allowed for this occurrence.");
         }
         return occurrence;
     }
 
-    private EventStatus attendanceMutationStatus(UUID id) {
+    private EventStatus attendanceMutationStatus(UUID id, Instant evaluationInstant) {
         EventEntity event = eventRepository.findActiveByIdForUpdate(id)
                 .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
         required(id);
-        EventStatus status = effectiveStatus(event);
+        EventStatus status = effectiveStatus(event, evaluationInstant);
         if (status == EventStatus.LOCKED || status == EventStatus.FINALIZED) {
             throw lifecycleConflict(id, status, "Attendance correction is closed for this occurrence.");
         }
@@ -657,6 +667,7 @@ public class OratorioOperations {
             String reason,
             EventStatus... allowedSources
     ) {
+        Instant evaluationInstant = clock.instant();
         /*
          * Every occurrence-scoped mutation enters through the shared Event
          * boundary before the specialized Oratorio row. Planning and team
@@ -666,7 +677,7 @@ public class OratorioOperations {
         EventEntity event = eventRepository.findActiveByIdForUpdate(id)
                 .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
         requiredForUpdate(id);
-        EventStatus current = effectiveStatus(event);
+        EventStatus current = effectiveStatus(event, evaluationInstant);
         boolean allowed = false;
         for (EventStatus source : allowedSources) {
             allowed |= current == source;
@@ -695,10 +706,10 @@ public class OratorioOperations {
         );
     }
 
-    private OratorioRDTO detail(OratorioEntity oratorio) {
+    private OratorioRDTO detail(OratorioEntity oratorio, Instant evaluationInstant) {
         return new OratorioRDTO(
                 oratorio.getId(),
-                eventMapper.entityToRDTO(oratorio.getEvent(), clock.instant()),
+                eventMapper.entityToRDTO(oratorio.getEvent(), evaluationInstant),
                 fixedSchedule(),
                 planning(oratorio),
                 teams(oratorio.getId())
@@ -757,7 +768,7 @@ public class OratorioOperations {
                 .toList();
     }
 
-    private AttendanceRDTO memberAttendance(PresenceEntity presence) {
+    private AttendanceRDTO memberAttendance(PresenceEntity presence, Instant evaluationInstant) {
         MemberEntity member = presence.getMember();
         return new AttendanceRDTO(
                 presence.getId(),
@@ -768,7 +779,7 @@ public class OratorioOperations {
                         member.getStatus().name(),
                         member.getDeletedAt() != null
                 ),
-                presence.getCreatedAt() == null ? clock.instant() : presence.getCreatedAt()
+                presence.getCreatedAt() == null ? evaluationInstant : presence.getCreatedAt()
         );
     }
 
@@ -797,15 +808,15 @@ public class OratorioOperations {
                 .orElseThrow(() -> NotFoundException.resource("Oratorio", id));
     }
 
-    private void assertPlanningMutable(UUID id, EventEntity event) {
-        EventStatus status = effectiveStatus(event);
+    private void assertPlanningMutable(UUID id, EventEntity event, Instant evaluationInstant) {
+        EventStatus status = effectiveStatus(event, evaluationInstant);
         if (status == EventStatus.FINALIZED || status == EventStatus.CANCELLED) {
             throw lifecycleConflict(id, status, "Planning is closed for this occurrence.");
         }
     }
 
-    private EventStatus effectiveStatus(EventEntity event) {
-        return Event.effectiveStatus(event.getStatus(), event.getEndDate(), clock.instant());
+    private EventStatus effectiveStatus(EventEntity event, Instant evaluationInstant) {
+        return Event.effectiveStatus(event.getStatus(), event.getEndDate(), evaluationInstant);
     }
 
     private String normalizePlanning(String value) {
