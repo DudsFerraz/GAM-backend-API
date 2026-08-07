@@ -64,6 +64,8 @@ Architecture and implementation conventions are documented in:
 
 For local setup, backend startup, Maven commands, Docker Compose commands, and dependency checks, see [Running the System](docs/dev-guidelines/running-the-system/README.md).
 
+For production infrastructure implementation, VPS commissioning, the pre-release burn-in, production-data initialization, and the version 1.0 release, see [Production VPS Commissioning and 1.0 Release](docs/dev-guidelines/production-vps-commissioning-and-release.md).
+
 ## Documentation
 
 Project documentation is organized under `docs/`.
