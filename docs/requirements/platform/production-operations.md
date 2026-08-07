@@ -16,6 +16,8 @@ The [Production Backup and Recovery](production-backup-and-recovery.md) Requirem
 - `Recovery Point Objective (RPO)`: The maximum accepted age of recoverable persisted data after an outage.
 - `Recovery Time Objective (RTO)`: The target maximum time to restore service after a recoverable outage is identified.
 - `restoration drill`: A documented exercise that restores a production-compatible backup into an isolated environment and verifies usable data and application access.
+- `commissioning gate`: The temporary Caddy source-address restriction that prevents KVM 2 from receiving general production traffic before explicit launch approval.
+- `rollback window`: The minimum period and release-count boundary during which the previous compatible frontend/backend pair and its immutable artifacts remain available.
 
 ## Functional requirements
 
@@ -109,31 +111,33 @@ This historical quarterly rule shall not govern current production readiness.
 ---
 
 ### REQ-OPS-006: External availability monitoring
-The production public HTTPS entry point shall be checked from outside the VPS at least every five minutes.
+Better Stack shall check the production public HTTPS entry point from outside the VPS every five minutes by sending `GET /api/health`.
 
-An alert shall be sent after three consecutive failed checks through a channel that remains available when the VPS is unavailable.
+The check shall require HTTP `200 OK` and the exact healthy response defined by `REQ-OPS-011`. An alert shall be sent through Better Stack-hosted email and mobile push after three consecutive failed checks. The notification channel shall remain available when the VPS is unavailable.
 
-Any public health response shall expose only minimal availability status and shall not disclose database details, environment variables, dependency addresses, secrets, or application version details.
+The accepted AWS EventBridge, Lambda, and SNS monitor shall remain separate and authoritative for backup-object validation.
 
 Rationale:
 External checks detect total host, network, proxy, TLS, and application-entry-point failure without depending on the failed system to report itself.
 
 Valid examples:
 - Three failed five-minute checks notify an external alert channel.
-- The public health response indicates availability without listing internal components.
+- Better Stack detects that the public proxy can no longer reach a ready backend.
 
 Invalid examples:
 - Monitoring runs only as a container on the VPS it monitors.
-- The public health response returns database connection strings.
+- A Better Stack success is treated as evidence that the daily AWS recovery object is valid.
 
 ---
 
 ### REQ-OPS-007: Host and service alerting
-Production shall monitor proxy, backend, database, CPU, memory, filesystem, backup-job, container-health, and certificate-expiry conditions.
+Production shall use a metrics-only Better Stack collector on KVM 2 to monitor proxy, backend, database, CPU, memory, swap, filesystem, inode, network, container-health, and container-restart conditions. Broad application-log, request-body, and distributed-trace export shall remain disabled initially.
 
 Filesystem usage shall generate a warning at 80 percent and a critical alert at 90 percent.
 
-Unhealthy proxy, backend, or database services; failed backups; and impending TLS certificate expiry shall generate actionable alerts through the independently available alerting channel.
+Better Stack shall warn when the canonical production origin's TLS certificate has 30 calendar days or less remaining. Automatic Caddy renewal shall not suppress this warning. An invalid, expired, hostname-mismatched, or otherwise unverifiable certificate shall alert immediately, and the expiry incident shall resolve only after Better Stack observes a valid replacement with more than 30 days remaining.
+
+Unhealthy proxy, backend, or database services and impending TLS certificate expiry shall generate actionable Better Stack alerts. Backup failures shall continue to alert through the independent AWS monitoring path defined by the Production Backup and Recovery Requirement Specification.
 
 Rationale:
 A single host concentrates failure modes. Resource and service alerts provide time to intervene before disk exhaustion, certificate expiry, or container failure becomes a prolonged outage.
@@ -145,15 +149,18 @@ Valid examples:
 Invalid examples:
 - Only CPU usage is monitored because all components share one host.
 - Backup failures are discovered during a later restoration drill.
+- Caddy's expected automatic renewal disables the external certificate-expiry alert.
 
 ---
 
 ### REQ-OPS-008: Controlled production deployment
 Production deployment shall use immutable, identifiable frontend and backend versions selected as a compatible release pair.
 
-Artifact publication shall not deploy automatically. Initial production deployments shall require explicit Developer approval.
+Artifact publication shall not deploy automatically. Every production deployment and disruptive maintenance execution shall require explicit Developer approval and shall not be started by a recurring schedule.
 
-The deployment shall verify proxy routing, backend health, database connectivity, and a minimal end-to-end public health signal before reporting success.
+After approval, the backend-owned automated workflow shall acquire an exclusive deployment lock, verify backup freshness when required, verify the selected artifacts, enable the maintenance response, apply the compatible migration and release sequence, execute health verification, record the result, and release the lock.
+
+The deployment shall verify proxy routing, backend health, database connectivity, and `GET /api/health` before reporting success. When verification fails and the database remains compatible, automation shall restore the previous compatible application pair. When a migration makes that rollback unsafe, automation shall retain the maintenance response and stop for a Developer-selected forward fix or backup-based recovery.
 
 A database-changing deployment shall confirm a recent successful backup before applying migrations.
 
@@ -163,6 +170,7 @@ Explicit approval and version selection keep independent pipelines from creating
 Valid examples:
 - Deployment records the selected artifact versions and health-verification result.
 - A migration is blocked when no recent successful backup exists.
+- A database-incompatible failure remains in maintenance mode for an explicit recovery decision.
 
 Invalid examples:
 - Publishing a frontend artifact immediately overwrites production.
@@ -171,9 +179,11 @@ Invalid examples:
 ---
 
 ### REQ-OPS-009: Maintenance-window rollback model
-Short, announced maintenance windows shall be acceptable for initial production deployments. Zero-downtime deployment shall be out of scope.
+The reserved disruptive-maintenance window shall be Friday from `08:30` through `10:30 America/Sao_Paulo`. The window shall be used only for announced work and shall not cause recurring downtime by itself.
 
-The previously deployed compatible frontend/backend version pair shall remain available for application rollback through the defined rollback window.
+Planned disruptive maintenance shall be announced to coordinators at least 72 hours in advance. Emergency security or recovery work may occur outside the reserved window when notice is provided as soon as practicable.
+
+Failed release verification shall trigger a compatible application rollback during the same maintenance window. The previously deployed compatible frontend/backend version pair shall remain available for application rollback for at least 14 days and through two subsequently verified production releases, whichever period is longer. Its backend digest, frontend archive, frontend checksum, release manifest, and fingerprinted frontend assets shall remain available for that complete rollback window.
 
 Database migrations shall be treated as forward changes. Rollback planning shall use compatible migration sequencing and verified backups and shall not assume an automatic database downgrade.
 
@@ -183,10 +193,12 @@ One VPS does not provide duplicate runtime capacity. A truthful maintenance and 
 Valid examples:
 - A failed application release restores the previous compatible artifact pair during the maintenance window.
 - A database migration includes a forward recovery plan and a verified pre-migration backup.
+- A Friday morning deployment is announced by Tuesday morning and begins only after the Developer starts the workflow.
 
 Invalid examples:
 - Rollback depends on a mutable `latest` image.
 - An arbitrary database downgrade is assumed to be safe.
+- A cron schedule starts a production deployment automatically at `08:30` every Friday.
 
 ---
 
@@ -208,6 +220,52 @@ Invalid examples:
 - The only copy of a production secret exists on KVM 2.
 - A manual firewall or Compose change is required but absent from versioned configuration and the runbook.
 
+---
+
+### REQ-OPS-011: Public production health contract
+The sole public production readiness endpoint shall be unauthenticated `GET /api/health`.
+
+When the application and its required database connectivity are ready, the endpoint shall return `200 OK`, `Content-Type: application/json`, and the single-property JSON response `{"status":"UP"}`. When the application can answer but readiness is unavailable, it shall return `503 Service Unavailable` and the single-property JSON response `{"status":"DOWN"}`.
+
+Both responses shall include `Cache-Control: no-store`. The endpoint shall not expose component names, dependency addresses, environment values, versions, timestamps, uptime, diagnostics, stack traces, secrets, or failure causes.
+
+The `GET` operation shall require neither authentication, permission authorization, nor CSRF proof. Other methods on the path shall receive the normal `405 Method Not Allowed` response. Network, proxy, or process failure may prevent the application from producing the `DOWN` body; external monitoring shall treat any response other than the accepted `200` response as failure.
+
+The commissioning gate defined by `REQ-OPS-012` may temporarily intercept this path before the first approved launch. Once that gate is disabled, the health operation shall be publicly reachable without credentials.
+
+Rationale:
+A fixed, dependency-aware readiness contract lets external monitoring verify the public proxy-to-database path without disclosing the infrastructure model.
+
+Valid examples:
+- An unauthenticated `GET /api/health` returns `200` and `{"status":"UP"}` when the application and database are ready.
+- A reachable backend with unavailable required database connectivity returns `503` and `{"status":"DOWN"}`.
+
+Invalid examples:
+- The public response lists PostgreSQL, Caddy, Hostinger, or application-version details.
+- The endpoint requires an Account session or a monitoring credential after commissioning.
+
+---
+
+### REQ-OPS-012: Temporary commissioning gate
+Fresh production provisioning shall default an Ansible-controlled Caddy commissioning gate to enabled before KVM 2 receives production traffic.
+
+While enabled, only source addresses in the explicitly configured operator CIDR allowlist shall reach GAM routes. Every other HTTPS request, including `GET /api/health`, shall receive a static `503 Service Unavailable` response with `Cache-Control: no-store` and no application or infrastructure details. Caddy's HTTP-to-HTTPS redirect and certificate issuance or renewal shall remain active.
+
+The gate shall not use HTTP Basic authentication or inject credentials into application requests. Disabling it shall require explicit Developer approval after the production-readiness checklist passes. The automated launch procedure shall record the approval and configuration transition and then verify `GET /api/health` from outside the VPS.
+
+If first-launch verification fails, automation shall re-enable the gate before remediation. The gate is a temporary commissioning control rather than the production authentication model or a substitute for the separately controlled maintenance response.
+
+Rationale:
+KVM 2 is both the validation host and future production host. A reproducible deny-by-default proxy gate prevents accidental public commissioning without altering backend authentication behavior.
+
+Valid examples:
+- A configured operator address can rehearse the production route while another public address receives the static `503` response.
+- Explicit launch approval disables the gate and immediately exercises the public health monitor.
+
+Invalid examples:
+- Changing an application environment label silently exposes the host.
+- A shared Basic-authentication password is forwarded through the proxy during commissioning.
+
 ## Acceptance scenarios
 
 ```gherkin
@@ -223,6 +281,20 @@ Scenario: Detect a public outage independently
   Given the VPS public HTTPS entry point is unavailable
   When three consecutive external checks fail
   Then an alert is delivered through infrastructure outside the VPS
+
+Scenario: Expose only minimal public readiness
+  Given the commissioning gate is disabled
+  And the application and database are ready
+  When an unauthenticated client sends GET /api/health
+  Then the response is 200 with only {"status":"UP"}
+  And the response cannot be cached
+
+Scenario: Keep an uncommissioned host closed
+  Given fresh production provisioning has completed
+  And the Developer has not approved launch
+  When a public address outside the operator allowlist requests GAM
+  Then Caddy returns the static commissioning response with status 503
+  And the request does not reach the application
 
 Scenario: Block unsafe database deployment
   Given a release contains a database migration
@@ -240,12 +312,7 @@ Scenario: Roll back a failed application pair
 ## Diagrams
 
 * [Initial Production Topology](../../diagrams/initial-production-topology.md)
-
-## Open questions
-
-* Which external availability and host-monitoring products will complement the accepted AWS backup monitor?
-* How far before certificate expiry shall the impending-expiry alert fire?
-* What rollback-window duration and planned maintenance schedule will be adopted before the first production deployment?
+* [Production Release and Commissioning](../../diagrams/production-release-and-commissioning.md)
 
 ## Out of scope
 
@@ -253,6 +320,7 @@ Scenario: Roll back a failed application pair
 * High availability, database replication, multi-host deployment, and zero-downtime rollout.
 * Reopening the accepted Hostinger KVM 2, Ubuntu 24.04, Caddy, Ansible, GHCR, AWS São Paulo, or formal WORM decisions without new contradictory evidence.
 * Defining tighter recovery objectives than the accepted initial 24-hour RPO and RTO.
+* Treating the temporary commissioning gate as permanent user authentication or as the ordinary maintenance mechanism.
 
 ## Related ADRs
 
@@ -260,6 +328,7 @@ Scenario: Roll back a failed application pair
 * [ADR-0005: Keep frontend and backend in separate repositories](../../decisions/0005-keep-frontend-and-backend-in-separate-repositories.md)
 * [ADR-0024: Deploy production directly to Hostinger KVM 2](../../decisions/0024-deploy-production-directly-to-hostinger-kvm-2.md)
 * [ADR-0025: Use AWS São Paulo for immutable encrypted production backups](../../decisions/0025-use-aws-sao-paulo-for-immutable-encrypted-production-backups.md)
+* [ADR-0028: Complete the initial production commissioning and release contracts](../../decisions/0028-complete-initial-production-commissioning-and-release-contracts.md)
 
 ## Related requirements
 

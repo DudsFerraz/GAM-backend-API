@@ -1,18 +1,19 @@
 # Initial Production Topology
 
-This diagram shows the accepted initial GAM delivery and operations boundary. The proxy label is intentionally product-neutral: Caddy, Nginx, or another implementation may be selected later if it satisfies the accepted responsibilities.
+This diagram shows the accepted initial GAM delivery and operations boundary. ADR-0024 fixes Hostinger KVM 2, Ubuntu 24.04, and containerized Caddy for the first deployment while ADR-0028 fixes the external monitoring and commissioning boundaries.
 
 ```mermaid
 flowchart LR
     Browser["GAM browser SPA"]
-    Monitor["External availability monitor"]
+    Monitor["Better Stack<br/>external availability and TLS monitor"]
     Admin["Restricted administrative access"]
     BackupStore[("Encrypted off-host backups")]
 
-    subgraph VPS["Single production VPS"]
+    subgraph VPS["Hostinger KVM 2 - Ubuntu 24.04"]
         direction LR
-        Proxy["Proxy<br/>public TLS, static SPA, /api routing"]
+        Proxy["Caddy<br/>TLS, commissioning gate, static SPA, /api routing"]
         Static["Versioned static frontend assets"]
+        Collector["Better Stack metrics-only collector"]
 
         subgraph Private["Private application network"]
             Backend["Backend service"]
@@ -27,7 +28,8 @@ flowchart LR
     end
 
     Browser -->|"HTTPS / and /api"| Proxy
-    Monitor -->|"HTTPS health check"| Proxy
+    Monitor -->|"GET /api/health every five minutes"| Proxy
+    Collector -->|"host and service metrics"| Monitor
     Admin -. "restricted channel" .-> VPS
     BackupJob -->|"encrypted transfer"| BackupStore
 ```
@@ -49,7 +51,8 @@ The proxy does not replace backend authentication, authorization, validation, or
 - The VPS is a single point of failure and compromise.
 - Planned maintenance may make all GAM components unavailable.
 - Backups and external monitoring reduce recovery risk but do not create high availability.
-- The official domain, VPS provider, proxy product, and proxy packaging model remain open decisions.
+- The official GAM-controlled domain remains an open decision.
+- KVM 2 procurement facts must still be reverified at purchase and renewal.
 
 ## Related documentation
 
@@ -59,3 +62,6 @@ The proxy does not replace backend authentication, authorization, validation, or
 - [ADR-0005: Keep Frontend and Backend in Separate Repositories](../decisions/0005-keep-frontend-and-backend-in-separate-repositories.md)
 - [ADR-0006: Use a Single-VPS Same-Origin Proxy Topology](../decisions/0006-use-a-single-vps-same-origin-proxy-topology.md)
 - [ADR-0007: Use Same-Origin Browser Sessions with Layered CSRF Protection](../decisions/0007-use-same-origin-browser-sessions-with-layered-csrf-protection.md)
+- [ADR-0024: Deploy Production Directly to Hostinger KVM 2](../decisions/0024-deploy-production-directly-to-hostinger-kvm-2.md)
+- [ADR-0025: Use AWS São Paulo for Immutable Encrypted Production Backups](../decisions/0025-use-aws-sao-paulo-for-immutable-encrypted-production-backups.md)
+- [ADR-0028: Complete the Initial Production Commissioning and Release Contracts](../decisions/0028-complete-initial-production-commissioning-and-release-contracts.md)

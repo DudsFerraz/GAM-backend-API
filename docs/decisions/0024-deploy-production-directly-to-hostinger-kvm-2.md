@@ -120,11 +120,16 @@ Negative consequences:
 - `REQ-OPS-007`
 - `REQ-OPS-008`
 - `REQ-OPS-009`
+- `REQ-OPS-010`
+- `REQ-OPS-011`
+- `REQ-OPS-012`
+- `REQ-WEB-013`
 
 ## Related ADRs
 - [ADR-0005: Keep frontend and backend in separate repositories](0005-keep-frontend-and-backend-in-separate-repositories.md)
 - [ADR-0006: Use a single-VPS same-origin proxy topology](0006-use-a-single-vps-same-origin-proxy-topology.md)
 - [ADR-0025: Use AWS São Paulo for immutable encrypted production backups](0025-use-aws-sao-paulo-for-immutable-encrypted-production-backups.md)
+- [ADR-0028: Complete the initial production commissioning and release contracts](0028-complete-initial-production-commissioning-and-release-contracts.md)
 
 ## Related diagrams
 - [`docs/diagrams/initial-production-topology.md`](../diagrams/initial-production-topology.md)

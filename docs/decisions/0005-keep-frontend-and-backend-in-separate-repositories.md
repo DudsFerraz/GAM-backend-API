@@ -83,6 +83,7 @@ Negative consequences:
 - `REQ-WEB-009`
 - `REQ-WEB-010`
 - `REQ-WEB-011`
+- `REQ-WEB-013`
 - `REQ-OPS-008`
 
 ## Related diagrams
@@ -92,6 +93,7 @@ Negative consequences:
 ## Related decisions
 
 - [ADR-0008: Generate and Govern OpenAPI from Backend Code](0008-generate-and-govern-openapi-from-backend-code.md)
+- [ADR-0028: Complete the Initial Production Commissioning and Release Contracts](0028-complete-initial-production-commissioning-and-release-contracts.md)
 
 ## Related videos
 

@@ -110,6 +110,8 @@ Negative consequences:
 - `REQ-OPS-007`
 - `REQ-OPS-008`
 - `REQ-OPS-009`
+- `REQ-OPS-011`
+- `REQ-OPS-012`
 
 ## Related diagrams
 
@@ -118,6 +120,7 @@ Negative consequences:
 ## Related ADRs
 
 - [ADR-0024: Deploy production directly to Hostinger KVM 2](0024-deploy-production-directly-to-hostinger-kvm-2.md)
+- [ADR-0028: Complete the initial production commissioning and release contracts](0028-complete-initial-production-commissioning-and-release-contracts.md)
 
 ## Related videos
 

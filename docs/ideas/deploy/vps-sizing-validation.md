@@ -821,6 +821,8 @@ Average response time alone is insufficient. Percentiles and failure behavior mu
 
 Pre-production testing cannot predict every production behavior.
 
+Better Stack is the accepted external availability, TLS, and host-monitoring provider. KVM 2 exports metrics through its metrics-only collector, while Better Stack checks public `GET /api/health` every five minutes. The independent AWS monitor remains authoritative for backup-object validation.
+
 After launch, the project must continue monitoring:
 
 - CPU

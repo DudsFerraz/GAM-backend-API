@@ -87,8 +87,10 @@ The production configuration must ensure that:
 - Sensitive headers and cookies are not logged.
 - Public client `X-Request-Id` values are stripped or overwritten before proxying to a backend configured in `TRUSTED_PROXY` mode.
 - HSTS is enabled only after the official domain and HTTPS operation are verified.
-- Certificate expiry is monitored externally.
+- Better Stack monitors the canonical certificate externally, warns at 30 days remaining, and alerts immediately when the certificate is invalid, expired, hostname-mismatched, or unverifiable.
 - The backend continues enforcing authentication, authorization, CSRF protection, and input validation.
+
+Fresh production provisioning also enables an Ansible-controlled commissioning gate in Caddy. It admits only configured operator CIDRs and returns a static non-cacheable `503` to other HTTPS requests, including `/api/health`, until the Developer explicitly approves launch. The gate does not use HTTP Basic authentication. HTTP-to-HTTPS redirection and Caddy certificate automation remain active while the gate is enabled.
 
 The future Caddy configuration and deployment tests should demonstrate the request-correlation boundary in [`REQ-WEB-012`](../../requirements/platform/web-delivery-and-frontend-contract.md#req-web-012-trusted-request-correlation-boundary) and [`REQ-ACTIVITY-007`](../../requirements/platform/activity-audit-log.md#req-activity-007-http-request-correlation-modes). This reminder does not define a competing header contract.
 

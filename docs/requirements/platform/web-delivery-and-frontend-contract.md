@@ -6,7 +6,7 @@ Accepted
 ## Context
 GAM needs a stable public web boundary and a maintainable integration contract between independently versioned frontend and backend repositories.
 
-The initial frontend is a static single-page application. The frontend and API share one browser origin, while a public proxy serves frontend assets and routes API traffic to a privately reachable backend. The proxy role is defined by GAM responsibilities rather than by a specific product such as Caddy or Nginx.
+The initial frontend is a static single-page application. The frontend and API share one browser origin, while Caddy serves frontend assets and routes API traffic to a privately reachable backend. ADR-0024 selects containerized Caddy for the initial deployment while the proxy responsibilities remain product-neutral constraints on any future replacement.
 
 ## Ubiquitous Language
 
@@ -242,7 +242,7 @@ Artifact publication shall not silently change production.
 
 The backend repository shall own the canonical production composition, proxy template, database service definition, deployment runbook, backup and restore runbooks, and deployment workflow.
 
-The deployment workflow shall select, record, and require explicit Developer approval for one compatible frontend/backend version pair. The previously deployed compatible pair shall remain identifiable for rollback.
+The deployment workflow shall select, record, and require explicit Developer approval for one compatible frontend/backend version pair. The frontend half of the pair shall satisfy the cross-repository transfer interface in `REQ-WEB-013`. The previously deployed compatible pair shall remain identifiable for rollback.
 
 Rationale:
 Independent build pipelines preserve repository autonomy, while one controlled and reproducible deployment source prevents the VPS from becoming an undocumented integration environment.
@@ -281,6 +281,56 @@ Invalid examples:
 - The backend trusts `X-Request-Id` merely because a client also sends `X-Forwarded-For`.
 - Local development requires a proxy solely to create activity request identifiers.
 
+---
+
+### REQ-WEB-013: Cross-repository frontend artifact transfer and checksum
+
+The frontend repository shall publish each deployable static build as two assets on a published, non-prerelease, immutable GitHub Release whose tag is the frontend version:
+
+```text
+gam-frontend-<tag>.tar.gz
+gam-frontend-<tag>.tar.gz.sha256
+```
+
+For tag `v1.4.0`, the assets shall therefore be `gam-frontend-v1.4.0.tar.gz` and `gam-frontend-v1.4.0.tar.gz.sha256`. The checksum asset shall contain one line in this exact form, terminated by a newline:
+
+```text
+<64 lowercase SHA-256 characters>  gam-frontend-v1.4.0.tar.gz
+```
+
+The backend-owned deployment manifest shall pin the frontend repository identifier, release tag, exact artifact filename, and expected lowercase SHA-256. A YAML representation may use this interface:
+
+```yaml
+frontend:
+  repository: OWNER/FRONTEND_REPOSITORY
+  tag: v1.4.0
+  artifact: gam-frontend-v1.4.0.tar.gz
+  sha256: <64 lowercase SHA-256 characters>
+```
+
+The deployment workflow shall use authenticated read-only GitHub access to download the two exact assets from the selected tag. It shall not select `latest`, use a branch archive, or use an expiring GitHub Actions workflow artifact as the production source.
+
+Before transfer to KVM 2, the workflow shall confirm that the release is published, non-prerelease, and immutable; confirm that the sidecar filename matches the selected artifact; and require the sidecar checksum, manifest checksum, and computed archive checksum to agree. Any absence or mismatch shall stop deployment before the current frontend is changed.
+
+The verified archive shall contain `index.html` at its root and shall not contain absolute paths, parent traversal, symbolic links, hard links, device entries, or other entries that can write outside the new versioned release directory. The read-only frontend-repository credential shall remain outside KVM 2. Ansible shall transfer only the verified archive and shall record the frontend repository, tag, release commit, filename, and checksum in the deployed release manifest.
+
+The verified archive, checksum, release metadata, and its referenced fingerprinted assets shall remain available for the complete rollback window defined by `REQ-OPS-009`.
+
+Rationale:
+
+An immutable release and independently pinned checksum provide a durable interface between separate repositories without granting the production host repository access or relying on mutable release labels.
+
+Valid examples:
+
+- A deployment selects frontend tag `v1.4.0`, verifies all three SHA-256 values, and records the release commit before Ansible transfers the archive.
+- A later release leaves the verified `v1.4.0` archive and fingerprinted assets available while it remains rollback-eligible.
+
+Invalid examples:
+
+- Deployment downloads the most recent frontend workflow artifact without a pinned release tag.
+- The checksum sidecar is accepted when its filename or digest disagrees with the backend-owned release manifest.
+- A frontend-repository token is stored permanently on KVM 2.
+
 ## Acceptance scenarios
 
 ```gherkin
@@ -309,6 +359,12 @@ Scenario: Publish independently and deploy deliberately
   Then the deployment records the selected compatible versions
   And artifact publication alone has not changed production
 
+Scenario: Reject a mismatched frontend artifact
+  Given the backend-owned release manifest selects a frontend GitHub Release and SHA-256
+  And the downloaded archive does not match that SHA-256
+  When deployment verifies the compatible release pair
+  Then deployment stops before changing the current frontend
+
 Scenario: Develop locally without a trusted proxy
   Given the backend is locally hosted in APPLICATION_GENERATED mode
   When a client supplies an X-Request-Id
@@ -325,11 +381,11 @@ Scenario: Prevent correlation spoofing at the production boundary
 ## Diagrams
 
 * [Initial Production Topology](../../diagrams/initial-production-topology.md)
+* [Production Release and Commissioning](../../diagrams/production-release-and-commissioning.md)
 
 ## Open questions
 
 * What official domain will GAM control and assign to `GAM_PUBLIC_ORIGIN`?
-* Which proxy product and packaging model will implement the accepted proxy responsibilities?
 * Which frontend build tool and development-server port will be used?
 
 ## Out of scope
@@ -338,7 +394,6 @@ Scenario: Prevent correlation spoofing at the production boundary
 * A dedicated infrastructure repository.
 * Cross-origin production frontend hosting.
 * Server-side rendering, a production Node.js frontend server, or a backend-for-frontend.
-* Selecting Caddy, Nginx, or another proxy product.
 * Selecting the official domain.
 * Defining the complete OpenAPI documentation and toolchain policy, which is governed separately by [OpenAPI and Frontend API Documentation](openapi-and-frontend-api-documentation.md).
 
@@ -347,6 +402,8 @@ Scenario: Prevent correlation spoofing at the production boundary
 * [ADR-0005: Keep frontend and backend in separate repositories](../../decisions/0005-keep-frontend-and-backend-in-separate-repositories.md)
 * [ADR-0006: Use a single-VPS same-origin proxy topology](../../decisions/0006-use-a-single-vps-same-origin-proxy-topology.md)
 * [ADR-0007: Use same-origin browser sessions with layered CSRF protection](../../decisions/0007-use-same-origin-browser-sessions-with-layered-csrf-protection.md)
+* [ADR-0024: Deploy production directly to Hostinger KVM 2](../../decisions/0024-deploy-production-directly-to-hostinger-kvm-2.md)
+* [ADR-0028: Complete the initial production commissioning and release contracts](../../decisions/0028-complete-initial-production-commissioning-and-release-contracts.md)
 
 ## Related requirements
 

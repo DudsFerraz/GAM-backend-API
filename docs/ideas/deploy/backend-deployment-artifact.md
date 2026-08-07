@@ -362,6 +362,8 @@ Database
 
 Node.js is required during the frontend build, but it does not need to run on the production VPS solely because the frontend uses React and Vite.
 
+The frontend static artifact crosses the repository boundary as an immutable GitHub Release archive named `gam-frontend-<tag>.tar.gz` with a matching `.sha256` sidecar. The backend-owned deployment manifest pins its repository, tag, filename, and lowercase SHA-256. The deployment origin verifies release immutability, all checksum values, and safe archive structure before Ansible transfers the archive; KVM 2 stores no frontend-repository credential.
+
 ---
 
 ## Deployment requirements
@@ -371,7 +373,7 @@ A backend deployment must:
 1. Select an explicit backend version.
 2. Select an explicit OCI image digest.
 3. Confirm compatibility with the selected frontend version.
-4. Verify that the image exists and can be pulled.
+4. Verify that the backend image exists and can be pulled and that the selected frontend immutable release satisfies `REQ-WEB-013`.
 5. Confirm a recent successful backup before database-changing releases.
 6. Record the currently deployed release manifest.
 7. Pull the selected image before stopping the current backend where practical.
@@ -390,6 +392,8 @@ The deployment must not depend on manually copying an untracked JAR into the VPS
 ## Health checks
 
 The backend image must support the project’s health-check model.
+
+The sole public readiness operation is unauthenticated `GET /api/health`. It returns only `{"status":"UP"}` with `200` when the application and required database connectivity are ready, or only `{"status":"DOWN"}` with `503` when the application can answer but is not ready. Both responses are non-cacheable. Container liveness remains private.
 
 At minimum, the deployment process must distinguish between:
 
@@ -597,6 +601,7 @@ This decision is considered implemented when:
 - Docker Compose references an explicit version and digest.
 - Backend and PostgreSQL ports remain private.
 - Health checks verify readiness.
+- The public health contract exposes no component or diagnostic details.
 - Resource limits are configured.
 - Logs are rotated and do not expose secrets.
 - A deployment records the frontend/backend pair.

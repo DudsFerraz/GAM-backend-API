@@ -213,6 +213,8 @@ The plan upgrade must be treated as a controlled infrastructure change with poss
 
 The KVM 2 host used for pre-production validation must not receive real production traffic merely because environment variables are changed.
 
+Fresh provisioning therefore enables the Ansible-controlled Caddy commissioning gate by default. Only configured operator CIDRs may reach GAM until the production-readiness checklist passes and the Developer explicitly approves launch. Other HTTPS requests receive a static non-cacheable `503`; HTTP-to-HTTPS redirect and certificate automation remain active. A failed first-launch verification re-enables the gate before remediation.
+
 Before launch, the accepted provisioning automation must produce and verify the complete production configuration. Temporary validation data and access must be removed. A clean operating-system reinstall is required only when the developer cannot prove that validation state and informal configuration have been removed.
 
 The clean production preparation must ensure that the server does not retain:

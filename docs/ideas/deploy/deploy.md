@@ -2,7 +2,7 @@
 
 This file is a non-normative collection of ideas for later deployment requirements and runbooks. Accepted Requirement Specifications remain the source of truth.
 
-Current accepted deployment decisions are documented in [ADR-0024](../../decisions/0024-deploy-production-directly-to-hostinger-kvm-2.md), [ADR-0025](../../decisions/0025-use-aws-sao-paulo-for-immutable-encrypted-production-backups.md), and the [Production Backup and Recovery Requirement Specification](../../requirements/platform/production-backup-and-recovery.md). Where older ideas in this file conflict with those artifacts, the accepted artifacts win.
+Current accepted deployment decisions are documented in [ADR-0024](../../decisions/0024-deploy-production-directly-to-hostinger-kvm-2.md), [ADR-0025](../../decisions/0025-use-aws-sao-paulo-for-immutable-encrypted-production-backups.md), [ADR-0028](../../decisions/0028-complete-initial-production-commissioning-and-release-contracts.md), and the accepted platform Requirement Specifications. Where older ideas in this file conflict with those artifacts, the accepted artifacts win.
 
 The priority should be **reproducibility, recovery and security**, not high availability.
 
@@ -101,6 +101,8 @@ Docker’s networking rules require special care: published container ports can 
 ---
 
 # 11. Static frontend release model
+
+Each frontend version is published as an immutable GitHub Release containing `gam-frontend-<tag>.tar.gz` and `gam-frontend-<tag>.tar.gz.sha256`. The backend-owned release manifest pins the frontend repository, tag, filename, and lowercase SHA-256. Deployment downloads the exact assets with read-only authenticated access outside KVM 2 and requires the sidecar, manifest, and computed checksums to agree before Ansible transfers the safe archive.
 
 Use versioned directories:
 
@@ -286,19 +288,16 @@ Although the accepted RTO is 24 hours, the operational procedure should target r
 
 # 16. Monitoring and alerting
 
-## External monitoring recommendation: Better Stack
+## Selected external monitoring: Better Stack
 
 Monitor:
 
-* `https://<domain>/`
-* `https://<domain>/api/health/live`
-* `https://<domain>/api/health/ready`
-* TLS certificate validity and expiry
+* `https://<domain>/api/health`, requiring `200` and `{"status":"UP"}` every five minutes
+* TLS certificate validity and expiry, warning at 30 days remaining
 * Domain expiry
-* Daily backup heartbeat
 * Optional deployment heartbeat
 
-The selected backup-specific monitor is AWS EventBridge Scheduler plus Lambda and SNS. It checks at 04:30 São Paulo time, alerts the developer immediately, and escalates an unresolved failure to the client custodians at 12:00. Better Stack remains only a non-normative candidate for public availability, host, TLS, and domain monitoring.
+Better Stack is the selected provider for public availability, host, TLS, and domain monitoring. It alerts after three consecutive health failures through hosted email and mobile push. The selected backup-specific monitor remains AWS EventBridge Scheduler plus Lambda and SNS. It checks at 04:30 São Paulo time, alerts the developer immediately, and escalates an unresolved failure to the client custodians at 12:00.
 
 Better Stack’s HTTP monitoring checks expected HTTP responses and creates incidents on failure. It also supports SSL certificate and domain-expiration monitoring. ([Better Stack][12])
 
@@ -327,13 +326,15 @@ Monitor:
 * Certificate expiry
 * System reboot requirement
 
-Better Stack can collect metrics and logs through OpenTelemetry tooling. Grafana Cloud is another viable metrics option with a free tier. ([Better Stack][13])
+Use a metrics-only Better Stack collector for host and service signals. Broad application-log, request-body, and distributed-trace export remains disabled initially. ([Better Stack][13])
 
 Initially, prefer metrics over broad external log or trace export. Authentication systems can accidentally place sensitive information in headers, spans or structured logs.
 
 ---
 
 # 17. Safe deployment
+
+Fresh production provisioning enables an Ansible-controlled Caddy commissioning gate by default. Only configured operator CIDRs reach GAM while it is enabled; all other HTTPS requests receive a static non-cacheable `503`. The gate does not use HTTP Basic authentication. Explicit Developer approval after the readiness checklist disables it, external health is then verified, and a failed first launch re-enables it.
 
 Use a single deployment command with an exclusive lock, such as `flock`, to prevent overlapping deployments.
 
@@ -342,7 +343,7 @@ Recommended sequence:
 1. Acquire the deployment lock.
 2. Record the current release manifest.
 3. Validate the requested frontend/backend pair.
-4. Verify artifact signatures or checksums.
+4. Verify the backend digest and the frontend immutable release, sidecar checksum, manifest checksum, computed checksum, and archive safety.
 5. Confirm backup freshness.
 6. Pre-pull the backend image and download the frontend.
 7. Validate Caddy and Compose configuration.
@@ -405,19 +406,18 @@ This greatly reduces rollback risk without introducing a second server.
 
 # 19. Maintenance and rollback windows
 
-Recommended starting policy:
+Accepted starting policy:
 
-* **Maintenance window:** Sunday, 07:00–09:00 America/Sao_Paulo, subject to confirmation with coordinators.
-* Announce potentially disruptive maintenance in advance.
+* **Maintenance window:** Friday, 08:30–10:30 America/Sao_Paulo.
+* The Developer explicitly starts the automated workflow; the window is not a recurring deployment schedule.
+* Announce potentially disruptive maintenance at least 72 hours in advance.
+* Emergency security or recovery work may occur outside the window with notice as soon as practicable.
 * Keep the previous frontend/backend pair for at least:
 
     * 14 days, or
     * Two verified production releases,
       whichever is longer.
-* Keep pre-migration database backups for at least 30 days.
-* Retain old fingerprinted frontend assets throughout the rollback window.
-
-The exact weekday should ultimately follow actual coordinator usage rather than generic industry convention.
+* Retain the prior backend digest, frontend archive and checksum, release manifest, and fingerprinted assets for the complete rollback window.
 
 ---
 
@@ -428,6 +428,7 @@ Do not declare GAM production-ready until all of the following are demonstrated:
 * Official domain is controlled.
 * `GAM_PUBLIC_ORIGIN` validation works.
 * TLS issuance and renewal work.
+* Better Stack warns at 30 days remaining and immediately detects an invalid certificate.
 * HSTS remains disabled until HTTPS is verified.
 * Public scans confirm that only intended ports are exposed.
 * Backend and PostgreSQL are unreachable publicly.
@@ -439,6 +440,8 @@ Do not declare GAM production-ready until all of the following are demonstrated:
 * An incompatible-migration recovery has been discussed and documented.
 * Monitoring and alerts have been triggered deliberately.
 * Certificate-expiry monitoring works.
+* The commissioning gate is enabled by default, blocks a non-operator address, and is disabled only by recorded Developer approval.
+* `GET /api/health` returns only the accepted public readiness response after the gate is disabled.
 * SSH emergency recovery has been tested.
 * OS and dependency patch ownership is assigned.
 * Capacity thresholds and upgrade procedure are documented.

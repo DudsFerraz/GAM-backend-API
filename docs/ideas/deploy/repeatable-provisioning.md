@@ -57,12 +57,15 @@ Use Ansible or an equivalent idempotent system to configure:
 * Directories and permissions
 * Log rotation
 * Backup timers
-* Monitoring agent
+* Metrics-only Better Stack collector
 * Deployment scripts
+* Caddy commissioning-gate variables and operator CIDR allowlist
 
 ### Application composition
 
 The same Docker Compose and Caddy configuration should run on KVM 2 and any future isolated recovery or replacement environment, with only environment-specific secrets and origin values changing.
+
+The deployment layer consumes the exact frontend GitHub Release coordinates and SHA-256 recorded in the backend-owned release manifest. Read-only frontend-repository access remains at the deployment origin; Ansible transfers only a verified safe archive to the host.
 
 ## Migration rehearsal
 
