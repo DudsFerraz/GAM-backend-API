@@ -20,15 +20,15 @@ versioned automation first.
 
 ## Recommended implementation order
 
+Focused planning is complete. Before implementation, validate `REQ-OPS-006`
+through `REQ-OPS-012`, `REQ-WEB-013`, and ADR-0028 as the authoritative
+planning baseline. Return to Agent P only if implementation exposes a missing
+or contradictory contract.
+
 Follow this dependency order. Do not treat the list as ten independent files;
 each item must include its relevant tests, verification, documentation, and
 review.
 
-0. **Validate the accepted production planning.** Treat `REQ-OPS-006` through
-   `REQ-OPS-012`, `REQ-WEB-013`, and ADR-0028 as authoritative. Do not reopen the
-   accepted Hostinger, Ubuntu, Caddy, GHCR, Ansible, AWS, backup, WORM, custody,
-   retention, health, commissioning, monitoring, maintenance, rollback, or
-   frontend-transfer decisions unless implementation reveals a contradiction.
 1. **Implement the production runtime seam and public health endpoint.** Add the
    minimal public health behavior, production profile defaults or validation,
    secure public-origin handling, trusted-proxy configuration, and tests that
