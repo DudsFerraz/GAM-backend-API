@@ -11,28 +11,129 @@ requirements or architecture decisions linked at the end of this document.
 
 ## Readiness verdict
 
-The deployment plan is ready for implementation. The repository is not yet
-ready for an actual production deployment.
-
-The following implementation artifacts must exist and pass their verification
-before the paid VPS commissioning window begins:
-
-- a production backend `Dockerfile`;
-- a CI workflow that tests the backend, builds its OCI image, scans it, publishes
-  it to private GHCR, and records the immutable digest;
-- a versioned frontend release artifact and checksum from the frontend repository;
-- the production Docker Compose and Caddy configuration;
-- Ansible inventory, roles, and playbooks for Hostinger, the host, AWS, deployment,
-  backup, monitoring, restoration, and verification;
-- deployment, rollback, verification, backup, and restoration commands;
-- a minimal public health endpoint that does not disclose internal details;
-- the `member-info-import` maintenance implementation required by
-  `REQ-MEMBER-IMPORT-010` through `REQ-MEMBER-IMPORT-015`;
-- external monitoring and alert delivery; and
-- a successful isolated restoration using the final backup format.
+The accepted deployment architecture is ready to guide implementation. The
+repository is not yet ready for an actual production deployment, and the small
+contracts in implementation item 0 must be resolved before their dependent
+packages enter test design.
 
 Do not improvise missing infrastructure directly on the VPS. Implement it in
 versioned automation first.
+
+## Recommended implementation order
+
+Follow this dependency order. Do not treat the list as ten independent files;
+each item must include its relevant tests, verification, documentation, and
+review.
+
+0. **Close the remaining focused planning gaps.** Preserve the already accepted
+   Hostinger, Ubuntu, Caddy, GHCR, Ansible, AWS, backup, WORM, custody, and
+   retention decisions. Resolve only the still-open implementation contracts:
+   - public health endpoint path, response, status, and access policy;
+   - the temporary commissioning-gate mechanism;
+   - external availability and host-monitoring provider;
+   - certificate-expiry warning threshold;
+   - maintenance and rollback windows; and
+   - the cross-repository frontend artifact transfer and checksum interface.
+1. **Implement the production runtime seam and public health endpoint.** Add the
+   minimal public health behavior, production profile defaults or validation,
+   secure public-origin handling, trusted-proxy configuration, and tests that
+   prove no internal detail is disclosed.
+2. **Implement the production backend `Dockerfile`.** Build the verified JAR into
+   a minimal OCI image with the approved Java runtime, a non-root user, a health
+   check, explicit writable paths, no embedded secrets, and source/version labels.
+   Test the image locally against PostgreSQL 18.
+3. **Implement the backend CI and private GHCR publication workflow.** Run the
+   canonical Maven and OpenAPI gates, build the OCI image, scan it, publish it to
+   private GHCR, and record the immutable digest and source commit. Publication
+   must not deploy production.
+4. **Implement the versioned frontend release artifact in the frontend
+   repository.** Build and verify the static frontend, publish its immutable
+   versioned artifact and checksum, identify the supported backend contract, and
+   retain the previous compatible artifact.
+5. **Implement the production Docker Compose, Caddy, and release-manifest
+   configuration.** Compose the Caddy, backend, PostgreSQL 18, and static frontend
+   services; publish only ports 80 and 443; configure production health checks,
+   resource limits, persistent volumes, log rotation, the commissioning gate,
+   and immutable frontend/backend references.
+6. **Implement deployment, rollback, and verification commands.** Add the
+   exclusive deployment lock, backup-freshness gate, explicit Flyway step,
+   maintenance response, release-pair switch, public and private smoke checks,
+   release recording, and database-aware rollback behavior.
+7. **Implement the final backup and restoration format and commands.** Create the
+   PostgreSQL dump, password-free role export, sanitized manifest, checksum,
+   dual-recipient `age` encryption, upload metadata, cleanup, restore, and
+   restoration-verification commands. Prove the format locally with synthetic
+   production-like data before connecting it to production AWS resources.
+8. **Implement `member-info-import`.** Satisfy `REQ-MEMBER-IMPORT-010` through
+   `REQ-MEMBER-IMPORT-015`, including validation-only execution, atomic apply,
+   safe diagnostics, idempotency, minimized activity, tests, and the production
+   one-shot maintenance wrapper. This may be developed independently, but it
+   must be complete before production data initialization.
+9. **Implement the Ansible inventory, roles, and playbooks.** Automate Hostinger
+   host configuration, SSH hardening, Docker, firewall integration, directories,
+   secrets, Compose, Caddy, deployment commands, backup timers, restoration,
+   AWS backup resources, monitoring, and verification. Prove idempotency and
+   keep unavoidable account, billing, MFA, purchase, and email-confirmation
+   actions manual.
+10. **Implement external monitoring and alert delivery.** Configure five-minute
+    public availability checks, host and service alerts, disk thresholds,
+    certificate warnings, the independent 04:30 AWS backup check, the 12:00
+    client escalation, recovery notices, monitor-failure alerts, and billing
+    alerts. Test every notification path.
+11. **Complete an isolated end-to-end rehearsal and restoration.** Using the final
+    image, frontend artifact, Compose model, scripts, Ansible, backup format, and
+    synthetic data, rehearse provisioning, deployment, rollback, backup,
+    decryption, restoration, verification, and cleanup. Record a successful
+    isolated restoration using the final format.
+12. **Start paid VPS commissioning.** Purchase KVM 2, apply the verified
+    automation, run the 10–15-day gated burn-in, freeze version 1.0, recreate the
+    clean production database, validate and apply the Member-information import,
+    verify recovery again, and release the approved artifact pair.
+
+Items 1 through 9 should be implemented before the paid commissioning window
+when practical. Item 10 can be prepared beforehand but must be activated and
+tested against the real VPS. Complete the local or otherwise isolated portion
+of item 11 before purchase when possible, then repeat the environment-specific
+restoration during gated VPS commissioning. The final restoration evidence must
+exist before real production data or version 1.0.
+
+## Recommended GAM agent workflow
+
+Use the GAM agent workflow for implementation, but apply it to cohesive work
+packages rather than to every individual file or command.
+
+The broad deployment planning is already complete. Do not repeat the previous
+provider, capacity, backup, retention, custody, or cost interview. Run one short,
+focused Agent P pass for item 0, update the affected accepted requirement or ADR,
+then start implementation orchestration.
+
+Use separate workflow packages in this order:
+
+1. **Backend production artifact:** implementation items 1–3.
+2. **Frontend release artifact:** implementation item 4 in the frontend
+   repository.
+3. **Production composition and deployment controls:** implementation items 5–6.
+4. **Production backup, restoration, and AWS monitoring:** implementation items
+   7 and 10 plus the related AWS portion of item 9. Build parameterized automation
+   before the VPS IP exists; bind and verify the source-IP policy during host
+   commissioning.
+5. **Member-information import:** implementation item 8, using its existing
+   accepted Requirement Specification and ADR.
+6. **Host provisioning and integration:** the remaining host portion of item 9
+   followed by item 11.
+
+For each package, a fresh Agent O validates the accepted planning artifacts and
+orchestrates Agent T, Agent D, the expanded Agent T verification, and independent
+Agent R review. Do not start the next dependent package until the previous
+package has a validated completion outcome. A package may return to Agent P only
+when implementation exposes a genuinely missing or contradictory requirement or
+architecture decision.
+
+Do not use the agent workflow to automate provider purchase, billing acceptance,
+root or client MFA enrollment, recovery private-key custody, alert-email
+confirmation, production-data approval, or the final release decision. Those are
+human-controlled operations performed with this runbook after implementation is
+reviewed.
 
 ## Commissioning model
 
