@@ -3,6 +3,13 @@ package br.org.gam.api.persistence;
 import br.org.gam.api.event.domain.EventStatus;
 import br.org.gam.api.event.domain.EventType;
 import br.org.gam.api.event.oratorio.application.OratorioApiModels.TeamType;
+import br.org.gam.api.member.domain.InformationStatus;
+import br.org.gam.api.member.domain.MemberContributionArea;
+import br.org.gam.api.member.domain.MemberCoordinationInterest;
+import br.org.gam.api.member.domain.MemberExperienceType;
+import br.org.gam.api.member.domain.MemberMassAttendanceFrequency;
+import br.org.gam.api.member.domain.MemberOccupation;
+import br.org.gam.api.member.domain.MemberSacramentType;
 import br.org.gam.api.member.domain.MemberStatus;
 import br.org.gam.api.member.solicitation.domain.MembershipSolicitationStatus;
 import br.org.gam.api.oratoriano.application.OratorianoFormApiModels.FormOrigin;
@@ -172,7 +179,7 @@ class FlywayBaselinePersistenceIT extends FlywayMigrationTestSupport {
                 row.get("table_name") + "." + row.get("column_name")
                         + " | " + withoutSchema(row.get("data_type"), schema)
                         + " | " + ((Boolean) row.get("not_null") ? "NOT NULL" : "NULL")
-                        + " | default=" + valueOrNone(row.get("default_expression"))
+                        + " | default=" + withoutSchemaOrNone(row.get("default_expression"), schema)
         ));
 
         lines.add("");
@@ -230,6 +237,22 @@ class FlywayBaselinePersistenceIT extends FlywayMigrationTestSupport {
         ));
         labels.put("event_type_enum", List.of("GENERIC", "ORATORIO", "MISSA"));
         labels.put("member_status_enum", List.of("ACTIVE", "INACTIVE"));
+        labels.put("member_information_status_enum", List.of("YES", "NO", "NOT_INFORMED"));
+        labels.put("member_experience_type_enum", List.of(
+                "JORNADA_MISSIONARIA", "CURSO_DE_LIDERANCA", "PASCOA_JUVENIL", "ACAMPABOSCO"
+        ));
+        labels.put("member_sacrament_type_enum", List.of("BATISMO", "PRIMEIRA_COMUNHAO", "CRISMA"));
+        labels.put("member_contribution_area_enum", List.of(
+                "GAME_REFEREE", "CRAFTS", "MUSIC", "PRAYER_LEADERSHIP", "BOA_TARDE_STORYTELLING", "DANCE",
+                "BALLOON_SCULPTURE", "FOOTBALL", "VOLLEYBALL", "BASKETBALL", "HANDBALL",
+                "PHOTOGRAPHY_AND_VIDEO", "PUBLIC_READING", "FACE_PAINTING", "FIRST_AID", "GINCANA_LEADERSHIP",
+                "TECHNOLOGY", "TERERE"
+        ));
+        labels.put("member_occupation_enum", List.of("WORK", "UNIVERSITY", "PREP_COURSE", "OTHER"));
+        labels.put("member_mass_attendance_frequency_enum", List.of(
+                "WEEKLY", "THREE_TIMES_PER_MONTH", "TWICE_PER_MONTH", "MONTHLY", "NOT_INFORMED"
+        ));
+        labels.put("member_coordination_interest_enum", List.of("YES", "NO", "MAYBE", "NOT_INFORMED"));
         labels.put("membership_solicitation_status_enum", List.of(
                 "PENDING", "APPROVED", "REJECTED"
         ));
@@ -253,6 +276,13 @@ class FlywayBaselinePersistenceIT extends FlywayMigrationTestSupport {
         labels.put("event_status_enum", enumNames(EventStatus.values()));
         labels.put("event_type_enum", enumNames(EventType.values()));
         labels.put("member_status_enum", enumNames(MemberStatus.values()));
+        labels.put("member_information_status_enum", enumNames(InformationStatus.values()));
+        labels.put("member_experience_type_enum", enumNames(MemberExperienceType.values()));
+        labels.put("member_sacrament_type_enum", enumNames(MemberSacramentType.values()));
+        labels.put("member_contribution_area_enum", enumNames(MemberContributionArea.values()));
+        labels.put("member_occupation_enum", enumNames(MemberOccupation.values()));
+        labels.put("member_mass_attendance_frequency_enum", enumNames(MemberMassAttendanceFrequency.values()));
+        labels.put("member_coordination_interest_enum", enumNames(MemberCoordinationInterest.values()));
         labels.put("membership_solicitation_status_enum", enumNames(MembershipSolicitationStatus.values()));
         labels.put("oratoriano_form_origin_enum", enumNames(FormOrigin.values()));
         labels.put("oratoriano_form_print_mode_enum", enumNames(PrintMode.values()));
@@ -269,6 +299,10 @@ class FlywayBaselinePersistenceIT extends FlywayMigrationTestSupport {
 
     private static String valueOrNone(Object value) {
         return value == null ? "<none>" : value.toString();
+    }
+
+    private static String withoutSchemaOrNone(Object value, String schema) {
+        return value == null ? "<none>" : withoutSchema(value, schema);
     }
 
     private static String withoutSchema(Object value, String schema) {

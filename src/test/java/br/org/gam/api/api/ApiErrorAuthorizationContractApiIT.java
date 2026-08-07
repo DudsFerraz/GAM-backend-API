@@ -774,6 +774,9 @@ class ApiErrorAuthorizationContractApiIT extends MemberApiTestSupport {
         payload.put("surname", "Silva");
         payload.put("birthDate", LocalDate.now().minusYears(20).toString());
         payload.put("phoneNumber", "+5519998877665");
+        payload.put("gamEntryDate", "2020-01-01");
+        payload.put("residentialCity", "Synthetic City");
+        payload.put("contactEmail", "ana.fixture@example.com");
         payload.put("justification", "I want to participate in GAM activities");
         payload.put("accountId", submittedAccountId.toString());
 
@@ -805,6 +808,9 @@ class ApiErrorAuthorizationContractApiIT extends MemberApiTestSupport {
                           "surname": "Silva",
                           "birthDate": "%s",
                           "phoneNumber": "+5519998877665",
+                          "gamEntryDate": "2020-01-01",
+                          "residentialCity": "Synthetic City",
+                          "contactEmail": "ana.fixture@example.com",
                           "justification": "I want to participate in GAM activities",
                           "accountId": null
                         }

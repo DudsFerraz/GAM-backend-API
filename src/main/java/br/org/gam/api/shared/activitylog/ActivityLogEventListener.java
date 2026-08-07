@@ -38,12 +38,16 @@ public class ActivityLogEventListener {
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void handle(MemberStatusChangedActivity activity) {
         Map<String, Object> metadata = new HashMap<>(Map.of(
-                "accountId", activity.accountId(),
                 "previousStatus", activity.previousStatus(),
-                "newStatus", activity.newStatus(),
-                "roleAdded", activity.roleAdded(),
-                "roleRemoved", activity.roleRemoved()
+                "newStatus", activity.newStatus()
         ));
+        if (activity.accountId() != null) metadata.put("accountId", activity.accountId());
+        if (activity.accountId() == null) {
+            metadata.put("rolesAdded", java.util.List.of());
+            metadata.put("rolesRemoved", java.util.List.of());
+        }
+        if (activity.roleAdded() != null) metadata.put("roleAdded", activity.roleAdded());
+        if (activity.roleRemoved() != null) metadata.put("roleRemoved", activity.roleRemoved());
         if (activity.roleAddedId() != null) metadata.put("roleAddedId", activity.roleAddedId());
         if (activity.roleRemovedId() != null) metadata.put("roleRemovedId", activity.roleRemovedId());
         if (activity.additionallyRemovedRoleId() != null) {
@@ -335,6 +339,12 @@ public class ActivityLogEventListener {
             );
             return;
         }
+        if (activity.action() == ActivityAction.MEMBER_INFORMATION_IMPORTED) {
+            activityLogger.log(
+                    activity.action(), ActivityTargetType.MEMBER_INFORMATION_IMPORT_BATCH,
+                    activity.targetId(), activity.reason(), null, activity.metadata());
+            return;
+        }
         activityLogger.log(
                 activity.action(),
                 targetTypeForTable(activity.table()),
@@ -366,6 +376,7 @@ public class ActivityLogEventListener {
             case "gam_locations" -> ActivityTargetType.GAM_LOCATION;
             case "events" -> ActivityTargetType.EVENT;
             case "members" -> ActivityTargetType.MEMBER;
+            case "member_information_import_batches" -> ActivityTargetType.MEMBER_INFORMATION_IMPORT_BATCH;
             case "presences" -> ActivityTargetType.PRESENCE;
             case "oratorios" -> ActivityTargetType.ORATORIO;
             case "oratorianos" -> ActivityTargetType.ORATORIANO;

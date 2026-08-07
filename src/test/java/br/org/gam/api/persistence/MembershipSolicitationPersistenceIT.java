@@ -119,6 +119,9 @@ class MembershipSolicitationPersistenceIT extends PostgreSQLIntegrationTest {
         solicitation.setName(new GamName("Ana", "Silva"));
         solicitation.setBirthDate(LocalDate.of(2000, 1, 1));
         solicitation.setPhoneNumber(GamPhoneNumber.fromString("+5519998877665"));
+        solicitation.setGamEntryDate(LocalDate.of(2020, 1, 1));
+        solicitation.setResidentialCity("Synthetic City");
+        solicitation.setContactEmail(GamEmail.of("ana.fixture@example.com"));
         solicitation.setJustification("I want to participate in GAM activities");
         solicitation.setStatus(MembershipSolicitationStatus.PENDING);
         return solicitation;

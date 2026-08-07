@@ -101,6 +101,14 @@ public class SecurityConfig {
                         .hasAuthority(PermissionEnum.Code.MEMBER_SEARCH)
                         .requestMatchers(HttpMethod.POST, "/members")
                         .hasAuthority(PermissionEnum.Code.MEMBER_MANAGE)
+                        .requestMatchers(HttpMethod.PUT, "/members/*", "/members/*/gam-entry-date",
+                                "/members/*/dietary-restriction", "/members/*/experiences",
+                                "/members/*/sacraments", "/members/*/contribution-profile")
+                        .hasAuthority(PermissionEnum.Code.MEMBER_MANAGE)
+                        .requestMatchers(HttpMethod.PATCH, "/members/*/account/link")
+                        .hasAuthority(PermissionEnum.Code.MEMBER_ACCOUNT_LINK)
+                        .requestMatchers(HttpMethod.GET, "/members/*/annual-information/*")
+                        .hasAuthority(PermissionEnum.Code.MEMBER_INFORMATION_GET)
                         .requestMatchers(
                                 HttpMethod.PATCH,
                                 "/members/*/coordinator/grant",

@@ -1406,8 +1406,10 @@ class EventRecordsLifecycleApiIT extends MemberApiTestSupport {
         UUID memberId = UUID.randomUUID();
         Timestamp now = Timestamp.from(Instant.now());
         jdbcTemplate.update(
-                "INSERT INTO members (id, account_id, first_name, surname, birth_date, phone_number, status, created_at, updated_at) "
+                "INSERT INTO members (id, account_id, first_name, surname, birth_date, phone_number, "
+                        + "gam_entry_date, residential_city, contact_email, status, created_at, updated_at) "
                         + "VALUES (?, ?, 'Ana', 'Silva', DATE '2000-01-01', '+5519999999999', "
+                        + "DATE '2020-01-01', 'Synthetic City', 'ana.fixture@example.com', "
                         + "CAST('ACTIVE' AS member_status_enum), ?, ?)",
                 memberId, accountId, now, now
         );

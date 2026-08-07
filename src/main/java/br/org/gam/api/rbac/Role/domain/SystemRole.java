@@ -25,6 +25,8 @@ public enum SystemRole {
                     MEMBER_ACTIVATION,
                     MEMBER_GET_NON_ACTIVE,
                     MEMBER_MANAGE,
+                    MEMBER_ACCOUNT_LINK,
+                    MEMBER_INFORMATION_GET,
                     COORDINATOR_MANAGE,
                     ACCOUNT_GET,
                     ACCOUNT_SEARCH,

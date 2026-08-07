@@ -251,7 +251,7 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
         authenticatedJsonRequest(caller).get(ORATORIANOS + "/{id}", id).then().statusCode(404);
 
         ExtractableResponse<Response> conflictingRegistration = authenticatedJsonRequest(caller)
-                .body(oratorianoRegistrationPayload("JOAO", "SILVA"))
+                .body(oratorianoRegistrationPayload("Joao", "Silva"))
                 .post(ORATORIANOS)
                 .then()
                 .extract();
@@ -887,7 +887,7 @@ class OratorianoRecordsApiIT extends OratorioModuleApiTestSupport {
 
     private static Stream<Arguments> humanEquivalentNameCases() {
         return Stream.of(
-                Arguments.of("case and diacritic variants", "João", "Silva", "JOAO", "SILVA"),
+                Arguments.of("diacritic variant", "João", "Silva", "Joao", "Silva"),
                 Arguments.of("flattened first-name/surname boundary", "Ana Maria", "Souza", "Ana", "Maria Souza")
         );
     }

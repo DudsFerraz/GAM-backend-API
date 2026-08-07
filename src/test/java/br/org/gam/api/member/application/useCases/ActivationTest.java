@@ -2,6 +2,7 @@ package br.org.gam.api.member.application.useCases;
 
 import br.org.gam.api.account.domain.Account;
 import br.org.gam.api.account.application.AccountEntityLoader;
+import br.org.gam.api.account.application.AccountMapper;
 import br.org.gam.api.account.persistence.AccountEntity;
 import br.org.gam.api.shared.domain.GamEmail;
 import br.org.gam.api.member.application.CoordinatorSafetyPolicy;
@@ -12,8 +13,11 @@ import br.org.gam.api.member.domain.Member;
 import br.org.gam.api.member.domain.MemberStatus;
 import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.persistence.MemberRepository;
+import br.org.gam.api.member.solicitation.domain.MembershipSolicitationStatus;
+import br.org.gam.api.member.solicitation.persistence.MembershipSolicitationRepository;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
 import br.org.gam.api.shared.domain.GamName;
+import br.org.gam.api.shared.exception.ConflictException;
 import br.org.gam.api.shared.exception.InvalidCommandException;
 import br.org.gam.api.shared.phonenumber.GamPhoneNumber;
 import br.org.gam.api.testing.annotation.FunctionalTest;
@@ -65,6 +69,12 @@ class ActivationTest {
 
     @Mock
     private ActivityEvents activityEvents;
+
+    @Mock
+    private MembershipSolicitationRepository solicitationRepository;
+
+    @Mock
+    private AccountMapper accountMapper;
 
     @InjectMocks
     private Activation activation;
@@ -144,6 +154,152 @@ class ActivationTest {
             org.mockito.Mockito.verifyNoMoreInteractions(activityEvents);
         }
 
+        @Test
+        @DisplayName("REQ-MEMBER-IMPORT-002 - Account-less inactive Member activates -> active status without Account Role projection")
+        void activateAccountlessMemberShouldChangeStatusWithoutRoleProjection() {
+            UUID memberId = UUID.randomUUID();
+            Member member = accountlessMember(MemberStatus.INACTIVE);
+            MemberEntity lockedEntity = new MemberEntity();
+            MemberEntity mappedEntity = new MemberEntity();
+
+            when(memberEntityLoader.requiredByIdForUpdate(memberId)).thenReturn(lockedEntity);
+            when(memberMapper.entityToDomain(lockedEntity)).thenReturn(member);
+            when(memberMapper.domainToEntity(any(Member.class))).thenReturn(mappedEntity);
+
+            activation.activate(memberId, "Returning to weekly activities");
+
+            assertThat(member.getStatus()).isEqualTo(MemberStatus.ACTIVE);
+            verify(memberRepo).save(mappedEntity);
+            verify(activityEvents).memberActivated(
+                    memberId,
+                    null,
+                    MemberStatus.INACTIVE.name(),
+                    MemberStatus.ACTIVE.name(),
+                    null,
+                    null,
+                    "Returning to weekly activities"
+            );
+            verifyNoInteractions(accountEntityLoader, memberRoleProjection, coordinatorSafetyPolicy);
+            org.mockito.Mockito.verifyNoMoreInteractions(activityEvents);
+        }
+
+        @Test
+        @DisplayName("REQ-MEMBER-IMPORT-002 - Account-less active Member deactivates -> inactive status without Account Role projection")
+        void deactivateAccountlessMemberShouldChangeStatusWithoutRoleProjection() {
+            UUID memberId = UUID.randomUUID();
+            Member member = accountlessMember(MemberStatus.ACTIVE);
+            MemberEntity lockedEntity = new MemberEntity();
+            MemberEntity mappedEntity = new MemberEntity();
+
+            when(memberEntityLoader.requiredByIdForUpdate(memberId)).thenReturn(lockedEntity);
+            when(memberMapper.entityToDomain(lockedEntity)).thenReturn(member);
+            when(memberMapper.domainToEntity(any(Member.class))).thenReturn(mappedEntity);
+
+            activation.deactivate(memberId, "No longer participates");
+
+            assertThat(member.getStatus()).isEqualTo(MemberStatus.INACTIVE);
+            verify(memberRepo).save(mappedEntity);
+            verify(activityEvents).memberDeactivated(
+                    memberId,
+                    null,
+                    MemberStatus.ACTIVE.name(),
+                    MemberStatus.INACTIVE.name(),
+                    null,
+                    null,
+                    "No longer participates"
+            );
+            verifyNoInteractions(accountEntityLoader, memberRoleProjection, coordinatorSafetyPolicy);
+            org.mockito.Mockito.verifyNoMoreInteractions(activityEvents);
+        }
+
+        @Test
+        @DisplayName("REQ-MEMBER-IMPORT-002 - Coordinator grant for Account-less Member -> conflict without mutation or activity")
+        void grantCoordinatorToAccountlessMemberShouldReturnConflict() {
+            UUID memberId = UUID.randomUUID();
+            MemberEntity lockedEntity = activeAccountlessMemberEntity();
+            when(memberEntityLoader.requiredByIdForUpdate(memberId)).thenReturn(lockedEntity);
+
+            assertThatThrownBy(() -> activation.grantCoordinator(memberId, "Confirmed responsibility"))
+                    .isInstanceOf(ConflictException.class);
+
+            verifyNoInteractions(
+                    accountEntityLoader,
+                    memberMapper,
+                    memberRoleProjection,
+                    coordinatorSafetyPolicy,
+                    memberRepo,
+                    activityEvents
+            );
+        }
+
+        @Test
+        @DisplayName("REQ-MEMBER-IMPORT-002 - Oratorio Coordinator grant for Account-less Member -> conflict without mutation or activity")
+        void grantOratorioCoordinatorToAccountlessMemberShouldReturnConflict() {
+            UUID memberId = UUID.randomUUID();
+            MemberEntity lockedEntity = activeAccountlessMemberEntity();
+            when(memberEntityLoader.requiredByIdForUpdate(memberId)).thenReturn(lockedEntity);
+
+            assertThatThrownBy(() -> activation.grantOratorioCoordinator(memberId, "Confirmed responsibility"))
+                    .isInstanceOf(ConflictException.class);
+
+            verifyNoInteractions(
+                    accountEntityLoader,
+                    memberMapper,
+                    memberRoleProjection,
+                    coordinatorSafetyPolicy,
+                    memberRepo,
+                    activityEvents
+            );
+        }
+
+        @Test
+        @DisplayName("REQ-MEMBER-IMPORT-003/004/005 - eligible active Account-less Member -> immutable link, MEMBER projection, and one activity")
+        void linkEligibleAccountToActiveAccountlessMemberShouldProjectMemberRoleAndAudit() {
+            UUID memberId = UUID.randomUUID();
+            Account account = account();
+            AccountEntity accountEntity = new AccountEntity();
+            accountEntity.setId(account.getId());
+            MemberEntity memberEntity = activeAccountlessMemberEntity();
+            Member member = accountlessMember(MemberStatus.ACTIVE);
+            when(memberEntityLoader.requiredByIdForUpdate(memberId)).thenReturn(memberEntity);
+            when(accountEntityLoader.requiredByIdForUpdate(account.getId())).thenReturn(accountEntity);
+            when(memberMapper.entityToDomain(memberEntity)).thenReturn(member);
+            when(accountMapper.entityToDomain(accountEntity)).thenReturn(account);
+
+            activation.linkAccount(memberId,
+                    new LinkMemberAccountDTO(account.getId(), "  Synthetic identity confirmation  "));
+
+            verify(memberRoleProjection).assertPreMember(account.getId());
+            verify(memberRoleProjection).synchronizeActive(account.getId());
+            assertThat(memberEntity.getAccount()).isSameAs(accountEntity);
+            verify(memberRepo).saveAndFlush(memberEntity);
+            verify(activityEvents).memberAccountLinked(
+                    memberId, account.getId(), "MEMBER", "Synthetic identity confirmation");
+            org.mockito.Mockito.verifyNoMoreInteractions(activityEvents);
+        }
+
+        @Test
+        @DisplayName("REQ-MEMBER-IMPORT-004/005 - pending solicitation -> conflict without link, Role change, or activity")
+        void pendingSolicitationShouldBlockAccountLinkWithoutMutation() {
+            UUID memberId = UUID.randomUUID();
+            UUID accountId = UUID.randomUUID();
+            AccountEntity accountEntity = new AccountEntity();
+            accountEntity.setId(accountId);
+            MemberEntity memberEntity = activeAccountlessMemberEntity();
+            when(memberEntityLoader.requiredByIdForUpdate(memberId)).thenReturn(memberEntity);
+            when(accountEntityLoader.requiredByIdForUpdate(accountId)).thenReturn(accountEntity);
+            when(solicitationRepository.existsByAccount_IdAndStatus(
+                    accountId, MembershipSolicitationStatus.PENDING)).thenReturn(true);
+
+            assertThatThrownBy(() -> activation.linkAccount(
+                    memberId, new LinkMemberAccountDTO(accountId, "Synthetic identity confirmation")))
+                    .isInstanceOf(ConflictException.class);
+
+            assertThat(memberEntity.getAccount()).isNull();
+            verifyNoInteractions(memberMapper, accountMapper, memberRoleProjection, activityEvents);
+            verify(memberRepo, org.mockito.Mockito.never()).saveAndFlush(any());
+        }
+
         @ParameterizedTest
         @MethodSource("invalidReasons")
         @DisplayName("REQ-MEMBER-006 - invalid deactivation reason -> rejected before loading or mutation")
@@ -176,6 +332,18 @@ class ActivationTest {
         );
     }
 
+    @SuppressWarnings("deprecation")
+    private static Member accountlessMember(MemberStatus status) {
+        return new Member(
+                UUID.randomUUID(),
+                null,
+                new GamName("Ana", "Silva"),
+                LocalDate.now().minusYears(20),
+                GamPhoneNumber.fromString("+5519998877665"),
+                status
+        );
+    }
+
     private static Account account() {
         return Account.register(GamEmail.of("member@example.com"), "encoded-password", "Member Account");
     }
@@ -185,6 +353,12 @@ class ActivationTest {
         account.setId(accountId);
         MemberEntity member = new MemberEntity();
         member.setAccount(account);
+        return member;
+    }
+
+    private static MemberEntity activeAccountlessMemberEntity() {
+        MemberEntity member = new MemberEntity();
+        member.setStatus(MemberStatus.ACTIVE);
         return member;
     }
 }

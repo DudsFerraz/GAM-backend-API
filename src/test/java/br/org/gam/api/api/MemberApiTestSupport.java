@@ -141,7 +141,10 @@ abstract class MemberApiTestSupport extends BaseApiIntegrationTest {
         payload.put("firstName", firstName);
         payload.put("surname", surname);
         payload.put("birthDate", birthDate == null ? null : birthDate.toString());
+        payload.put("gamEntryDate", "2020-01-01");
+        payload.put("residentialCity", "Synthetic City");
         payload.put("phoneNumber", phoneNumber);
+        payload.put("contactEmail", "member-contact-" + accountId + "@example.com");
         payload.put("reason", reason);
         return payload;
     }
@@ -151,7 +154,10 @@ abstract class MemberApiTestSupport extends BaseApiIntegrationTest {
         payload.put("firstName", "Ana");
         payload.put("surname", "Silva");
         payload.put("birthDate", birthDate == null ? null : birthDate.toString());
+        payload.put("gamEntryDate", "2020-01-01");
+        payload.put("residentialCity", "Synthetic City");
         payload.put("phoneNumber", CANONICAL_PHONE);
+        payload.put("contactEmail", "solicitation-contact@example.com");
         payload.put("justification", justification);
         return payload;
     }
@@ -400,14 +406,22 @@ abstract class MemberApiTestSupport extends BaseApiIntegrationTest {
             String status
     ) {
         assertThat(record).containsOnlyKeys(
-                "id", "firstName", "surname", "birthDate", "phoneNumber", "status", "account"
+                "id", "firstName", "surname", "birthDate", "gamEntryDate", "residentialCity",
+                "phoneNumber", "contactEmail", "dietaryRestriction", "status", "account"
         );
         assertThat(record)
                 .containsEntry("id", memberId.toString())
                 .containsEntry("firstName", "Ana")
                 .containsEntry("surname", "Silva")
+                .containsEntry("gamEntryDate", "2020-01-01")
+                .containsEntry("residentialCity", "Synthetic City")
                 .containsEntry("phoneNumber", CANONICAL_PHONE)
+                .containsEntry("contactEmail", "member-contact-" + accountId + "@example.com")
                 .containsEntry("status", status);
+        assertThat((Map<String, Object>) record.get("dietaryRestriction"))
+                .containsOnlyKeys("status", "details")
+                .containsEntry("status", "NOT_INFORMED")
+                .containsEntry("details", null);
 
         Map<String, Object> account = (Map<String, Object>) record.get("account");
         assertThat(account).containsOnlyKeys("id", "email", "displayName");
@@ -425,14 +439,18 @@ abstract class MemberApiTestSupport extends BaseApiIntegrationTest {
             String status
     ) {
         assertThat(record).containsOnlyKeys(
-                "id", "account", "firstName", "surname", "birthDate", "phoneNumber", "justification",
-                "status", "submittedAt", "reviewedBy", "decidedAt", "reviewReason", "memberId"
+                "id", "account", "firstName", "surname", "birthDate", "gamEntryDate", "residentialCity",
+                "phoneNumber", "contactEmail", "justification", "status", "submittedAt", "reviewedBy",
+                "decidedAt", "reviewReason", "memberId"
         );
         assertThat(record)
                 .containsEntry("id", solicitationId.toString())
                 .containsEntry("firstName", "Ana")
                 .containsEntry("surname", "Silva")
+                .containsEntry("gamEntryDate", "2020-01-01")
+                .containsEntry("residentialCity", "Synthetic City")
                 .containsEntry("phoneNumber", CANONICAL_PHONE)
+                .containsEntry("contactEmail", "solicitation-contact@example.com")
                 .containsEntry("justification", VALID_JUSTIFICATION)
                 .containsEntry("status", status);
         assertThat(record.get("submittedAt")).isNotNull();

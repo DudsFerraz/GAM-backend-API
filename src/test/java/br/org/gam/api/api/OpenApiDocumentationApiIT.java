@@ -20,6 +20,141 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("API - OpenAPI documentation contract")
 class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
 
+    private static final Map<String, String> MEMBER_REPLACEMENT_PATHS = Map.of(
+            "/members/{memberId}", "updateMemberProfile",
+            "/members/{memberId}/gam-entry-date", "updateMemberGamEntryDate",
+            "/members/{memberId}/dietary-restriction", "updateMemberDietaryRestriction",
+            "/members/{memberId}/experiences", "updateMemberExperiences",
+            "/members/{memberId}/sacraments", "updateMemberSacraments",
+            "/members/{memberId}/contribution-profile", "updateMemberContributionProfile"
+    );
+
+    @Test
+    @DisplayName("REQ-MEMBER-INFO-009/011 - all Member replacements -> exact 204 success with aggregate ETag")
+    void memberReplacementOperationsShouldDocumentExactSuccessAndEtag() {
+        Map<String, Object> paths = object(openApiContract().body(), "paths");
+        SoftAssertions softly = new SoftAssertions();
+
+        MEMBER_REPLACEMENT_PATHS.forEach((path, operationId) -> {
+            Map<String, Object> operation = object(object(paths, path), "put");
+            softly.assertThat(operation).as(path + " PUT").containsEntry("operationId", operationId);
+            Map<String, Object> responses = object(operation, "responses");
+            softly.assertThat(responses).as(path + " responses").containsKey("204").doesNotContainKey("200");
+            Map<String, Object> success = object(responses, "204");
+            softly.assertThat(success).as(path + " 204 response").doesNotContainKey("content");
+            softly.assertThat(object(object(success, "headers"), "ETag"))
+                    .as(path + " success ETag").isNotNull();
+        });
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-INFO-005/008 - experience and sacrament maps -> exact closed property catalogs")
+    void experienceAndSacramentResponseShouldDocumentClosedCatalogMaps() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> operation = object(
+                object(object(contract, "paths"), "/members/{memberId}/experiences-and-sacraments"), "get");
+        Map<String, Object> success = object(object(operation, "responses"), "200");
+        Map<String, Object> content = object(success, "content");
+        Map<String, Object> media = content.containsKey("application/json")
+                ? object(content, "application/json") : object(content, "*/*");
+        Map<String, Object> responseSchema = resolveSchema(contract, object(media, "schema"));
+        Map<String, Object> properties = object(responseSchema, "properties");
+        Map<String, Object> experiences = resolveSchema(contract, object(properties, "experiences"));
+        Map<String, Object> sacraments = resolveSchema(contract, object(properties, "sacraments"));
+        List<String> experienceKeys = List.of(
+                "JORNADA_MISSIONARIA", "CURSO_DE_LIDERANCA", "PASCOA_JUVENIL", "ACAMPABOSCO");
+        List<String> sacramentKeys = List.of("BATISMO", "PRIMEIRA_COMUNHAO", "CRISMA");
+
+        assertThat(properties).containsOnlyKeys("experiences", "sacraments");
+        assertThat(strings(responseSchema, "required")).containsExactlyInAnyOrder("experiences", "sacraments");
+        assertThat(object(experiences, "properties")).containsOnlyKeys(experienceKeys.toArray(String[]::new));
+        assertThat(strings(experiences, "required")).containsExactlyInAnyOrderElementsOf(experienceKeys);
+        assertThat(object(sacraments, "properties")).containsOnlyKeys(sacramentKeys.toArray(String[]::new));
+        assertThat(strings(sacraments, "required")).containsExactlyInAnyOrderElementsOf(sacramentKeys);
+        assertThat(experiences).containsEntry("additionalProperties", false);
+        assertThat(sacraments).containsEntry("additionalProperties", false);
+        Map<String, Object> example = object(media, "example");
+        assertThat(example).containsOnlyKeys("experiences", "sacraments");
+        assertThat(object(example, "experiences")).containsOnlyKeys(experienceKeys.toArray(String[]::new));
+        assertThat(object(example, "sacraments")).containsOnlyKeys(sacramentKeys.toArray(String[]::new));
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-INFO-007/008 - contribution GET documents response-only shape without audit reason")
+    void contributionProfileReadShouldExcludeRequestOnlyReasonFromSchemaAndExample() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> operation = object(
+                object(object(contract, "paths"), "/members/{memberId}/contribution-profile"), "get");
+        Map<String, Object> success = object(object(operation, "responses"), "200");
+        Map<String, Object> content = object(success, "content");
+        Map<String, Object> media = content.containsKey("application/json")
+                ? object(content, "application/json") : object(content, "*/*");
+        Map<String, Object> responseSchema = resolveSchema(contract, object(media, "schema"));
+        Map<String, Object> properties = object(responseSchema, "properties");
+        Map<String, Object> contribution = resolveSchema(contract, object(properties, "contributionProfile"));
+
+        assertThat(properties).containsOnlyKeys("contributionProfile").doesNotContainKey("reason");
+        assertThat(strings(responseSchema, "required")).containsExactly("contributionProfile");
+        assertThat(object(contribution, "properties"))
+                .containsOnlyKeys("contributionAreas", "otherContributionAreas")
+                .doesNotContainKey("reason");
+        assertThat(strings(contribution, "required"))
+                .containsExactlyInAnyOrder("contributionAreas", "otherContributionAreas");
+        Map<String, Object> example = object(media, "example");
+        assertThat(example).containsOnlyKeys("contributionProfile").doesNotContainKey("reason");
+        assertThat(object(example, "contributionProfile"))
+                .containsOnlyKeys("contributionAreas", "otherContributionAreas")
+                .doesNotContainKey("reason");
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-INFO-014/015 - annual schema -> complete required nullable contract and safe example")
+    void annualInformationShouldDocumentRequiredNullableShapeAndRealisticExample() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> operation = object(
+                object(object(contract, "paths"), "/members/{memberId}/annual-information/{surveyCycle}"), "get");
+        Map<String, Object> success = object(object(operation, "responses"), "200");
+        Map<String, Object> content = object(success, "content");
+        Map<String, Object> media = content.containsKey("application/json")
+                ? object(content, "application/json") : object(content, "*/*");
+        Map<String, Object> schema = resolveSchema(contract, object(media, "schema"));
+        Map<String, Object> properties = object(schema, "properties");
+        List<String> completeShape = List.of(
+                "id", "surveyCycle", "submittedAt", "occupations", "healthCondition",
+                "religiousVocationConsidered", "massAttendanceFrequency", "saturdayOratorioImpediment",
+                "formationAndMeetingInterests", "coordinationInterest", "additionalComments",
+                "oratorioActivitySuggestions", "instagramPostSuggestions"
+        );
+        assertThat(properties).containsOnlyKeys(completeShape.toArray(String[]::new));
+        assertThat(strings(schema, "required")).containsExactlyInAnyOrderElementsOf(completeShape);
+        for (String nullable : List.of("submittedAt", "formationAndMeetingInterests", "additionalComments",
+                "oratorioActivitySuggestions", "instagramPostSuggestions")) {
+            assertThat(object(properties, nullable).toString()).as(nullable + " nullability").contains("null");
+        }
+        Map<String, Object> occupations = resolveSchema(contract, object(properties, "occupations"));
+        Map<String, Object> health = resolveSchema(contract, object(properties, "healthCondition"));
+        Map<String, Object> impediment = resolveSchema(contract, object(properties, "saturdayOratorioImpediment"));
+        assertThat(object(object(occupations, "properties"), "details").toString())
+                .as("occupations.details nullability").contains("null");
+        assertThat(object(object(health, "properties"), "details").toString())
+                .as("healthCondition.details nullability").contains("null");
+        assertThat(object(object(impediment, "properties"), "details").toString())
+                .as("saturdayOratorioImpediment.details nullability").contains("null");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> parameters = (List<Map<String, Object>>) operation.get("parameters");
+        assertThat(parameters)
+                .extracting(parameter -> parameter.get("name"))
+                .containsExactlyInAnyOrder("memberId", "surveyCycle");
+        Map<String, Object> example = object(media, "example");
+        assertThat(example).containsOnlyKeys(completeShape.toArray(String[]::new))
+                .doesNotContainEntry("surveyCycle", 1).doesNotContainKey("reason");
+        assertThat(object(example, "occupations")).containsOnlyKeys("values", "details");
+        assertThat(object(example, "healthCondition")).containsOnlyKeys("status", "details");
+        assertThat(object(example, "saturdayOratorioImpediment")).containsOnlyKeys("status", "details");
+        assertThat(example.toString()).doesNotContain("experiences={}", "sacraments={}", "experiences: {}", "sacraments: {}");
+    }
+
     @Test
     @DisplayName("REQ-EVENT-007, REQ-EVENT-012, REQ-EVENT-019 and REQ-PRESENCE-006 - Event mutation operations -> exact success statuses and Location headers")
     void eventMutationOperationsShouldDocumentExactSuccessContracts() {
@@ -96,13 +231,22 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
 
         softly.assertThat(properties)
                 .as("solicitation submission request properties")
-                .containsOnlyKeys("firstName", "surname", "birthDate", "phoneNumber", "justification");
+                .containsOnlyKeys(
+                        "firstName", "surname", "birthDate", "gamEntryDate", "residentialCity",
+                        "phoneNumber", "contactEmail", "justification"
+                );
         softly.assertThat(strings(schema, "required"))
                 .as("solicitation submission required properties")
-                .containsExactlyInAnyOrder("firstName", "surname", "birthDate", "phoneNumber", "justification");
+                .containsExactlyInAnyOrder(
+                        "firstName", "surname", "birthDate", "gamEntryDate", "residentialCity",
+                        "phoneNumber", "contactEmail", "justification"
+                );
         softly.assertThat(example)
                 .as("solicitation submission example")
-                .containsOnlyKeys("firstName", "surname", "birthDate", "phoneNumber", "justification");
+                .containsOnlyKeys(
+                        "firstName", "surname", "birthDate", "gamEntryDate", "residentialCity",
+                        "phoneNumber", "contactEmail", "justification"
+                );
         softly.assertAll();
     }
 

@@ -79,6 +79,13 @@ public final class SearchValueParsers {
         return LocalDate.parse(submitted);
     }
 
+    public static Object booleanValue(JsonNode value) {
+        if (value == null || !value.isBoolean()) {
+            throw new InvalidSearchFilterException("Invalid filter value.");
+        }
+        return value.booleanValue();
+    }
+
     public static <E extends Enum<E>> Function<JsonNode, Object> enumValue(Class<E> enumClass) {
         return value -> Enum.valueOf(enumClass, text(value));
     }

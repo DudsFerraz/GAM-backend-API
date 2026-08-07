@@ -1,0 +1,22 @@
+package br.org.gam.api.member.domain;
+
+public enum MemberContributionArea {
+    GAME_REFEREE,
+    CRAFTS,
+    MUSIC,
+    PRAYER_LEADERSHIP,
+    BOA_TARDE_STORYTELLING,
+    DANCE,
+    BALLOON_SCULPTURE,
+    FOOTBALL,
+    VOLLEYBALL,
+    BASKETBALL,
+    HANDBALL,
+    PHOTOGRAPHY_AND_VIDEO,
+    PUBLIC_READING,
+    FACE_PAINTING,
+    FIRST_AID,
+    GINCANA_LEADERSHIP,
+    TECHNOLOGY,
+    TERERE
+}

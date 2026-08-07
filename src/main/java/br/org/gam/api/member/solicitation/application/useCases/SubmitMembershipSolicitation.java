@@ -48,6 +48,9 @@ public class SubmitMembershipSolicitation {
                 dto.justification(), "Membership solicitation justification is required."
         );
         validateEligibility(dto.birthDate());
+        if (dto.gamEntryDate().isAfter(LocalDate.now())) {
+            throw new RequestValidationException("body", "/gamEntryDate", "RANGE");
+        }
         GamName name = validatedName(dto.firstName(), dto.surname());
 
         UUID accountId = auditorAware.getCurrentAuditor()
@@ -69,7 +72,15 @@ public class SubmitMembershipSolicitation {
         solicitation.setAccount(account);
         solicitation.setName(name);
         solicitation.setBirthDate(dto.birthDate());
+        solicitation.setGamEntryDate(dto.gamEntryDate());
+        String residentialCity = br.org.gam.api.member.domain.MemberInformationText.collapsed(dto.residentialCity());
+        if (residentialCity.codePointCount(0, residentialCity.length()) > 100) {
+            throw new br.org.gam.api.shared.exception.RequestValidationException(
+                    "body", "/residentialCity", "SIZE");
+        }
+        solicitation.setResidentialCity(residentialCity);
         solicitation.setPhoneNumber(dto.phoneNumber());
+        solicitation.setContactEmail(dto.contactEmail());
         solicitation.setJustification(justification);
         solicitation.setStatus(MembershipSolicitationStatus.PENDING);
 

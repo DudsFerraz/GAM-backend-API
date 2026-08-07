@@ -67,7 +67,8 @@ public class ReviewMembershipSolicitation {
 
         UUID memberId = registerMember.register(new RegisterMemberDTO(
                 applicant.getId(), solicitation.getName().firstName(), solicitation.getName().surname(),
-                solicitation.getBirthDate(), solicitation.getPhoneNumber(), reason
+                solicitation.getBirthDate(), solicitation.getGamEntryDate(), solicitation.getResidentialCity(),
+                solicitation.getPhoneNumber(), solicitation.getContactEmail(), reason
         )).id();
         MemberEntity member = memberEntityLoader.requiredById(memberId);
         MemberRoleProjection.RoleChange roles = roleProjection.synchronizeActive(applicant.getId());

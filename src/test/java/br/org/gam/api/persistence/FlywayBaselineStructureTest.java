@@ -78,7 +78,7 @@ class FlywayBaselineStructureTest {
             String sql = Files.readString(migration);
             assertThat(matches(CREATE_TABLE, sql))
                     .as("tables created by %s", contract.filename())
-                    .containsExactly(contract.table());
+                    .containsExactlyElementsOf(contract.tables());
             assertThat(matches(CREATE_ENUM, sql))
                     .as("enum mirrors created by %s", contract.filename())
                     .containsExactlyInAnyOrderElementsOf(contract.enums());
@@ -181,8 +181,24 @@ class FlywayBaselineStructureTest {
         baseline.put(4, migration("V4__create_permissions_table.sql", "permissions"));
         baseline.put(5, migration(
                 "V5__create_members_table.sql",
-                "members",
+                List.of(
+                        "member_information_import_batches",
+                        "members",
+                        "member_experiences",
+                        "member_sacraments",
+                        "member_contribution_areas",
+                        "member_other_contribution_areas",
+                        "annual_member_information_responses",
+                        "annual_member_occupations"
+                ),
                 "member_status_enum"
+                , "member_information_status_enum"
+                , "member_experience_type_enum"
+                , "member_sacrament_type_enum"
+                , "member_contribution_area_enum"
+                , "member_occupation_enum"
+                , "member_mass_attendance_frequency_enum"
+                , "member_coordination_interest_enum"
         ));
         baseline.put(6, migration("V6__create_gam_locations_table.sql", "gam_locations"));
         baseline.put(7, migration(
@@ -248,9 +264,13 @@ class FlywayBaselineStructureTest {
     }
 
     private static MigrationContract migration(String filename, String table, String... enums) {
-        return new MigrationContract(filename, table, List.of(enums));
+        return migration(filename, List.of(table), enums);
     }
 
-    private record MigrationContract(String filename, String table, List<String> enums) {
+    private static MigrationContract migration(String filename, List<String> tables, String... enums) {
+        return new MigrationContract(filename, List.copyOf(tables), List.of(enums));
+    }
+
+    private record MigrationContract(String filename, List<String> tables, List<String> enums) {
     }
 }

@@ -100,6 +100,10 @@ BEGIN
         ('MEMBER_ACTIVATION', 'Activate members', 'Allows activating and deactivating members'),
         ('MEMBER_GET_NON_ACTIVE', 'View inactive members', 'Allows viewing non-active members'),
         ('MEMBER_MANAGE', 'Manage members', 'Allows managing members'),
+        ('MEMBER_ACCOUNT_LINK', 'Link Member accounts',
+         'Allows linking an existing Account to an existing Account-less Member'),
+        ('MEMBER_INFORMATION_GET', 'View annual Member information',
+         'Allows viewing protected annual Member information'),
         ('COORDINATOR_MANAGE', 'Manage coordinators',
          'Allows granting and revoking Coordinator designation'),
         ('ACCOUNT_GET', 'View accounts', 'Allows viewing accounts'),
@@ -228,6 +232,124 @@ BEGIN
         'ORATORIANO_FORM_PDF_GENERATE',
         'ORATORIANO_FORM_ATTACHMENT_GET'
     );
+
+    -- Fictional Member-information seams. These records are fixture-owned and
+    -- deliberately have no production import-batch provenance.
+    INSERT INTO members (
+        id, account_id, version, first_name, surname, birth_date, gam_entry_date,
+        residential_city, phone_number, contact_email, dietary_restriction_status,
+        dietary_restriction_details, import_batch_id, status,
+        created_at, created_by, updated_at, updated_by, deleted_at, deleted_by
+    ) VALUES
+        ('01960000-0001-7000-8000-000000000001', NULL, 0, 'Lia', 'Monteiro', DATE '1998-04-12',
+         DATE '2022-02-01', 'Piracicaba', '+5519991112201', 'lia.monteiro@example.com', 'YES',
+         'Lactose', NULL, 'ACTIVE', v_now, NULL, v_now, NULL, NULL, NULL),
+        ('01960000-0001-7000-8000-000000000002', NULL, 0, 'Caio', 'Nogueira', DATE '1995-08-20',
+         DATE '2019-03-10', 'Rio Claro', '+5519991112202', 'caio.nogueira@example.com', 'NO',
+         NULL, NULL, 'INACTIVE', v_now, NULL, v_now, NULL, NULL, NULL),
+        ('01960000-0001-7000-8000-000000000003', NULL, 0, 'Nina', 'Campos', DATE '2001-11-03',
+         DATE '2024-01-14', 'Limeira', '+5519991112203', 'nina.campos@example.com', 'NOT_INFORMED',
+         NULL, NULL, 'ACTIVE', v_now, NULL, v_now, NULL, NULL, NULL),
+        ('01950000-0010-7000-8000-000000000001', NULL, 0, 'Mara', 'Teixeira', DATE '1997-02-18',
+         DATE '2021-08-07', 'Americana', '+5519991112204', 'mara.teixeira@example.com', 'NO',
+         NULL, NULL, 'ACTIVE', v_now, NULL, v_now, NULL, NULL, NULL),
+        ('01950000-0010-7000-8000-000000000002', NULL, 0, 'Ivo', 'Ribeiro', DATE '1993-06-25',
+         DATE '2018-05-20', 'Sumaré', '+5519991112205', 'ivo.ribeiro@example.com', 'NOT_INFORMED',
+         NULL, NULL, 'INACTIVE', v_now, NULL, v_now, NULL, NULL, NULL),
+        ('01950000-0010-7000-8000-000000000003', NULL, 0, 'Bia', 'Moreira', DATE '1999-09-09',
+         DATE '2023-04-16', 'Paulínia', '+5519991112206', 'bia.moreira@example.com', 'NOT_INFORMED',
+         NULL, NULL, 'ACTIVE', v_now, NULL, v_now, NULL,
+         TIMESTAMPTZ '2025-01-15 12:00:00-03:00', NULL)
+    ON CONFLICT (id) DO UPDATE SET
+        account_id = EXCLUDED.account_id,
+        first_name = EXCLUDED.first_name,
+        surname = EXCLUDED.surname,
+        birth_date = EXCLUDED.birth_date,
+        gam_entry_date = EXCLUDED.gam_entry_date,
+        residential_city = EXCLUDED.residential_city,
+        phone_number = EXCLUDED.phone_number,
+        contact_email = EXCLUDED.contact_email,
+        dietary_restriction_status = EXCLUDED.dietary_restriction_status,
+        dietary_restriction_details = EXCLUDED.dietary_restriction_details,
+        import_batch_id = NULL,
+        status = EXCLUDED.status,
+        deleted_at = EXCLUDED.deleted_at,
+        deleted_by = EXCLUDED.deleted_by;
+
+    INSERT INTO member_experiences (member_id, experience_type, status)
+    SELECT fixture.id, experience.type, experience.status
+    FROM (VALUES
+        ('01960000-0001-7000-8000-000000000001'::UUID, 'JORNADA_MISSIONARIA'::member_experience_type_enum, 'YES'::member_information_status_enum),
+        ('01960000-0001-7000-8000-000000000001'::UUID, 'CURSO_DE_LIDERANCA'::member_experience_type_enum, 'NO'::member_information_status_enum),
+        ('01960000-0001-7000-8000-000000000001'::UUID, 'PASCOA_JUVENIL'::member_experience_type_enum, 'NOT_INFORMED'::member_information_status_enum),
+        ('01960000-0001-7000-8000-000000000001'::UUID, 'ACAMPABOSCO'::member_experience_type_enum, 'YES'::member_information_status_enum)
+    ) AS experience(id, type, status)
+    JOIN members fixture ON fixture.id = experience.id
+    ON CONFLICT (member_id, experience_type) DO UPDATE SET status = EXCLUDED.status;
+
+    INSERT INTO member_sacraments (member_id, sacrament_type, status)
+    SELECT fixture.id, sacrament.type, sacrament.status
+    FROM (VALUES
+        ('01960000-0001-7000-8000-000000000001'::UUID, 'BATISMO'::member_sacrament_type_enum, 'YES'::member_information_status_enum),
+        ('01960000-0001-7000-8000-000000000001'::UUID, 'PRIMEIRA_COMUNHAO'::member_sacrament_type_enum, 'NO'::member_information_status_enum),
+        ('01960000-0001-7000-8000-000000000001'::UUID, 'CRISMA'::member_sacrament_type_enum, 'NOT_INFORMED'::member_information_status_enum)
+    ) AS sacrament(id, type, status)
+    JOIN members fixture ON fixture.id = sacrament.id
+    ON CONFLICT (member_id, sacrament_type) DO UPDATE SET status = EXCLUDED.status;
+
+    INSERT INTO member_contribution_areas (member_id, contribution_area)
+    SELECT '01960000-0001-7000-8000-000000000001'::UUID, contribution.value
+    FROM unnest(enum_range(NULL::member_contribution_area_enum)) AS contribution(value)
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO member_other_contribution_areas (member_id, contribution_area) VALUES
+        ('01960000-0001-7000-8000-000000000001', 'Culinária para eventos')
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO annual_member_information_responses (
+        id, member_id, survey_cycle, submitted_at, occupations_details,
+        health_condition_status, health_condition_details, religious_vocation_considered,
+        mass_attendance_frequency, saturday_oratorio_impediment_status,
+        saturday_oratorio_impediment_details, formation_and_meeting_interests,
+        coordination_interest, additional_comments, oratorio_activity_suggestions,
+        instagram_post_suggestions, import_batch_id, created_at
+    ) VALUES
+    (
+        '01960000-0002-7000-8000-000000000001', '01960000-0001-7000-8000-000000000001', 2026,
+        TIMESTAMPTZ '2026-02-01 22:28:11-03:00', 'Trabalho voluntário',
+        'NO', NULL, 'NOT_INFORMED', 'WEEKLY', 'YES', 'Trabalho aos sábados',
+        'Dinâmicas de formação', 'MAYBE', NULL, 'Jogos cooperativos', 'Histórias do Oratório',
+        NULL, v_now
+    ),
+    (
+        '01950000-0011-7000-8000-000000000001', '01960000-0001-7000-8000-000000000003', 2026,
+        NULL, NULL,
+        'NO', NULL, 'NO', 'MONTHLY', 'NO', NULL,
+        NULL, 'NO', NULL, NULL, NULL,
+        NULL, v_now
+    ) ON CONFLICT (id) DO UPDATE SET
+        submitted_at = EXCLUDED.submitted_at,
+        occupations_details = EXCLUDED.occupations_details,
+        health_condition_status = EXCLUDED.health_condition_status,
+        health_condition_details = EXCLUDED.health_condition_details,
+        religious_vocation_considered = EXCLUDED.religious_vocation_considered,
+        mass_attendance_frequency = EXCLUDED.mass_attendance_frequency,
+        saturday_oratorio_impediment_status = EXCLUDED.saturday_oratorio_impediment_status,
+        saturday_oratorio_impediment_details = EXCLUDED.saturday_oratorio_impediment_details,
+        formation_and_meeting_interests = EXCLUDED.formation_and_meeting_interests,
+        coordination_interest = EXCLUDED.coordination_interest,
+        additional_comments = EXCLUDED.additional_comments,
+        oratorio_activity_suggestions = EXCLUDED.oratorio_activity_suggestions,
+        instagram_post_suggestions = EXCLUDED.instagram_post_suggestions;
+
+    INSERT INTO annual_member_occupations (response_id, occupation)
+    SELECT '01960000-0002-7000-8000-000000000001'::UUID, occupation.value
+    FROM unnest(enum_range(NULL::member_occupation_enum)) AS occupation(value)
+    ON CONFLICT DO NOTHING;
+
+    INSERT INTO annual_member_occupations (response_id, occupation) VALUES
+        ('01950000-0011-7000-8000-000000000001', 'WORK')
+    ON CONFLICT DO NOTHING;
 
     INSERT INTO fixture_expected_system_role_permissions
     SELECT 'MEMBER', code
@@ -636,11 +758,14 @@ BEGIN
     END IF;
 
     INSERT INTO members AS current_member (
-        id, account_id, first_name, surname, birth_date, phone_number, status,
+        id, account_id, first_name, surname, birth_date, gam_entry_date, residential_city,
+        phone_number, contact_email, dietary_restriction_status, dietary_restriction_details,
+        import_batch_id, status,
         created_at, created_by, updated_at, updated_by, deleted_at, deleted_by
     )
     SELECT
-        id, account_id, first_name, surname, birth_date, phone_number, status,
+        id, account_id, first_name, surname, birth_date, birth_date, 'Piracicaba',
+        phone_number, 'member-' || id::TEXT || '@example.com', 'NOT_INFORMED', NULL, NULL, status,
         v_now, NULL, v_now, NULL, NULL, NULL
     FROM fixture_members_manifest
     ON CONFLICT (id) DO UPDATE
@@ -648,7 +773,13 @@ BEGIN
         first_name = EXCLUDED.first_name,
         surname = EXCLUDED.surname,
         birth_date = EXCLUDED.birth_date,
+        gam_entry_date = EXCLUDED.gam_entry_date,
+        residential_city = EXCLUDED.residential_city,
         phone_number = EXCLUDED.phone_number,
+        contact_email = EXCLUDED.contact_email,
+        dietary_restriction_status = EXCLUDED.dietary_restriction_status,
+        dietary_restriction_details = EXCLUDED.dietary_restriction_details,
+        import_batch_id = NULL,
         status = EXCLUDED.status,
         updated_at = v_now,
         updated_by = NULL,
@@ -659,7 +790,13 @@ BEGIN
         current_member.first_name,
         current_member.surname,
         current_member.birth_date,
+        current_member.gam_entry_date,
+        current_member.residential_city,
         current_member.phone_number,
+        current_member.contact_email,
+        current_member.dietary_restriction_status,
+        current_member.dietary_restriction_details,
+        current_member.import_batch_id,
         current_member.status,
         current_member.deleted_at,
         current_member.deleted_by
@@ -668,11 +805,29 @@ BEGIN
         EXCLUDED.first_name,
         EXCLUDED.surname,
         EXCLUDED.birth_date,
+        EXCLUDED.gam_entry_date,
+        EXCLUDED.residential_city,
         EXCLUDED.phone_number,
+        EXCLUDED.contact_email,
+        EXCLUDED.dietary_restriction_status,
+        EXCLUDED.dietary_restriction_details,
+        NULL,
         EXCLUDED.status,
         NULL,
         NULL
     );
+
+    INSERT INTO member_experiences (member_id, experience_type, status)
+    SELECT manifest.id, experience.value, 'NOT_INFORMED'
+    FROM fixture_members_manifest manifest
+    CROSS JOIN unnest(enum_range(NULL::member_experience_type_enum)) AS experience(value)
+    ON CONFLICT (member_id, experience_type) DO NOTHING;
+
+    INSERT INTO member_sacraments (member_id, sacrament_type, status)
+    SELECT manifest.id, sacrament.value, 'NOT_INFORMED'
+    FROM fixture_members_manifest manifest
+    CROSS JOIN unnest(enum_range(NULL::member_sacrament_type_enum)) AS sacrament(value)
+    ON CONFLICT (member_id, sacrament_type) DO NOTHING;
 
     CREATE TEMP TABLE fixture_account_roles_manifest (
         id UUID PRIMARY KEY,
@@ -1344,13 +1499,15 @@ BEGIN
     END IF;
 
     INSERT INTO membership_solicitations AS current_solicitation (
-        id, account_id, first_name, surname, birth_date, phone_number,
+        id, account_id, first_name, surname, birth_date, gam_entry_date, residential_city,
+        phone_number, contact_email,
         justification, status, reviewed_by_account_id, decided_at,
         review_reason, member_id, version,
         created_at, created_by, updated_at, updated_by, deleted_at, deleted_by
     )
     SELECT
-        id, account_id, first_name, surname, birth_date, phone_number,
+        id, account_id, first_name, surname, birth_date, birth_date, 'Piracicaba',
+        phone_number, 'solicitation-' || id::TEXT || '@example.com',
         justification, status, reviewed_by_account_id, decided_at,
         review_reason, member_id, 0,
         v_now, NULL, v_now, NULL, NULL, NULL
@@ -1360,7 +1517,10 @@ BEGIN
         first_name = EXCLUDED.first_name,
         surname = EXCLUDED.surname,
         birth_date = EXCLUDED.birth_date,
+        gam_entry_date = EXCLUDED.gam_entry_date,
+        residential_city = EXCLUDED.residential_city,
         phone_number = EXCLUDED.phone_number,
+        contact_email = EXCLUDED.contact_email,
         justification = EXCLUDED.justification,
         status = EXCLUDED.status,
         reviewed_by_account_id = EXCLUDED.reviewed_by_account_id,
@@ -1377,7 +1537,10 @@ BEGIN
         current_solicitation.first_name,
         current_solicitation.surname,
         current_solicitation.birth_date,
+        current_solicitation.gam_entry_date,
+        current_solicitation.residential_city,
         current_solicitation.phone_number,
+        current_solicitation.contact_email,
         current_solicitation.justification,
         current_solicitation.status,
         current_solicitation.reviewed_by_account_id,
@@ -1392,7 +1555,10 @@ BEGIN
         EXCLUDED.first_name,
         EXCLUDED.surname,
         EXCLUDED.birth_date,
+        EXCLUDED.gam_entry_date,
+        EXCLUDED.residential_city,
         EXCLUDED.phone_number,
+        EXCLUDED.contact_email,
         EXCLUDED.justification,
         EXCLUDED.status,
         EXCLUDED.reviewed_by_account_id,

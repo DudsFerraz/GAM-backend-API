@@ -5,6 +5,7 @@ import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.solicitation.domain.MembershipSolicitationStatus;
 import br.org.gam.api.shared.auditing.FullAuditableEntity;
 import br.org.gam.api.shared.domain.GamName;
+import br.org.gam.api.shared.domain.GamEmail;
 import br.org.gam.api.shared.phonenumber.GamPhoneNumber;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
@@ -56,8 +57,17 @@ public class MembershipSolicitationEntity extends FullAuditableEntity {
     @Column(name = "birth_date", nullable = false)
     private LocalDate birthDate;
 
+    @Column(name = "gam_entry_date", nullable = false)
+    private LocalDate gamEntryDate;
+
+    @Column(name = "residential_city", nullable = false, length = 100)
+    private String residentialCity;
+
     @Column(name = "phone_number", nullable = false)
     private GamPhoneNumber phoneNumber;
+
+    @Column(name = "contact_email", nullable = false, length = 320)
+    private GamEmail contactEmail;
 
     @Column(name = "justification", nullable = false, length = 2000)
     private String justification;

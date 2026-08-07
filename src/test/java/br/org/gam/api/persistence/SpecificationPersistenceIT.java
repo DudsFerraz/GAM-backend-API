@@ -307,6 +307,9 @@ class SpecificationPersistenceIT extends PostgreSQLIntegrationTest {
         member.setName(new GamName("Ian", "Souza"));
         member.setBirthDate(LocalDate.of(1998, 3, 20));
         member.setPhoneNumber(GamPhoneNumber.fromString(phoneNumber));
+        member.setGamEntryDate(LocalDate.of(2020, 1, 1));
+        member.setResidentialCity("Synthetic City");
+        member.setContactEmail(GamEmail.of("ian.fixture@example.com"));
         member.setStatus(status);
         return member;
     }

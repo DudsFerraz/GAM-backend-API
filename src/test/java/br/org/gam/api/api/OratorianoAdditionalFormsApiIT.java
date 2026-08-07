@@ -889,7 +889,11 @@ class OratorianoAdditionalFormsApiIT extends OratorioModuleApiTestSupport {
     @DisplayName("REQ-ORATORIANO-FORM-020 and REQ-ORATORIANO-FORM-021 - artifact metadata remains readable in every non-deleted lifecycle state")
     void artifactMetadataShouldRemainReadableInEveryLifecycleState(String status) {
         AuthSession caller = sudoSession();
-        UUID oratorianoId = createOratoriano(caller, "Artifact", status);
+        UUID oratorianoId = createOratoriano(
+                caller,
+                "Artifact",
+                status.substring(0, 1) + status.substring(1).toLowerCase()
+        );
         UUID formId = draftId(createDraft(caller, oratorianoId, "PAPER_TRANSCRIPTION"));
         if (!"DRAFT".equals(status)) {
             jdbcTemplate.update(

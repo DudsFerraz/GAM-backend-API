@@ -175,6 +175,9 @@ class PersistenceRepositoryIT extends PostgreSQLIntegrationTest {
         member.setName(new GamName("Ana", "Silva"));
         member.setBirthDate(LocalDate.of(1995, 1, 10));
         member.setPhoneNumber(GamPhoneNumber.fromString("+5511987654321"));
+        member.setGamEntryDate(LocalDate.of(2020, 1, 1));
+        member.setResidentialCity("Synthetic City");
+        member.setContactEmail(GamEmail.of("ana.fixture@example.com"));
         member.setStatus(status);
         return member;
     }

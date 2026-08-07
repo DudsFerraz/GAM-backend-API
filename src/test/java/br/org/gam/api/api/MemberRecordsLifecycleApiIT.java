@@ -145,6 +145,25 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
     }
 
     @Test
+    @DisplayName("REQ-MEMBER-INFO-002 - direct registration normalizes Unicode city whitespace and NFC")
+    void directRegistrationShouldNormalizeUnicodeCityThroughThePublicSeam() {
+        AuthSession coordinator = newSession("COORD");
+        UUID accountId = newAccount("Synthetic Unicode registration target");
+        Map<String, Object> payload = new java.util.HashMap<>(
+                memberPayload(accountId, LocalDate.now().minusYears(20), VALID_REASON));
+        payload.put("residentialCity", "\u00a0Sa\u0303o\u2003\u2003Jose\u0301\u00a0");
+
+        ExtractableResponse<Response> created = authenticatedJsonRequest(coordinator)
+                .body(payload).post("/members").then().statusCode(201).extract();
+        UUID memberId = UUID.fromString(created.path("id"));
+
+        assertThat((String) created.path("residentialCity")).isEqualTo("São José");
+        assertThat(authenticatedJsonRequest(coordinator).get("/members/{id}", memberId)
+                .then().statusCode(200).extract().<String>path("residentialCity"))
+                .isEqualTo("São José");
+    }
+
+    @Test
     @DisplayName("REQ-MEMBER-005 and REQ-MEMBER-012 - audit persistence failure -> Member and lifecycle-role writes roll back")
     void failedRegistrationAuditShouldRollBackMemberAndRoleProjection() {
         AuthSession coordinator = newSession("COORD");
@@ -653,13 +672,19 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
     }
 
     @Test
-    @DisplayName("REQ-MEMBER-010 - every documented public filter and comparison -> finds the target Member")
+    @DisplayName("REQ-MEMBER-010 and REQ-MEMBER-INFO-012 - every documented public filter and comparison -> finds the target Member")
     void documentedMemberSearchFiltersShouldFindTheTarget() {
         AuthSession coordinator = newSession("COORD");
         String targetEmail = "member-search-" + UUID.randomUUID() + "@example.com";
         UUID targetAccountId = newAccount(targetEmail, "Member Search Target");
         UUID targetMemberId = registerMember(coordinator, targetAccountId);
         forceMemberState(targetMemberId, targetAccountId, "ACTIVE", "MEMBER");
+        jdbcTemplate.update(
+                "INSERT INTO member_contribution_areas (member_id, contribution_area) "
+                        + "VALUES (?, CAST('FOOTBALL' AS member_contribution_area_enum))",
+                targetMemberId
+        );
+        String contactEmail = "member-contact-" + targetAccountId + "@example.com";
 
         List<Map<String, Object>> filters = List.of(
                 filter("id", targetMemberId.toString(), "EQUALS"),
@@ -668,15 +693,32 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
                 filter("birthDate", LocalDate.now().minusYears(20).toString(), "EQUALS"),
                 filter("birthDate", "1900-01-01", "GREATER_THAN_OR_EQUAL"),
                 filter("birthDate", LocalDate.now().toString(), "LESS_THAN_OR_EQUAL"),
+                filter("gamEntryDate", "2020-01-01", "EQUALS"),
+                filter("gamEntryDate", "1900-01-01", "GREATER_THAN_OR_EQUAL"),
+                filter("gamEntryDate", LocalDate.now().toString(), "LESS_THAN_OR_EQUAL"),
+                filter("residentialCity", "Synthetic City", "EQUALS"),
+                filter("residentialCity", "Synthetic", "LIKE"),
                 filter("phoneNumber", CANONICAL_PHONE, "EQUALS"),
                 filter("phoneNumber", "99887", "LIKE"),
+                filter("contactEmail", contactEmail, "EQUALS"),
+                filter("contactEmail", "member-contact-", "LIKE"),
                 filter("status", "ACTIVE", "EQUALS"),
                 filter("status", List.of("ACTIVE", "INACTIVE"), "IN"),
                 filter("accountId", targetAccountId.toString(), "EQUALS"),
-                filter("email", targetEmail, "EQUALS"),
-                filter("email", targetEmail.substring(0, targetEmail.indexOf('@')), "LIKE"),
+                filter("accountEmail", targetEmail, "EQUALS"),
+                filter("accountEmail", targetEmail.substring(0, targetEmail.indexOf('@')), "LIKE"),
+                filter("hasLinkedAccount", true, "EQUALS"),
                 filter("role", "MEMBER", "EQUALS"),
                 filter("role", List.of("MEMBER", "COORD"), "IN"),
+                filter("jornadaMissionaria", "NOT_INFORMED", "EQUALS"),
+                filter("cursoDeLideranca", List.of("NOT_INFORMED"), "IN"),
+                filter("pascoaJuvenil", "NOT_INFORMED", "EQUALS"),
+                filter("acampabosco", List.of("NOT_INFORMED"), "IN"),
+                filter("batismo", "NOT_INFORMED", "EQUALS"),
+                filter("primeiraComunhao", List.of("NOT_INFORMED"), "IN"),
+                filter("crisma", "NOT_INFORMED", "EQUALS"),
+                filter("contributionArea", "FOOTBALL", "EQUALS"),
+                filter("contributionArea", List.of("FOOTBALL", "TERERE"), "IN"),
                 filter("createdAt", "2000-01-01T00:00:00Z", "GREATER_THAN_OR_EQUAL"),
                 filter("createdAt", "2999-01-01T00:00:00Z", "LESS_THAN_OR_EQUAL"),
                 filter("updatedAt", "2000-01-01T00:00:00Z", "GREATER_THAN_OR_EQUAL"),

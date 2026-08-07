@@ -28,6 +28,26 @@ activity_logs.request_id | uuid | NULL | default=<none>
 activity_logs.target_id | uuid | NULL | default=<none>
 activity_logs.target_scope | character varying(255) | NULL | default=<none>
 activity_logs.target_type | character varying(100) | NOT NULL | default=<none>
+annual_member_information_responses.additional_comments | character varying(2000) | NULL | default=<none>
+annual_member_information_responses.coordination_interest | member_coordination_interest_enum | NOT NULL | default=<none>
+annual_member_information_responses.created_at | timestamp with time zone | NOT NULL | default=<none>
+annual_member_information_responses.formation_and_meeting_interests | character varying(2000) | NULL | default=<none>
+annual_member_information_responses.health_condition_details | character varying(2000) | NULL | default=<none>
+annual_member_information_responses.health_condition_status | member_information_status_enum | NOT NULL | default=<none>
+annual_member_information_responses.id | uuid | NOT NULL | default=<none>
+annual_member_information_responses.import_batch_id | uuid | NULL | default=<none>
+annual_member_information_responses.instagram_post_suggestions | character varying(2000) | NULL | default=<none>
+annual_member_information_responses.mass_attendance_frequency | member_mass_attendance_frequency_enum | NOT NULL | default=<none>
+annual_member_information_responses.member_id | uuid | NOT NULL | default=<none>
+annual_member_information_responses.occupations_details | character varying(2000) | NULL | default=<none>
+annual_member_information_responses.oratorio_activity_suggestions | character varying(2000) | NULL | default=<none>
+annual_member_information_responses.religious_vocation_considered | member_information_status_enum | NOT NULL | default=<none>
+annual_member_information_responses.saturday_oratorio_impediment_details | character varying(2000) | NULL | default=<none>
+annual_member_information_responses.saturday_oratorio_impediment_status | member_information_status_enum | NOT NULL | default=<none>
+annual_member_information_responses.submitted_at | timestamp with time zone | NULL | default=<none>
+annual_member_information_responses.survey_cycle | integer | NOT NULL | default=<none>
+annual_member_occupations.occupation | member_occupation_enum | NOT NULL | default=<none>
+annual_member_occupations.response_id | uuid | NOT NULL | default=<none>
 events.begin_date | timestamp with time zone | NOT NULL | default=<none>
 events.cancellation_reason | text | NULL | default=<none>
 events.created_at | timestamp with time zone | NOT NULL | default=<none>
@@ -68,31 +88,58 @@ gam_locations.street | character varying(255) | NULL | default=<none>
 gam_locations.system_managed | boolean | NOT NULL | default=false
 gam_locations.updated_at | timestamp with time zone | NOT NULL | default=<none>
 gam_locations.updated_by | uuid | NULL | default=<none>
-members.account_id | uuid | NOT NULL | default=<none>
+member_contribution_areas.contribution_area | member_contribution_area_enum | NOT NULL | default=<none>
+member_contribution_areas.member_id | uuid | NOT NULL | default=<none>
+member_experiences.experience_type | member_experience_type_enum | NOT NULL | default=<none>
+member_experiences.member_id | uuid | NOT NULL | default=<none>
+member_experiences.status | member_information_status_enum | NOT NULL | default=<none>
+member_information_import_batches.dataset_checksum | character varying(71) | NOT NULL | default=<none>
+member_information_import_batches.executed_at | timestamp with time zone | NOT NULL | default=<none>
+member_information_import_batches.id | uuid | NOT NULL | default=<none>
+member_information_import_batches.imported_member_count | integer | NOT NULL | default=<none>
+member_information_import_batches.imported_response_count | integer | NOT NULL | default=<none>
+member_information_import_batches.reason | character varying(2000) | NOT NULL | default=<none>
+member_information_import_batches.survey_cycle | integer | NOT NULL | default=<none>
+member_other_contribution_areas.contribution_area | character varying(100) | NOT NULL | default=<none>
+member_other_contribution_areas.member_id | uuid | NOT NULL | default=<none>
+member_sacraments.member_id | uuid | NOT NULL | default=<none>
+member_sacraments.sacrament_type | member_sacrament_type_enum | NOT NULL | default=<none>
+member_sacraments.status | member_information_status_enum | NOT NULL | default=<none>
+members.account_id | uuid | NULL | default=<none>
 members.birth_date | date | NOT NULL | default=<none>
+members.contact_email | character varying(320) | NOT NULL | default=<none>
 members.created_at | timestamp with time zone | NOT NULL | default=<none>
 members.created_by | uuid | NULL | default=<none>
 members.deleted_at | timestamp with time zone | NULL | default=<none>
 members.deleted_by | uuid | NULL | default=<none>
+members.dietary_restriction_details | character varying(2000) | NULL | default=<none>
+members.dietary_restriction_status | member_information_status_enum | NOT NULL | default='NOT_INFORMED'::member_information_status_enum
 members.first_name | character varying(255) | NOT NULL | default=<none>
+members.gam_entry_date | date | NOT NULL | default=<none>
 members.id | uuid | NOT NULL | default=<none>
+members.import_batch_id | uuid | NULL | default=<none>
 members.phone_number | character varying(30) | NOT NULL | default=<none>
+members.residential_city | character varying(100) | NOT NULL | default=<none>
 members.status | member_status_enum | NOT NULL | default=<none>
 members.surname | character varying(255) | NOT NULL | default=<none>
 members.updated_at | timestamp with time zone | NOT NULL | default=<none>
 members.updated_by | uuid | NULL | default=<none>
+members.version | bigint | NOT NULL | default=0
 membership_solicitations.account_id | uuid | NOT NULL | default=<none>
 membership_solicitations.birth_date | date | NOT NULL | default=<none>
+membership_solicitations.contact_email | character varying(320) | NOT NULL | default=<none>
 membership_solicitations.created_at | timestamp with time zone | NOT NULL | default=<none>
 membership_solicitations.created_by | uuid | NULL | default=<none>
 membership_solicitations.decided_at | timestamp with time zone | NULL | default=<none>
 membership_solicitations.deleted_at | timestamp with time zone | NULL | default=<none>
 membership_solicitations.deleted_by | uuid | NULL | default=<none>
 membership_solicitations.first_name | character varying(255) | NOT NULL | default=<none>
+membership_solicitations.gam_entry_date | date | NOT NULL | default=<none>
 membership_solicitations.id | uuid | NOT NULL | default=<none>
 membership_solicitations.justification | character varying(2000) | NOT NULL | default=<none>
 membership_solicitations.member_id | uuid | NULL | default=<none>
 membership_solicitations.phone_number | character varying(30) | NOT NULL | default=<none>
+membership_solicitations.residential_city | character varying(100) | NOT NULL | default=<none>
 membership_solicitations.review_reason | character varying(2000) | NULL | default=<none>
 membership_solicitations.reviewed_by_account_id | uuid | NULL | default=<none>
 membership_solicitations.status | membership_solicitation_status_enum | NOT NULL | default=<none>
@@ -295,6 +342,24 @@ activity_logs.activity_logs_pkey | PRIMARY KEY (id)
 activity_logs.activity_logs_target_type_not_null | NOT NULL target_type
 activity_logs.check_activity_logs_actor_form | CHECK (actor_kind::text = 'ACCOUNT'::text AND actor_account_id IS NOT NULL AND actor_reference IS NULL OR actor_kind::text = 'ANONYMOUS'::text AND actor_account_id IS NULL AND actor_reference IS NULL OR (actor_kind::text = ANY (ARRAY['SYSTEM'::character varying, 'DEVELOPER'::character varying]::text[])) AND actor_account_id IS NULL AND actor_reference IS NOT NULL)
 activity_logs.check_activity_logs_target_form | CHECK (target_id IS NOT NULL AND target_scope IS NULL OR target_id IS NULL AND target_scope IS NOT NULL)
+annual_member_information_responses.annual_member_information_r_religious_vocation_conside_not_null | NOT NULL religious_vocation_considered
+annual_member_information_responses.annual_member_information_r_saturday_oratorio_impedime_not_null | NOT NULL saturday_oratorio_impediment_status
+annual_member_information_responses.annual_member_information_re_mass_attendance_frequency_not_null | NOT NULL mass_attendance_frequency
+annual_member_information_responses.annual_member_information_resp_health_condition_status_not_null | NOT NULL health_condition_status
+annual_member_information_responses.annual_member_information_respon_coordination_interest_not_null | NOT NULL coordination_interest
+annual_member_information_responses.annual_member_information_responses_created_at_not_null | NOT NULL created_at
+annual_member_information_responses.annual_member_information_responses_id_not_null | NOT NULL id
+annual_member_information_responses.annual_member_information_responses_import_batch_id_fkey | FOREIGN KEY (import_batch_id) REFERENCES member_information_import_batches(id) ON DELETE RESTRICT
+annual_member_information_responses.annual_member_information_responses_member_id_fkey | FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE RESTRICT
+annual_member_information_responses.annual_member_information_responses_member_id_not_null | NOT NULL member_id
+annual_member_information_responses.annual_member_information_responses_pkey | PRIMARY KEY (id)
+annual_member_information_responses.annual_member_information_responses_survey_cycle_check | CHECK (survey_cycle >= 2000 AND survey_cycle <= 9999)
+annual_member_information_responses.annual_member_information_responses_survey_cycle_not_null | NOT NULL survey_cycle
+annual_member_information_responses.uq_annual_member_information_member_cycle | UNIQUE (member_id, survey_cycle)
+annual_member_occupations.annual_member_occupations_occupation_not_null | NOT NULL occupation
+annual_member_occupations.annual_member_occupations_pkey | PRIMARY KEY (response_id, occupation)
+annual_member_occupations.annual_member_occupations_response_id_fkey | FOREIGN KEY (response_id) REFERENCES annual_member_information_responses(id) ON DELETE CASCADE
+annual_member_occupations.annual_member_occupations_response_id_not_null | NOT NULL response_id
 events.check_event_dates | CHECK (end_date > begin_date)
 events.check_events_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
 events.events_begin_date_not_null | NOT NULL begin_date
@@ -336,21 +401,60 @@ gam_locations.locations_name_not_null | NOT NULL name
 gam_locations.locations_pkey | PRIMARY KEY (id)
 gam_locations.locations_state_not_null | NOT NULL state
 gam_locations.locations_updated_at_not_null | NOT NULL updated_at
+member_contribution_areas.member_contribution_areas_contribution_area_not_null | NOT NULL contribution_area
+member_contribution_areas.member_contribution_areas_member_id_fkey | FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
+member_contribution_areas.member_contribution_areas_member_id_not_null | NOT NULL member_id
+member_contribution_areas.member_contribution_areas_pkey | PRIMARY KEY (member_id, contribution_area)
+member_experiences.member_experiences_experience_type_not_null | NOT NULL experience_type
+member_experiences.member_experiences_member_id_fkey | FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
+member_experiences.member_experiences_member_id_not_null | NOT NULL member_id
+member_experiences.member_experiences_pkey | PRIMARY KEY (member_id, experience_type)
+member_experiences.member_experiences_status_not_null | NOT NULL status
+member_information_import_batches.check_member_information_import_checksum | CHECK (dataset_checksum::text ~ '^sha256:[0-9a-f]{64}$'::text)
+member_information_import_batches.member_information_import_batc_imported_response_count_not_null | NOT NULL imported_response_count
+member_information_import_batches.member_information_import_batche_imported_member_count_not_null | NOT NULL imported_member_count
+member_information_import_batches.member_information_import_batches_dataset_checksum_key | UNIQUE (dataset_checksum)
+member_information_import_batches.member_information_import_batches_dataset_checksum_not_null | NOT NULL dataset_checksum
+member_information_import_batches.member_information_import_batches_executed_at_not_null | NOT NULL executed_at
+member_information_import_batches.member_information_import_batches_id_not_null | NOT NULL id
+member_information_import_batches.member_information_import_batches_imported_member_count_check | CHECK (imported_member_count >= 0)
+member_information_import_batches.member_information_import_batches_imported_response_count_check | CHECK (imported_response_count >= 0)
+member_information_import_batches.member_information_import_batches_pkey | PRIMARY KEY (id)
+member_information_import_batches.member_information_import_batches_reason_not_null | NOT NULL reason
+member_information_import_batches.member_information_import_batches_survey_cycle_check | CHECK (survey_cycle >= 2000 AND survey_cycle <= 9999)
+member_information_import_batches.member_information_import_batches_survey_cycle_not_null | NOT NULL survey_cycle
+member_other_contribution_areas.check_member_other_contribution_area_size | CHECK (char_length(contribution_area::text) >= 1 AND char_length(contribution_area::text) <= 100)
+member_other_contribution_areas.member_other_contribution_areas_contribution_area_not_null | NOT NULL contribution_area
+member_other_contribution_areas.member_other_contribution_areas_member_id_fkey | FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
+member_other_contribution_areas.member_other_contribution_areas_member_id_not_null | NOT NULL member_id
+member_other_contribution_areas.member_other_contribution_areas_pkey | PRIMARY KEY (member_id, contribution_area)
+member_sacraments.member_sacraments_member_id_fkey | FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
+member_sacraments.member_sacraments_member_id_not_null | NOT NULL member_id
+member_sacraments.member_sacraments_pkey | PRIMARY KEY (member_id, sacrament_type)
+member_sacraments.member_sacraments_sacrament_type_not_null | NOT NULL sacrament_type
+member_sacraments.member_sacraments_status_not_null | NOT NULL status
+members.check_members_city_size | CHECK (char_length(residential_city::text) >= 1 AND char_length(residential_city::text) <= 100)
 members.check_members_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+members.check_members_dietary_details | CHECK (dietary_restriction_status = 'YES'::member_information_status_enum AND dietary_restriction_details IS NOT NULL AND char_length(dietary_restriction_details::text) >= 1 AND char_length(dietary_restriction_details::text) <= 2000 OR dietary_restriction_status <> 'YES'::member_information_status_enum AND dietary_restriction_details IS NULL)
 members.fk_member_account | FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE RESTRICT
 members.fk_member_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
 members.fk_member_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
+members.fk_member_import_batch | FOREIGN KEY (import_batch_id) REFERENCES member_information_import_batches(id) ON DELETE RESTRICT
 members.fk_member_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
-members.members_account_id_not_null | NOT NULL account_id
 members.members_birth_date_not_null | NOT NULL birth_date
+members.members_contact_email_not_null | NOT NULL contact_email
 members.members_created_at_not_null | NOT NULL created_at
+members.members_dietary_restriction_status_not_null | NOT NULL dietary_restriction_status
 members.members_first_name_not_null | NOT NULL first_name
+members.members_gam_entry_date_not_null | NOT NULL gam_entry_date
 members.members_id_not_null | NOT NULL id
 members.members_phone_number_not_null | NOT NULL phone_number
 members.members_pkey | PRIMARY KEY (id)
+members.members_residential_city_not_null | NOT NULL residential_city
 members.members_status_not_null | NOT NULL status
 members.members_surname_not_null | NOT NULL surname
 members.members_updated_at_not_null | NOT NULL updated_at
+members.members_version_not_null | NOT NULL version
 membership_solicitations.check_membership_solicitations_decision | CHECK (status = 'PENDING'::membership_solicitation_status_enum AND reviewed_by_account_id IS NULL AND decided_at IS NULL AND review_reason IS NULL AND member_id IS NULL OR status = 'APPROVED'::membership_solicitation_status_enum AND reviewed_by_account_id IS NOT NULL AND decided_at IS NOT NULL AND review_reason IS NOT NULL AND member_id IS NOT NULL OR status = 'REJECTED'::membership_solicitation_status_enum AND reviewed_by_account_id IS NOT NULL AND decided_at IS NOT NULL AND review_reason IS NOT NULL AND member_id IS NULL)
 membership_solicitations.check_membership_solicitations_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
 membership_solicitations.fk_membership_solicitations_account | FOREIGN KEY (account_id) REFERENCES accounts(id)
@@ -361,12 +465,15 @@ membership_solicitations.fk_membership_solicitations_reviewed_by | FOREIGN KEY (
 membership_solicitations.fk_membership_solicitations_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
 membership_solicitations.membership_solicitations_account_id_not_null | NOT NULL account_id
 membership_solicitations.membership_solicitations_birth_date_not_null | NOT NULL birth_date
+membership_solicitations.membership_solicitations_contact_email_not_null | NOT NULL contact_email
 membership_solicitations.membership_solicitations_created_at_not_null | NOT NULL created_at
 membership_solicitations.membership_solicitations_first_name_not_null | NOT NULL first_name
+membership_solicitations.membership_solicitations_gam_entry_date_not_null | NOT NULL gam_entry_date
 membership_solicitations.membership_solicitations_id_not_null | NOT NULL id
 membership_solicitations.membership_solicitations_justification_not_null | NOT NULL justification
 membership_solicitations.membership_solicitations_phone_number_not_null | NOT NULL phone_number
 membership_solicitations.membership_solicitations_pkey | PRIMARY KEY (id)
+membership_solicitations.membership_solicitations_residential_city_not_null | NOT NULL residential_city
 membership_solicitations.membership_solicitations_status_not_null | NOT NULL status
 membership_solicitations.membership_solicitations_surname_not_null | NOT NULL surname
 membership_solicitations.membership_solicitations_updated_at_not_null | NOT NULL updated_at
@@ -568,10 +675,19 @@ activity_logs.idx_activity_logs_actor_account | CREATE INDEX idx_activity_logs_a
 activity_logs.idx_activity_logs_occurred_at | CREATE INDEX idx_activity_logs_occurred_at ON activity_logs USING btree (occurred_at DESC)
 activity_logs.idx_activity_logs_request_id | CREATE INDEX idx_activity_logs_request_id ON activity_logs USING btree (request_id) WHERE (request_id IS NOT NULL)
 activity_logs.idx_activity_logs_target | CREATE INDEX idx_activity_logs_target ON activity_logs USING btree (target_type, target_id)
+annual_member_information_responses.annual_member_information_responses_pkey | CREATE UNIQUE INDEX annual_member_information_responses_pkey ON annual_member_information_responses USING btree (id)
+annual_member_information_responses.uq_annual_member_information_member_cycle | CREATE UNIQUE INDEX uq_annual_member_information_member_cycle ON annual_member_information_responses USING btree (member_id, survey_cycle)
+annual_member_occupations.annual_member_occupations_pkey | CREATE UNIQUE INDEX annual_member_occupations_pkey ON annual_member_occupations USING btree (response_id, occupation)
 events.events_pkey | CREATE UNIQUE INDEX events_pkey ON events USING btree (id)
 gam_locations.idx_gam_location_active_duplicate_identity | CREATE UNIQUE INDEX idx_gam_location_active_duplicate_identity ON gam_locations USING btree (identity_name, identity_street, identity_city, identity_state, identity_postal_code, identity_country_code) WHERE (deleted_at IS NULL)
 gam_locations.idx_gam_locations_code | CREATE UNIQUE INDEX idx_gam_locations_code ON gam_locations USING btree (code)
 gam_locations.locations_pkey | CREATE UNIQUE INDEX locations_pkey ON gam_locations USING btree (id)
+member_contribution_areas.member_contribution_areas_pkey | CREATE UNIQUE INDEX member_contribution_areas_pkey ON member_contribution_areas USING btree (member_id, contribution_area)
+member_experiences.member_experiences_pkey | CREATE UNIQUE INDEX member_experiences_pkey ON member_experiences USING btree (member_id, experience_type)
+member_information_import_batches.member_information_import_batches_dataset_checksum_key | CREATE UNIQUE INDEX member_information_import_batches_dataset_checksum_key ON member_information_import_batches USING btree (dataset_checksum)
+member_information_import_batches.member_information_import_batches_pkey | CREATE UNIQUE INDEX member_information_import_batches_pkey ON member_information_import_batches USING btree (id)
+member_other_contribution_areas.member_other_contribution_areas_pkey | CREATE UNIQUE INDEX member_other_contribution_areas_pkey ON member_other_contribution_areas USING btree (member_id, contribution_area)
+member_sacraments.member_sacraments_pkey | CREATE UNIQUE INDEX member_sacraments_pkey ON member_sacraments USING btree (member_id, sacrament_type)
 members.idx_members_account_id | CREATE UNIQUE INDEX idx_members_account_id ON members USING btree (account_id)
 members.members_pkey | CREATE UNIQUE INDEX members_pkey ON members USING btree (id)
 membership_solicitations.idx_membership_solicitations_member | CREATE UNIQUE INDEX idx_membership_solicitations_member ON membership_solicitations USING btree (member_id) WHERE (member_id IS NOT NULL)
@@ -611,6 +727,13 @@ roles.roles_pkey | CREATE UNIQUE INDEX roles_pkey ON roles USING btree (id)
 [enums]
 event_status_enum | SCHEDULED,COMPLETED,LOCKED,FINALIZED,CANCELLED
 event_type_enum | GENERIC,ORATORIO,MISSA
+member_contribution_area_enum | GAME_REFEREE,CRAFTS,MUSIC,PRAYER_LEADERSHIP,BOA_TARDE_STORYTELLING,DANCE,BALLOON_SCULPTURE,FOOTBALL,VOLLEYBALL,BASKETBALL,HANDBALL,PHOTOGRAPHY_AND_VIDEO,PUBLIC_READING,FACE_PAINTING,FIRST_AID,GINCANA_LEADERSHIP,TECHNOLOGY,TERERE
+member_coordination_interest_enum | YES,NO,MAYBE,NOT_INFORMED
+member_experience_type_enum | JORNADA_MISSIONARIA,CURSO_DE_LIDERANCA,PASCOA_JUVENIL,ACAMPABOSCO
+member_information_status_enum | YES,NO,NOT_INFORMED
+member_mass_attendance_frequency_enum | WEEKLY,THREE_TIMES_PER_MONTH,TWICE_PER_MONTH,MONTHLY,NOT_INFORMED
+member_occupation_enum | WORK,UNIVERSITY,PREP_COURSE,OTHER
+member_sacrament_type_enum | BATISMO,PRIMEIRA_COMUNHAO,CRISMA
 member_status_enum | ACTIVE,INACTIVE
 membership_solicitation_status_enum | PENDING,APPROVED,REJECTED
 oratoriano_form_origin_enum | PAPER_TRANSCRIPTION,DIRECT_SYSTEM_ENTRY

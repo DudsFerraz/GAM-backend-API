@@ -82,8 +82,8 @@ public class ActivityEvents {
                                      String newStatus, String roleAdded, String roleRemoved,
                                      UUID additionallyRemovedRoleId, UUID secondAdditionallyRemovedRoleId,
                                      String reason) {
-        UUID roleAddedId = roleEntityLoader.requiredByName(roleAdded).getId();
-        UUID roleRemovedId = roleEntityLoader.requiredByName(roleRemoved).getId();
+        UUID roleAddedId = roleAdded == null ? null : roleEntityLoader.requiredByName(roleAdded).getId();
+        UUID roleRemovedId = roleRemoved == null ? null : roleEntityLoader.requiredByName(roleRemoved).getId();
         applicationEventPublisher.publishEvent(new MemberStatusChangedActivity(
                 action, memberId, accountId, previousStatus, newStatus, roleAdded, roleRemoved,
                 roleAddedId, roleRemovedId, additionallyRemovedRoleId, secondAdditionallyRemovedRoleId, reason));
@@ -92,6 +92,17 @@ public class ActivityEvents {
     public void memberRegistered(UUID memberId, UUID accountId, UUID roleAddedId, UUID roleRemovedId, String reason) {
         applicationEventPublisher.publishEvent(
                 new MemberRegisteredActivity(memberId, accountId, roleAddedId, roleRemovedId, reason)
+        );
+    }
+
+    public void memberAccountLinked(UUID memberId, UUID accountId, String role, String reason) {
+        moduleActivity(
+                ActivityAction.MEMBER_ACCOUNT_LINKED,
+                ActivityTargetType.MEMBER,
+                memberId,
+                reason,
+                null,
+                Map.of("accountId", accountId, "roles", List.of(role))
         );
     }
 

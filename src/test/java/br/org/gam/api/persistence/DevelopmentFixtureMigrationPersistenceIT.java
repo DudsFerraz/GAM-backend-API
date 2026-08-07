@@ -729,10 +729,12 @@ class DevelopmentFixtureMigrationPersistenceIT {
 
         jdbcTemplate.update(
                 "INSERT INTO " + schema + ".members "
-                        + "(id, account_id, first_name, surname, birth_date, phone_number, status, "
+                        + "(id, account_id, first_name, surname, birth_date, gam_entry_date, "
+                        + "residential_city, phone_number, contact_email, status, "
                         + "created_at, created_by, updated_at, updated_by) "
                         + "VALUES (?, ?, 'Beatriz', 'Campos', DATE '1997-04-10', "
-                        + "'+5519998333001', 'ACTIVE', ?, ?, ?, ?)",
+                        + "DATE '2020-04-10', 'Synthetic City', '+5519998333001', "
+                        + "'beatriz.fixture@example.com', 'ACTIVE', ?, ?, ?, ?)",
                 endpointMemberId,
                 registrationAccountId,
                 endpointTime,
@@ -767,10 +769,11 @@ class DevelopmentFixtureMigrationPersistenceIT {
         );
         jdbcTemplate.update(
                 "INSERT INTO " + schema + ".members "
-                        + "(id, account_id, first_name, surname, birth_date, phone_number, status, "
-                        + "created_at, updated_at) "
+                        + "(id, account_id, first_name, surname, birth_date, gam_entry_date, "
+                        + "residential_city, phone_number, contact_email, status, created_at, updated_at) "
                         + "VALUES (?, ?, 'Daniela', 'Local', DATE '1993-06-22', "
-                        + "'+5519998333002', 'ACTIVE', ?, ?)",
+                        + "DATE '2018-06-22', 'Synthetic City', '+5519998333002', "
+                        + "'daniela.fixture@example.com', 'ACTIVE', ?, ?)",
                 unrelatedMemberId,
                 unrelatedAccountId,
                 endpointTime,
@@ -831,10 +834,12 @@ class DevelopmentFixtureMigrationPersistenceIT {
 
         jdbcTemplate.update(
                 "INSERT INTO " + schema + ".membership_solicitations "
-                        + "(id, account_id, first_name, surname, birth_date, phone_number, "
-                        + "justification, status, version, created_at, created_by, updated_at, updated_by) "
+                        + "(id, account_id, first_name, surname, birth_date, gam_entry_date, "
+                        + "residential_city, phone_number, contact_email, justification, status, version, "
+                        + "created_at, created_by, updated_at, updated_by) "
                         + "VALUES (?, ?, 'Fernanda', 'Lima', DATE '1995-07-18', "
-                        + "'+5519998444001', 'Endpoint-equivalent self submission', "
+                        + "DATE '2020-01-15', 'Synthetic City', '+5519998444001', "
+                        + "'fernanda.fixture@example.com', 'Endpoint-equivalent self submission', "
                         + "'PENDING', 0, ?, ?, ?, ?)",
                 submittedSolicitationId,
                 selfSubmissionAccountId,
@@ -845,10 +850,12 @@ class DevelopmentFixtureMigrationPersistenceIT {
         );
         jdbcTemplate.update(
                 "INSERT INTO " + schema + ".members "
-                        + "(id, account_id, first_name, surname, birth_date, phone_number, status, "
+                        + "(id, account_id, first_name, surname, birth_date, gam_entry_date, "
+                        + "residential_city, phone_number, contact_email, status, "
                         + "created_at, created_by, updated_at, updated_by) "
                         + "VALUES (?, ?, 'João', 'Pereira', DATE '1999-03-15', "
-                        + "'+5519998222001', 'ACTIVE', ?, ?, ?, ?)",
+                        + "DATE '2021-02-10', 'Synthetic City', '+5519998222001', "
+                        + "'joao.fixture@example.com', 'ACTIVE', ?, ?, ?, ?)",
                 approvedMemberId,
                 approvalAccountId,
                 endpointTime,
@@ -895,10 +902,12 @@ class DevelopmentFixtureMigrationPersistenceIT {
         );
         jdbcTemplate.update(
                 "INSERT INTO " + schema + ".membership_solicitations "
-                        + "(id, account_id, first_name, surname, birth_date, phone_number, "
-                        + "justification, status, version, created_at, updated_at) "
+                        + "(id, account_id, first_name, surname, birth_date, gam_entry_date, "
+                        + "residential_city, phone_number, contact_email, justification, status, version, "
+                        + "created_at, updated_at) "
                         + "VALUES (?, ?, 'Sofia', 'Local', DATE '1992-09-11', "
-                        + "'+5519998444002', 'Developer-created pending solicitation', "
+                        + "DATE '2019-03-12', 'Synthetic City', '+5519998444002', "
+                        + "'sofia.fixture@example.com', 'Developer-created pending solicitation', "
                         + "'PENDING', 0, ?, ?)",
                 unrelatedSolicitationId,
                 unrelatedAccountId,
@@ -1909,6 +1918,182 @@ class DevelopmentFixtureMigrationPersistenceIT {
         });
     }
 
+    @Test
+    @DisplayName("REQ-MEMBER-INFO-FIXTURE-001 to 004 - fictional information seams -> Account-less readiness without import provenance")
+    void memberInformationFixtureShouldRemainFictionalAndEndpointReady() {
+        String schema = uniqueSchema("dev_fixture_member_information");
+        migrate(schema, validConfiguration(), true).migrate();
+
+        assertSoftly(softly -> {
+            softly.assertThat(jdbcTemplate.queryForList(
+                    "SELECT first_name || ' ' || surname FROM " + schema + ".members "
+                            + "WHERE id::text LIKE '01960000-0001-%' ORDER BY id",
+                    String.class
+            )).containsExactly("Lia Monteiro", "Caio Nogueira", "Nina Campos");
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".members "
+                            + "WHERE id::text LIKE '01960000-0001-%' AND account_id IS NULL "
+                            + "AND import_batch_id IS NULL AND contact_email LIKE '%@example.com'",
+                    Long.class
+            )).isEqualTo(3);
+            softly.assertThat(jdbcTemplate.queryForList(
+                    "SELECT status::text FROM " + schema + ".members "
+                            + "WHERE id::text LIKE '01960000-0001-%' ORDER BY id",
+                    String.class
+            )).containsExactly("ACTIVE", "INACTIVE", "ACTIVE");
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".member_experiences "
+                            + "WHERE member_id = '01960000-0001-7000-8000-000000000001'",
+                    Long.class
+            )).isEqualTo(4);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".member_sacraments "
+                            + "WHERE member_id = '01960000-0001-7000-8000-000000000001'",
+                    Long.class
+            )).isEqualTo(3);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".member_contribution_areas "
+                            + "WHERE member_id = '01960000-0001-7000-8000-000000000001'",
+                    Long.class
+            )).isEqualTo(18);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".member_other_contribution_areas "
+                            + "WHERE member_id = '01960000-0001-7000-8000-000000000001'",
+                    Long.class
+            )).isEqualTo(1);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".annual_member_information_responses "
+                            + "WHERE id = '01960000-0002-7000-8000-000000000001' "
+                            + "AND member_id = '01960000-0001-7000-8000-000000000001' "
+                            + "AND survey_cycle = 2026 AND import_batch_id IS NULL",
+                    Long.class
+            )).isEqualTo(1);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".annual_member_occupations "
+                            + "WHERE response_id = '01960000-0002-7000-8000-000000000001'",
+                    Long.class
+            )).isEqualTo(4);
+            softly.assertThat(tableCount(schema, "member_information_import_batches")).isZero();
+        });
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-INFO-FIXTURE-002 to 004 - readiness matrix -> independent link, lifecycle, annual, and update seams")
+    void memberInformationFixtureShouldKeepEverySacrificialWorkflowIndependent() {
+        String schema = uniqueSchema("dev_fixture_member_information_matrix");
+        migrate(schema, validConfiguration(), true).migrate();
+
+        String fixtureMember = "(id::text LIKE '01950000-%' OR id::text LIKE '01960000-%')";
+        String fixtureAccount = "(account_record.id::text LIKE '01950000-%' "
+                + "OR account_record.id::text LIKE '01960000-%')";
+
+        assertSoftly(softly -> {
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".members WHERE " + fixtureMember + " "
+                            + "AND account_id IS NULL AND status::text = 'ACTIVE'",
+                    Long.class
+            )).as("active link, Account-less deactivation, and concurrent-link targets")
+                    .isGreaterThanOrEqualTo(3);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".members WHERE " + fixtureMember + " "
+                            + "AND account_id IS NULL AND status::text = 'INACTIVE'",
+                    Long.class
+            )).as("independent inactive-link and Account-less activation targets").isGreaterThanOrEqualTo(2);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".members WHERE " + fixtureMember + " "
+                            + "AND account_id IS NOT NULL AND status::text = 'ACTIVE'",
+                    Long.class
+            )).as("independent linked targets for six updates and protected reads").isGreaterThanOrEqualTo(8);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".members WHERE " + fixtureMember + " "
+                            + "AND account_id IS NOT NULL AND status::text = 'INACTIVE'",
+                    Long.class
+            )).as("feature-owned inactive linked visibility target").isGreaterThanOrEqualTo(1);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".accounts account_record "
+                            + "WHERE " + fixtureAccount + " AND account_record.deleted_at IS NULL "
+                            + "AND NOT EXISTS (SELECT 1 FROM " + schema + ".members member_record "
+                            + "WHERE member_record.account_id = account_record.id) "
+                            + "AND NOT EXISTS (SELECT 1 FROM " + schema + ".membership_solicitations solicitation "
+                            + "WHERE solicitation.account_id = account_record.id AND solicitation.status::text = 'PENDING' "
+                            + "AND solicitation.deleted_at IS NULL) "
+                            + "AND NOT EXISTS (SELECT 1 FROM " + schema + ".account_roles relationship "
+                            + "JOIN " + schema + ".roles role_record ON role_record.id = relationship.role_id "
+                            + "WHERE relationship.account_id = account_record.id AND relationship.deleted_at IS NULL "
+                            + "AND role_record.deleted_at IS NULL "
+                            + "AND role_record.name IN ('MEMBER', 'VISITOR', 'COORD', 'ORATORIO_COORD'))",
+                    Long.class
+            )).as("independent eligible Accounts for both successful and competing links")
+                    .isGreaterThanOrEqualTo(3);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(DISTINCT account_record.id) FROM " + schema + ".accounts account_record "
+                            + "JOIN " + schema + ".account_roles relationship ON relationship.account_id = account_record.id "
+                            + "JOIN " + schema + ".roles role_record ON role_record.id = relationship.role_id "
+                            + "WHERE " + fixtureAccount + " AND account_record.deleted_at IS NULL "
+                            + "AND relationship.deleted_at IS NULL AND role_record.deleted_at IS NULL "
+                            + "AND role_record.system_managed = FALSE "
+                            + "AND NOT EXISTS (SELECT 1 FROM " + schema + ".members member_record "
+                            + "WHERE member_record.account_id = account_record.id)",
+                    Long.class
+            )).as("eligible link Account whose unrelated custom Role must survive").isGreaterThanOrEqualTo(1);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".membership_solicitations solicitation "
+                            + "WHERE solicitation.id::text LIKE '01950000-%' "
+                            + "AND solicitation.status::text = 'REJECTED' AND solicitation.deleted_at IS NULL "
+                            + "AND solicitation.reviewed_by_account_id IS NOT NULL "
+                            + "AND NOT EXISTS (SELECT 1 FROM " + schema + ".members member_record "
+                            + "WHERE member_record.account_id = solicitation.account_id)",
+                    Long.class
+            )).as("eligible Account with constraint-valid rejected solicitation history")
+                    .isGreaterThanOrEqualTo(1);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".membership_solicitations solicitation "
+                            + "WHERE solicitation.id::text LIKE '01950000-%' "
+                            + "AND solicitation.status::text = 'PENDING' AND solicitation.deleted_at IS NULL",
+                    Long.class
+            )).as("pending-solicitation conflict target").isGreaterThanOrEqualTo(1);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(DISTINCT role_record.name) FROM " + schema + ".account_roles relationship "
+                            + "JOIN " + schema + ".roles role_record ON role_record.id = relationship.role_id "
+                            + "JOIN " + schema + ".accounts account_record ON account_record.id = relationship.account_id "
+                            + "WHERE " + fixtureAccount + " AND relationship.deleted_at IS NULL "
+                            + "AND role_record.deleted_at IS NULL "
+                            + "AND role_record.name IN ('MEMBER', 'VISITOR', 'COORD', 'ORATORIO_COORD')",
+                    Long.class
+            )).as("all lifecycle-owned Role conflict families").isEqualTo(4);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT (SELECT COUNT(*) FROM " + schema + ".members WHERE " + fixtureMember
+                            + " AND deleted_at IS NOT NULL) + "
+                            + "(SELECT COUNT(*) FROM " + schema + ".accounts "
+                            + "WHERE (id::text LIKE '01950000-%' OR id::text LIKE '01960000-%') "
+                            + "AND deleted_at IS NOT NULL)",
+                    Long.class
+            )).as("soft-deleted Member or Account visibility target").isGreaterThanOrEqualTo(1);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".annual_member_information_responses "
+                            + "WHERE (id::text LIKE '01950000-%' OR id::text LIKE '01960000-%') "
+                            + "AND submitted_at IS NOT NULL",
+                    Long.class
+            )).as("known submittedAt annual response").isGreaterThanOrEqualTo(1);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".annual_member_information_responses "
+                            + "WHERE (id::text LIKE '01950000-%' OR id::text LIKE '01960000-%') "
+                            + "AND submitted_at IS NULL",
+                    Long.class
+            )).as("null submittedAt annual response").isGreaterThanOrEqualTo(1);
+            softly.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + schema + ".members member_record WHERE "
+                            + "(member_record.id::text LIKE '01950000-%' "
+                            + "OR member_record.id::text LIKE '01960000-%') "
+                            + "AND member_record.deleted_at IS NULL "
+                            + "AND NOT EXISTS (SELECT 1 FROM " + schema + ".annual_member_information_responses response "
+                            + "WHERE response.member_id = member_record.id AND response.survey_cycle = 2026)",
+                    Long.class
+            )).as("visible Member with no annual response for the documented not-found path")
+                    .isGreaterThanOrEqualTo(1);
+        });
+    }
+
     private static Stream<Arguments> invalidConfiguration() {
         return Stream.of(
                 Arguments.of(
@@ -2198,6 +2383,8 @@ class DevelopmentFixtureMigrationPersistenceIT {
                 "role_permissions",
                 "account_roles",
                 "members",
+                "annual_member_information_responses",
+                "member_information_import_batches",
                 "gam_locations",
                 "events",
                 "oratorios",
@@ -2212,7 +2399,7 @@ class DevelopmentFixtureMigrationPersistenceIT {
         for (String table : idTables) {
             jdbcTemplate.queryForList(
                     "SELECT id::text FROM " + schema + "." + table
-                            + " WHERE id::text LIKE '01950000-%' ORDER BY id",
+                            + " WHERE id::text LIKE '01950000-%' OR id::text LIKE '01960000-%' ORDER BY id",
                     String.class
             ).forEach(id -> identities.add(table + ":" + id));
         }
@@ -2233,6 +2420,13 @@ class DevelopmentFixtureMigrationPersistenceIT {
                 Map.entry("role_permissions", "t.id"),
                 Map.entry("account_roles", "t.id"),
                 Map.entry("members", "t.id"),
+                Map.entry("member_experiences", "t.member_id, t.experience_type"),
+                Map.entry("member_sacraments", "t.member_id, t.sacrament_type"),
+                Map.entry("member_contribution_areas", "t.member_id, t.contribution_area"),
+                Map.entry("member_other_contribution_areas", "t.member_id, t.contribution_area"),
+                Map.entry("annual_member_information_responses", "t.id"),
+                Map.entry("annual_member_occupations", "t.response_id, t.occupation"),
+                Map.entry("member_information_import_batches", "t.id"),
                 Map.entry("gam_locations", "t.id"),
                 Map.entry("events", "t.id"),
                 Map.entry("presences", "t.id"),

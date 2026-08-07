@@ -19,4 +19,14 @@ public interface MemberRepository extends BaseRepository<MemberEntity, UUID>,
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select member from MemberEntity member where member.id = :id")
     Optional<MemberEntity> findByIdForUpdate(@Param("id") UUID id);
+
+    @Query("select (count(member) > 0) from MemberEntity member "
+            + "where lower(concat(member.name.firstName, ' ', member.name.surname)) = lower(:fullName) "
+            + "and member.id <> :excludedId")
+    boolean existsDifferentByCanonicalFullName(@Param("fullName") String fullName,
+                                               @Param("excludedId") UUID excludedId);
+
+    @Query(value = "select count(*) from activity_logs where target_id = :batchId "
+            + "and action = 'MEMBER_INFORMATION_IMPORTED'", nativeQuery = true)
+    long countImportActivities(@Param("batchId") UUID batchId);
 }

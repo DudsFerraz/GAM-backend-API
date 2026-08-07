@@ -11,6 +11,16 @@ public enum PermissionEnum {
     MEMBER_ACTIVATION(Code.MEMBER_ACTIVATION, "Activate members", "Allows activating and deactivating members"),
     MEMBER_GET_NON_ACTIVE(Code.MEMBER_GET_NON_ACTIVE, "View inactive members", "Allows viewing non-active members"),
     MEMBER_MANAGE(Code.MEMBER_MANAGE, "Manage members", "Allows managing members"),
+    MEMBER_ACCOUNT_LINK(
+            Code.MEMBER_ACCOUNT_LINK,
+            "Link Member accounts",
+            "Allows linking an existing Account to an existing Account-less Member"
+    ),
+    MEMBER_INFORMATION_GET(
+            Code.MEMBER_INFORMATION_GET,
+            "View annual Member information",
+            "Allows viewing protected annual Member information"
+    ),
     COORDINATOR_MANAGE(Code.COORDINATOR_MANAGE, "Manage coordinators", "Allows granting and revoking Coordinator designation"),
 
     ACCOUNT_GET(Code.ACCOUNT_GET, "View accounts", "Allows viewing accounts"),
@@ -105,6 +115,8 @@ public enum PermissionEnum {
         public static final String MEMBER_ACTIVATION = "MEMBER_ACTIVATION";
         public static final String MEMBER_GET_NON_ACTIVE = "MEMBER_GET_NON_ACTIVE";
         public static final String MEMBER_MANAGE = "MEMBER_MANAGE";
+        public static final String MEMBER_ACCOUNT_LINK = "MEMBER_ACCOUNT_LINK";
+        public static final String MEMBER_INFORMATION_GET = "MEMBER_INFORMATION_GET";
         public static final String COORDINATOR_MANAGE = "COORDINATOR_MANAGE";
 
         public static final String ACCOUNT_GET = "ACCOUNT_GET";

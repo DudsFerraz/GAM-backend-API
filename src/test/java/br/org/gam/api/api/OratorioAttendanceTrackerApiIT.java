@@ -257,7 +257,7 @@ class OratorioAttendanceTrackerApiIT extends OratorioModuleApiTestSupport {
         clearActivities();
 
         ExtractableResponse<Response> existing = authenticatedJsonRequest(caller)
-                .body(oratorianoRegistrationPayload("JOAO", "SILVA"))
+                .body(oratorianoRegistrationPayload("Joao", "Silva"))
                 .post("/oratorios/{id}/attendance/oratorianos/register-and-mark", oratorioId)
                 .then()
                 .extract();

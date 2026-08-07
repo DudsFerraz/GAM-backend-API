@@ -7,6 +7,9 @@ import br.org.gam.api.shared.phonenumber.GamPhoneNumber;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.time.LocalDate;
+import java.util.EnumMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -140,6 +143,120 @@ class MemberTest {
 
             assertThat(member.getStatus()).isEqualTo(MemberStatus.INACTIVE);
         }
+
+        @Test
+        @SuppressWarnings("deprecation")
+        @DisplayName("REQ-MEMBER-IMPORT-005 - Account-less Member links once -> repeated link rejected")
+        void accountLinkShouldBeImmutable() {
+            Member member = new Member(
+                    java.util.UUID.randomUUID(), null, new GamName("Ana", "Silva"),
+                    LocalDate.now().minusYears(20), phoneNumber(), MemberStatus.ACTIVE
+            );
+            Account first = account();
+
+            member.linkAccount(first);
+
+            assertThat(member.getAccount()).isSameAs(first);
+            assertThatThrownBy(() -> member.linkAccount(account()))
+                    .isInstanceOf(IllegalStateException.class);
+        }
+
+        @Test
+        @DisplayName("REQ-MEMBER-INFO-005 - complete exact experience and sacrament maps -> accepted")
+        void completeExactReplacementCatalogsShouldBeAccepted() {
+            Member member = Member.register(
+                    account(), new GamName("Ana", "Silva"), LocalDate.now().minusYears(20), phoneNumber());
+            Map<MemberExperienceType, InformationStatus> completeExperiences =
+                    completeStatuses(MemberExperienceType.class, InformationStatus.YES);
+            Map<MemberSacramentType, InformationStatus> completeSacraments =
+                    completeStatuses(MemberSacramentType.class, InformationStatus.NO);
+
+            member.replaceExperiences(completeExperiences);
+            member.replaceSacraments(completeSacraments);
+
+            assertThat(member.getExperiences()).containsExactlyInAnyOrderEntriesOf(completeExperiences);
+            assertThat(member.getSacraments()).containsExactlyInAnyOrderEntriesOf(completeSacraments);
+        }
+
+        @Test
+        @DisplayName("REQ-MEMBER-INFO-005 - non-exact experience catalog -> rejected")
+        void nonExactExperienceCatalogShouldBeRejected() {
+            Member member = Member.register(
+                    account(), new GamName("Ana", "Silva"), LocalDate.now().minusYears(20), phoneNumber());
+            Map<MemberExperienceType, InformationStatus> completeExperiences =
+                    completeStatuses(MemberExperienceType.class, InformationStatus.YES);
+
+            assertInvalidCatalogs(
+                    "experience",
+                    member::replaceExperiences,
+                    MemberExperienceType.JORNADA_MISSIONARIA,
+                    completeExperiences
+            );
+        }
+
+        @Test
+        @DisplayName("REQ-MEMBER-INFO-005 - non-exact sacrament catalog -> rejected")
+        void nonExactSacramentCatalogShouldBeRejected() {
+            Member member = Member.register(
+                    account(), new GamName("Ana", "Silva"), LocalDate.now().minusYears(20), phoneNumber());
+            Map<MemberSacramentType, InformationStatus> completeSacraments =
+                    completeStatuses(MemberSacramentType.class, InformationStatus.NO);
+
+            assertInvalidCatalogs(
+                    "sacrament",
+                    member::replaceSacraments,
+                    MemberSacramentType.BATISMO,
+                    completeSacraments
+            );
+        }
+    }
+
+    private static <E extends Enum<E>> Map<E, InformationStatus> completeStatuses(
+            Class<E> type,
+            InformationStatus status
+    ) {
+        EnumMap<E, InformationStatus> values = new EnumMap<>(type);
+        for (E key : type.getEnumConstants()) {
+            values.put(key, status);
+        }
+        return Map.copyOf(values);
+    }
+
+    private static <E extends Enum<E>> void assertInvalidCatalogs(
+            String catalog,
+            java.util.function.Consumer<Map<E, InformationStatus>> replacement,
+            E firstKey,
+            Map<E, InformationStatus> complete
+    ) {
+        Map<E, InformationStatus> partial = Map.of(firstKey, InformationStatus.YES);
+        Map<E, InformationStatus> nullStatus = new LinkedHashMap<>(complete);
+        nullStatus.put(firstKey, null);
+        Map<E, InformationStatus> extra = extraEntry(complete);
+
+        org.assertj.core.api.SoftAssertions softly = new org.assertj.core.api.SoftAssertions();
+        softly.assertThatCode(() -> replacement.accept(Map.of()))
+                .as(catalog + " empty catalog")
+                .isInstanceOf(IllegalArgumentException.class);
+        softly.assertThatCode(() -> replacement.accept(partial))
+                .as(catalog + " partial catalog")
+                .isInstanceOf(IllegalArgumentException.class);
+        softly.assertThatCode(() -> replacement.accept(extra))
+                .as(catalog + " extra-key catalog")
+                .isInstanceOf(RuntimeException.class);
+        softly.assertThatCode(() -> replacement.accept(null))
+                .as(catalog + " null catalog")
+                .isInstanceOf(IllegalArgumentException.class);
+        softly.assertThatCode(() -> replacement.accept(nullStatus))
+                .as(catalog + " null-status catalog")
+                .isInstanceOf(IllegalArgumentException.class);
+        softly.assertAll();
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static <E extends Enum<E>> Map<E, InformationStatus> extraEntry(Map<E, InformationStatus> complete) {
+        Map raw = new LinkedHashMap<>(complete);
+        raw.put("SYNTHETIC_EXTRA_CATALOG_KEY", InformationStatus.YES);
+        return (Map<E, InformationStatus>) raw;
     }
 
     private static Account account() {

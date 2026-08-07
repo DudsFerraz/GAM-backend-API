@@ -66,7 +66,7 @@ public class MemberSecurity {
             return false;
         }
 
-        return member.getAccount().getId().equals(accountDetails.getId());
+        return member.getAccount() != null && member.getAccount().getId().equals(accountDetails.getId());
     }
 
     private static void requireVisibleStatus(MemberEntity member, Set<String> userAuthorities) {

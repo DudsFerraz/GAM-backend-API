@@ -6,11 +6,13 @@ import br.org.gam.api.member.application.MemberMapper;
 import br.org.gam.api.member.domain.Member;
 import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.persistence.MemberRepository;
+import br.org.gam.api.member.domain.MemberInformationText;
 import br.org.gam.api.shared.domain.GamName;
 import br.org.gam.api.shared.exception.ConflictException;
 import br.org.gam.api.shared.exception.RequestValidationException;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
+import java.time.LocalDate;
 
 @Service
 public class RegisterMember {
@@ -37,12 +39,28 @@ public class RegisterMember {
 
         Account relatedAccount = getAccountInstance.requiredById(dto.accountId());
 
-        Member newMember = Member.register(relatedAccount, name, dto.birthDate(), dto.phoneNumber());
+        Member newMember = Member.register(relatedAccount, name, dto.birthDate(), dto.phoneNumber(),
+                validatedGamEntryDate(dto.gamEntryDate()), normalizeCity(dto.residentialCity()), dto.contactEmail());
 
         MemberEntity newMemberEntity = memberMapper.domainToEntity(newMember);
         MemberEntity savedMemberEntity = memberRepo.save(newMemberEntity);
 
         return memberMapper.entityToRegisterMemberRDTO(savedMemberEntity);
+    }
+
+    private LocalDate validatedGamEntryDate(LocalDate value) {
+        if (value == null || value.isAfter(LocalDate.now())) {
+            throw new RequestValidationException("body", "/gamEntryDate", "RANGE");
+        }
+        return value;
+    }
+
+    private String normalizeCity(String value) {
+        if (value == null) throw new RequestValidationException("body", "/residentialCity", "REQUIRED");
+        String normalized = MemberInformationText.collapsed(value);
+        int size = normalized.codePointCount(0, normalized.length());
+        if (size < 1 || size > 100) throw new RequestValidationException("body", "/residentialCity", "SIZE");
+        return normalized;
     }
 
     private GamName validatedName(String firstName, String surname) {

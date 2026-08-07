@@ -48,10 +48,12 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
 
     private static final Set<String> BASELINE_PERMISSIONS = Set.of(
             "MEMBER_GET",
+            "MEMBER_INFORMATION_GET",
             "MEMBER_SEARCH",
             "MEMBER_ACTIVATION",
             "MEMBER_GET_NON_ACTIVE",
             "MEMBER_MANAGE",
+            "MEMBER_ACCOUNT_LINK",
             "COORDINATOR_MANAGE",
             "ACCOUNT_GET",
             "ACCOUNT_SEARCH",

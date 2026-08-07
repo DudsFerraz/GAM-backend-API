@@ -21,10 +21,16 @@ public class GetMember {
         this.memberSecurity = memberSecurity;
     }
     public MemberRDTO byId(UUID id) {
+        return byIdVersioned(id).body();
+    }
+
+    public VersionedMember byIdVersioned(UUID id) {
         MemberEntity memberEntity = getMemberInstance.requiredById(id);
         if(!memberSecurity.canGetMember(memberEntity)) throw NotFoundException.resource("Member", id);
 
-        return memberMapper.entityToRDTO(memberEntity);
+        return new VersionedMember(memberMapper.entityToRDTO(memberEntity), memberEntity.getVersion());
     }
+
+    public record VersionedMember(MemberRDTO body, long version) {}
 
 }

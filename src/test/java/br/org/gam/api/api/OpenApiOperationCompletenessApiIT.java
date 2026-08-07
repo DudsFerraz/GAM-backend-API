@@ -117,6 +117,22 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
     );
 
     @Test
+    @DisplayName("REQ-MEMBER-IMPORT-003 and REQ-MEMBER-IMPORT-016 - Account-link operation -> documented success and error contract")
+    void memberAccountLinkShouldExposeAcceptedHttpContract() {
+        Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
+        Map<String, Object> paths = object(contract, "paths");
+        String path = "/members/{memberId}/account/link";
+        assertThat(paths).containsKey(path);
+        Map<String, Object> operation = operation(
+                paths,
+                route("patch", path)
+        );
+
+        assertThat(strings(operation, "tags")).containsExactly("Members");
+        assertThat(object(operation, "responses")).containsKeys("204", "400", "401", "403", "404", "409");
+    }
+
+    @Test
     @DisplayName("REQ-OPENAPI-003, REQ-OPENAPI-004, and REQ-OPENAPI-012 - every public operation -> complete consumer contract")
     void everyPublicOperationShouldHaveStableConsumerFacingDocumentation() {
         Map<String, Object> contract = openApiContract().jsonPath().getMap("$");

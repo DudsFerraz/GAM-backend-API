@@ -70,6 +70,7 @@ public class OpenApiConfig {
     );
 
     private static final Set<String> NO_CONTENT_OPERATIONS = Set.of(
+            "linkMemberAccount",
             "activateMember",
             "deactivateMember",
             "dropAccountRole",
@@ -115,6 +116,9 @@ public class OpenApiConfig {
             "INVALID_SEARCH_FILTER",
             "CONFLICT",
             "RESOURCE_CONFLICT",
+            "PRECONDITION_REQUIRED",
+            "PRECONDITION_FAILED",
+            "INVALID_PRECONDITION",
             "EVENT_AUDIENCE_PERMISSION_INVALID",
             "EVENT_HAS_PRESENCES",
             "EVENT_STATUS_TRANSITION_NOT_ALLOWED",
@@ -218,6 +222,7 @@ public class OpenApiConfig {
                 documentBrowserAuthenticationInputs(operation);
                 documentBrowserAuthenticationCookieResponses(operation);
                 documentLocationResponseHeader(operation);
+                documentMemberEtagContract(operation);
                 documentErrorResponses(operation);
                 documentCurrentAccountContext(operation);
                 documentRequestCorrelationResponseHeader(operation);
@@ -1016,11 +1021,44 @@ public class OpenApiConfig {
                         conflict.exampleDetails()
                 )
         );
+        if (isMemberConditionalUpdate(operation.getOperationId())) {
+            operation.getResponses().put("412", errorResponse(
+                    412, "PRECONDITION_FAILED", "The supplied Member representation is stale."));
+            operation.getResponses().put("428", errorResponse(
+                    428, "PRECONDITION_REQUIRED", "Exactly one current strong Member If-Match value is required."));
+        }
         if ("listRoles".equals(operation.getOperationId())) {
             operation.getResponses().remove("404");
             operation.getResponses().remove("409");
         }
         retainAcceptedAuthResponses(operation);
+    }
+
+    private void documentMemberEtagContract(io.swagger.v3.oas.models.Operation operation) {
+        Set<String> representations = Set.of(
+                "getMember", "getMemberExperiencesAndSacraments", "getMemberContributionProfile");
+        if (representations.contains(operation.getOperationId()) || isMemberConditionalUpdate(operation.getOperationId())) {
+            String success = representations.contains(operation.getOperationId()) ? "200" : "204";
+            ApiResponse response = operation.getResponses().get(success);
+            if (response != null) {
+                response.addHeaderObject("ETag", new Header()
+                        .description("Strong opaque consistency token for the complete Member aggregate.")
+                        .schema(new StringSchema().example("\"member-41\"")));
+            }
+        }
+        if (isMemberConditionalUpdate(operation.getOperationId()) && operation.getParameters() != null) {
+            operation.getParameters().stream().filter(parameter -> "If-Match".equalsIgnoreCase(parameter.getName()))
+                    .forEach(parameter -> {
+                        parameter.setRequired(true);
+                        parameter.setDescription("Exactly one strong ETag previously returned for this Member.");
+                    });
+        }
+    }
+
+    private boolean isMemberConditionalUpdate(String operationId) {
+        return Set.of("updateMemberProfile", "updateMemberGamEntryDate", "updateMemberDietaryRestriction",
+                "updateMemberExperiences", "updateMemberSacraments", "updateMemberContributionProfile")
+                .contains(operationId);
     }
 
     private void retainAcceptedAuthResponses(io.swagger.v3.oas.models.Operation operation) {
@@ -1393,6 +1431,17 @@ public class OpenApiConfig {
     }
 
     private ConflictDocumentation conflictDocumentation(String operationId) {
+        if ("linkMemberAccount".equals(operationId)) {
+            return new ConflictDocumentation(
+                    "RESOURCE_CONFLICT",
+                    "The Member or Account is already linked, the Account has a pending Membership Solicitation, "
+                            + "or its lifecycle Role projection is not eligible for linking.",
+                    Map.of(
+                            "resource", "Member",
+                            "identifier", "019f6343-321a-7c90-a096-a551e8f88eb4"
+                    )
+            );
+        }
         if ("createOratorio".equals(operationId)) {
             return new ConflictDocumentation(
                     "ORATORIO_DATE_ALREADY_EXISTS",

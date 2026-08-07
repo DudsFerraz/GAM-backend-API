@@ -1,6 +1,7 @@
 package br.org.gam.api.shared.exception;
 
 import br.org.gam.api.security.application.InvalidTokenFormatException;
+import br.org.gam.api.member.application.MemberPreconditionException;
 import br.org.gam.api.security.application.RequestSecurityRejectedException;
 import br.org.gam.api.security.application.RefreshTokenExpiredException;
 import br.org.gam.api.security.application.TokenNotFoundException;
@@ -391,6 +392,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<ApiErrorDTO> resourceConflictHandler(ConflictException e) {
         return buildApplicationErrorResponse(HttpStatus.CONFLICT, e);
+    }
+
+    @ExceptionHandler(MemberPreconditionException.class)
+    public ResponseEntity<ApiErrorDTO> memberPreconditionHandler(MemberPreconditionException exception) {
+        HttpStatus status = switch (exception.getKind()) {
+            case REQUIRED -> HttpStatus.PRECONDITION_REQUIRED;
+            case FAILED -> HttpStatus.PRECONDITION_FAILED;
+            case MALFORMED -> HttpStatus.BAD_REQUEST;
+        };
+        String code = switch (exception.getKind()) {
+            case REQUIRED -> "PRECONDITION_REQUIRED";
+            case FAILED -> "PRECONDITION_FAILED";
+            case MALFORMED -> "INVALID_PRECONDITION";
+        };
+        return buildErrorResponse(status, code, exception.getMessage());
     }
 
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)

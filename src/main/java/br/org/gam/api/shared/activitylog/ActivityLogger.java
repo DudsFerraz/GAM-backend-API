@@ -1,9 +1,11 @@
 package br.org.gam.api.shared.activitylog;
 
+import br.org.gam.api.rbac.role.domain.SystemRole;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -131,7 +133,8 @@ public class ActivityLogger {
                     actor.kind() == ActivityActorKind.ACCOUNT || actor.kind() == ActivityActorKind.DEVELOPER;
             case DEVELOPER_RESTORE_EXECUTED,
                  DEVELOPER_HARD_DELETE_EXECUTED,
-                 DEVELOPER_VIEWED_SOFT_DELETED_RECORDS -> actor.kind() == ActivityActorKind.DEVELOPER;
+                 DEVELOPER_VIEWED_SOFT_DELETED_RECORDS,
+                 MEMBER_INFORMATION_IMPORTED -> actor.kind() == ActivityActorKind.DEVELOPER;
             default -> actor.kind() == ActivityActorKind.ACCOUNT;
         };
 
@@ -192,9 +195,13 @@ public class ActivityLogger {
             case EVENT_CREATED, EVENT_UPDATED, EVENT_CANCELLED, EVENT_LOCKED, EVENT_FINALIZED,
                  EVENT_REOPENED, EVENT_DELETED -> ActivityTargetType.EVENT;
             case GAM_LOCATION_CREATED, GAM_LOCATION_UPDATED, GAM_LOCATION_REMOVED -> ActivityTargetType.GAM_LOCATION;
-            case MEMBER_REGISTERED, MEMBER_ACTIVATED, MEMBER_DEACTIVATED, COORDINATOR_GRANTED,
-                 COORDINATOR_REVOKED, ORATORIO_COORDINATOR_GRANTED, ORATORIO_COORDINATOR_REVOKED ->
+            case MEMBER_REGISTERED, MEMBER_ACTIVATED, MEMBER_DEACTIVATED, MEMBER_ACCOUNT_LINKED, COORDINATOR_GRANTED,
+                 COORDINATOR_REVOKED, ORATORIO_COORDINATOR_GRANTED, ORATORIO_COORDINATOR_REVOKED,
+                 MEMBER_PROFILE_UPDATED, MEMBER_GAM_ENTRY_DATE_UPDATED, MEMBER_DIETARY_RESTRICTION_UPDATED,
+                 MEMBER_EXPERIENCES_UPDATED, MEMBER_SACRAMENTS_UPDATED, MEMBER_CONTRIBUTION_PROFILE_UPDATED ->
                     ActivityTargetType.MEMBER;
+            case MEMBER_ANNUAL_INFORMATION_READ -> ActivityTargetType.MEMBER_ANNUAL_INFORMATION_RESPONSE;
+            case MEMBER_INFORMATION_IMPORTED -> ActivityTargetType.MEMBER_INFORMATION_IMPORT_BATCH;
             case MEMBERSHIP_SOLICITATION_SUBMITTED, MEMBERSHIP_SOLICITATION_APPROVED,
                  MEMBERSHIP_SOLICITATION_REJECTED -> ActivityTargetType.MEMBERSHIP_SOLICITATION;
             case PRESENCE_REGISTERED, PRESENCE_UPDATED, PRESENCE_REMOVED -> ActivityTargetType.PRESENCE;
@@ -268,10 +275,14 @@ public class ActivityLogger {
                  ORATORIANO_FORM_COMPLETED, ORATORIANO_FORM_PRINT_SNAPSHOT_CREATED,
                  ORATORIANO_FORM_PDF_RENDERED, ORATORIANO_FORM_DETAIL_READ,
                  ORATORIANO_FORM_ATTACHMENTS_REPLACED, ORATORIANO_FORM_ATTACHMENT_DOWNLOADED,
-                 PRESENCE_REGISTERED, PRESENCE_UPDATED -> ReasonMode.NONE;
+                 PRESENCE_REGISTERED, PRESENCE_UPDATED, MEMBER_ANNUAL_INFORMATION_READ -> ReasonMode.NONE;
             case ACCOUNT_ROLE_ADDED, ACCOUNT_ROLE_REMOVED, EVENT_CANCELLED, EVENT_REOPENED,
                  EVENT_DELETED, GAM_LOCATION_REMOVED, MEMBER_REGISTERED, MEMBER_ACTIVATED,
-                 MEMBER_DEACTIVATED, COORDINATOR_GRANTED, COORDINATOR_REVOKED,
+                 MEMBER_DEACTIVATED, MEMBER_ACCOUNT_LINKED, MEMBER_PROFILE_UPDATED,
+                 MEMBER_GAM_ENTRY_DATE_UPDATED, MEMBER_DIETARY_RESTRICTION_UPDATED,
+                 MEMBER_EXPERIENCES_UPDATED, MEMBER_SACRAMENTS_UPDATED,
+                 MEMBER_CONTRIBUTION_PROFILE_UPDATED, MEMBER_INFORMATION_IMPORTED,
+                 COORDINATOR_GRANTED, COORDINATOR_REVOKED,
                  ORATORIO_COORDINATOR_GRANTED, ORATORIO_COORDINATOR_REVOKED,
                  MEMBERSHIP_SOLICITATION_APPROVED, MEMBERSHIP_SOLICITATION_REJECTED,
                  ORATORIO_CANCELLED, ORATORIO_REOPENED, ORATORIO_DELETED,
@@ -349,6 +360,40 @@ public class ActivityLogger {
                 requireExactKeys(normalized, Set.of("accountId", "roleId"));
                 requireType(normalized, "accountId", UUID.class);
                 requireType(normalized, "roleId", UUID.class);
+            }
+            case MEMBER_ACCOUNT_LINKED -> {
+                requireExactKeys(normalized, Set.of("accountId", "roles"));
+                requireType(normalized, "accountId", UUID.class);
+                Object roles = normalized.get("roles");
+                if (!(roles instanceof List<?> roleValues)
+                        || roleValues.size() != 1
+                        || !(SystemRole.MEMBER.getCode().equals(roleValues.getFirst())
+                        || SystemRole.VISITOR.getCode().equals(roleValues.getFirst()))) {
+                    throw new IllegalArgumentException(
+                            "MEMBER_ACCOUNT_LINKED roles must contain exactly MEMBER or VISITOR."
+                    );
+                }
+            }
+            case MEMBER_PROFILE_UPDATED, MEMBER_GAM_ENTRY_DATE_UPDATED,
+                 MEMBER_DIETARY_RESTRICTION_UPDATED, MEMBER_EXPERIENCES_UPDATED,
+                 MEMBER_SACRAMENTS_UPDATED, MEMBER_CONTRIBUTION_PROFILE_UPDATED -> {
+                requireExactKeys(normalized, Set.of("changedFields"));
+                Object changedFields = normalized.get("changedFields");
+                if (!(changedFields instanceof List<?> values) || values.isEmpty()
+                        || values.stream().anyMatch(value -> !(value instanceof String))) {
+                    throw new IllegalArgumentException("Member update changedFields must be a non-empty string list.");
+                }
+            }
+            case MEMBER_ANNUAL_INFORMATION_READ -> {
+                requireExactKeys(normalized, Set.of("memberId", "surveyCycle"));
+                requireType(normalized, "memberId", UUID.class);
+                requireType(normalized, "surveyCycle", Integer.class);
+            }
+            case MEMBER_INFORMATION_IMPORTED -> {
+                requireExactKeys(normalized, Set.of("surveyCycle", "memberCount", "responseCount"));
+                requireType(normalized, "surveyCycle", Integer.class);
+                requireType(normalized, "memberCount", Integer.class);
+                requireType(normalized, "responseCount", Integer.class);
             }
             case ORATORIO_CREATED, ORATORIANO_REGISTERED, ORATORIANO_DELETED, ORATORIANO_RESTORED ->
                     requireExactKeys(normalized, Set.of());
@@ -569,7 +614,8 @@ public class ActivityLogger {
     private boolean isDeveloperAction(ActivityAction action) {
         return action == ActivityAction.DEVELOPER_RESTORE_EXECUTED
                 || action == ActivityAction.DEVELOPER_HARD_DELETE_EXECUTED
-                || action == ActivityAction.DEVELOPER_VIEWED_SOFT_DELETED_RECORDS;
+                || action == ActivityAction.DEVELOPER_VIEWED_SOFT_DELETED_RECORDS
+                || action == ActivityAction.MEMBER_INFORMATION_IMPORTED;
     }
 
     private <T> T requireNonNull(T value, String message) {
