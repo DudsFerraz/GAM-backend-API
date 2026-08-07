@@ -11,10 +11,9 @@ requirements or architecture decisions linked at the end of this document.
 
 ## Readiness verdict
 
-The accepted deployment architecture is ready to guide implementation. The
-repository is not yet ready for an actual production deployment, and the small
-contracts in implementation item 0 must be resolved before their dependent
-packages enter test design.
+The accepted deployment architecture and focused production contracts are ready
+to guide implementation. The repository is not yet ready for an actual
+production deployment; implementation and verification begin with item 1.
 
 Do not improvise missing infrastructure directly on the VPS. Implement it in
 versioned automation first.
@@ -25,15 +24,11 @@ Follow this dependency order. Do not treat the list as ten independent files;
 each item must include its relevant tests, verification, documentation, and
 review.
 
-0. **Close the remaining focused planning gaps.** Preserve the already accepted
-   Hostinger, Ubuntu, Caddy, GHCR, Ansible, AWS, backup, WORM, custody, and
-   retention decisions. Resolve only the still-open implementation contracts:
-   - public health endpoint path, response, status, and access policy;
-   - the temporary commissioning-gate mechanism;
-   - external availability and host-monitoring provider;
-   - certificate-expiry warning threshold;
-   - maintenance and rollback windows; and
-   - the cross-repository frontend artifact transfer and checksum interface.
+0. **Validate the accepted production planning.** Treat `REQ-OPS-006` through
+   `REQ-OPS-012`, `REQ-WEB-013`, and ADR-0028 as authoritative. Do not reopen the
+   accepted Hostinger, Ubuntu, Caddy, GHCR, Ansible, AWS, backup, WORM, custody,
+   retention, health, commissioning, monitoring, maintenance, rollback, or
+   frontend-transfer decisions unless implementation reveals a contradiction.
 1. **Implement the production runtime seam and public health endpoint.** Add the
    minimal public health behavior, production profile defaults or validation,
    secure public-origin handling, trusted-proxy configuration, and tests that
@@ -102,10 +97,11 @@ exist before real production data or version 1.0.
 Use the GAM agent workflow for implementation, but apply it to cohesive work
 packages rather than to every individual file or command.
 
-The broad deployment planning is already complete. Do not repeat the previous
-provider, capacity, backup, retention, custody, or cost interview. Run one short,
-focused Agent P pass for item 0, update the affected accepted requirement or ADR,
-then start implementation orchestration.
+The broad and focused deployment planning is complete. Do not repeat the previous
+provider, capacity, backup, retention, custody, cost, health, commissioning,
+monitoring, maintenance, rollback, or artifact-transfer interview. Agent O shall
+validate the accepted artifacts; return to Agent P only if implementation exposes
+a genuinely missing or contradictory contract.
 
 Use separate workflow packages in this order:
 
@@ -180,9 +176,9 @@ manager or offline vault, not in this repository.
 | Client custodian 2 | Named person with an individual recovery identity and MFA |
 | Client alert emails | Receive the 12:00 unresolved-backup escalation |
 | Password manager or vault | Holds recoverable operational secrets |
-| External monitoring provider | Performs five-minute public checks outside the VPS |
-| Maintenance window | Confirm before 1.0; the current supporting recommendation is Sunday 07:00–09:00 São Paulo time |
-| Rollback window | Confirm before 1.0; the current supporting recommendation is at least 14 days or two verified releases |
+| External monitoring provider | Better Stack; five-minute `GET /api/health`; alert after three consecutive failures |
+| Maintenance window | Friday 08:30–10:30 `America/Sao_Paulo`; at least 72 hours notice; human-approved and automation-executed |
+| Rollback window | At least 14 days and through two subsequently verified production releases, whichever is longer |
 
 Stop before public release if the domain, alert recipients, recovery custodians,
 or secret custody are unresolved.
@@ -281,8 +277,9 @@ example:
 ```
 
 It may supply Ansible with the database password, JWT signing secret, GHCR pull
-credential, AWS writer credential, commissioning-gate credential, and monitoring
-token. It must not contain either `age` recovery private key.
+credential, AWS writer credential, and Better Stack monitoring token. The
+commissioning operator CIDR allowlist belongs in versioned inventory rather than
+in this secret file. The file must not contain either `age` recovery private key.
 
 Set restrictive permissions:
 
@@ -381,14 +378,18 @@ the permanent host configuration.
 5. Keep ports 80 and 443 reachable so Caddy can complete public certificate
    issuance and renewal.
 
-During burn-in, Caddy shall apply a temporary, versioned commissioning gate to
-all application and API routes. Use the implementation's approved gate, such as
-hashed HTTP Basic Authentication, and keep its plaintext credential outside the
-repository. ACME validation and the minimal external health check must continue
-to function.
+During burn-in, Caddy shall apply the Ansible-controlled commissioning gate to all
+GAM routes. Only explicitly configured operator CIDRs may pass. Every other HTTPS
+request, including `GET /api/health`, shall receive a static `503 Service
+Unavailable` response with `Cache-Control: no-store` and no application or
+infrastructure details. Caddy's HTTP-to-HTTPS redirect and certificate issuance
+or renewal shall remain active. Do not use HTTP Basic authentication.
 
 The gate is temporary access control, not a substitute for GAM authentication.
-Remove it only during the version 1.0 release procedure.
+Disable it only through versioned automation after explicit Developer approval
+and a passing readiness checklist. The launch procedure shall then verify
+`GET /api/health` from outside the VPS; if verification fails, automation shall
+re-enable the gate before remediation.
 
 ## 6. Secure the existing AWS account
 
@@ -492,7 +493,7 @@ The playbook must configure and verify:
 - the AWS writer credential in a root-owned mode-`0600` file;
 - backup, restore, deployment, rollback, maintenance, and verification commands;
 - the persistent 03:15 backup timer;
-- host and service monitoring; and
+- the metrics-only Better Stack collector for host and service monitoring; and
 - an exclusive deployment lock.
 
 Rerun the playbook. The second successful run should report no unexplained
@@ -539,15 +540,24 @@ The VPS receives only a GHCR credential with `read:packages` access.
 
 From the separate frontend repository:
 
-1. select the compatible source commit;
-2. run its tests and production build;
-3. create a versioned static artifact;
-4. calculate and publish its checksum;
-5. record its version and backend compatibility; and
-6. retain the current and previous fingerprinted assets through the rollback
-   window.
+1. select the compatible source commit and run its tests and production build;
+2. publish a non-prerelease immutable GitHub Release whose tag is the frontend
+   version;
+3. attach exactly `gam-frontend-<tag>.tar.gz` and
+   `gam-frontend-<tag>.tar.gz.sha256`;
+4. write the checksum sidecar as one lowercase SHA-256, two spaces, the exact
+   archive filename, and a terminating newline;
+5. retain the archive, checksum, release metadata, and referenced fingerprinted
+   assets through the complete rollback window.
 
-Do not build the frontend on the VPS.
+The backend deployment manifest shall pin the frontend repository identifier,
+tag, exact artifact filename, and expected lowercase SHA-256. The deployment
+workflow shall use authenticated read-only GitHub access outside KVM 2 to verify
+that the release is published, non-prerelease, and immutable; that the sidecar,
+manifest, and computed checksums agree; and that the archive has `index.html` at
+its root with no unsafe paths or entries. Ansible shall transfer only the verified
+archive. Do not build the frontend on the VPS or select `latest`, branch archives,
+or expiring GitHub Actions artifacts.
 
 ### 9.3 Release manifest
 
@@ -593,14 +603,16 @@ The deployment command must:
 2. record the currently deployed release;
 3. validate the candidate manifest and compatible artifact pair;
 4. confirm a current successful backup before any database-changing deployment;
-5. pull the backend by digest and stage the frontend by version and checksum;
+5. pull the backend by digest and stage the frontend only after the release,
+   sidecar, manifest, computed checksum, and archive-safety checks agree;
 6. validate Docker Compose and Caddy configuration;
 7. enable the maintenance response;
 8. run Flyway as an explicit one-shot operation;
 9. start PostgreSQL, backend, Caddy, and the selected frontend release;
 10. wait for private health and readiness checks;
 11. verify public HTTPS, routing, cookies, trusted proxy behavior, database access,
-    and representative API behavior through Caddy;
+    representative API behavior through Caddy, and the exact `GET /api/health`
+    status, JSON body, content type, and no-store policy;
 12. leave the commissioning gate enabled;
 13. record the release, migration, checks, and result; and
 14. release the deployment lock.
@@ -636,12 +648,13 @@ During the burn-in, demonstrate all of the following:
 - application rollback restores the previous compatible release pair;
 - resource use remains safe under representative load;
 - filesystem warnings trigger at 80 percent and critical alerts at 90 percent;
-- external availability checks run every five minutes and alert after three
-  failures;
+- Better Stack sends `GET /api/health` every five minutes, requires `200 OK` and
+  exactly `{"status":"UP"}`, and alerts after three consecutive failures;
 - backup upload runs at 03:15 São Paulo time;
 - AWS validates the backup at 04:30 and escalates an unresolved failure at 12:00;
 - recovery notification follows a successful retry;
-- certificate issuance, renewal storage, and expiry alerting work;
+- certificate issuance and renewal storage work, Better Stack warns at 30 days
+  remaining, and an invalid certificate alerts immediately;
 - logs rotate and contain no credentials, tokens, cookies, or personal data;
 - Ansible can reapply without unexplained drift; and
 - an encrypted backup restores successfully into an isolated environment.
@@ -769,8 +782,12 @@ Release only when every production-readiness check is green.
 6. Confirm the previous compatible release pair and rollback command.
 7. Confirm the database-migration rollback classification.
 8. Run the final deployment and verification playbooks.
-9. Remove the temporary Caddy commissioning gate through versioned configuration.
-10. Verify the application from a clean browser and an external network.
+9. Record explicit Developer launch approval and disable the temporary Caddy
+   commissioning gate through versioned Ansible configuration.
+10. From outside the VPS, verify unauthenticated `GET /api/health` returns
+    `200 OK`, `Content-Type: application/json`, `Cache-Control: no-store`, and
+    exactly `{"status":"UP"}`; then verify the application from a clean browser
+    and an external network.
 11. Verify the backend and PostgreSQL remain unreachable directly.
 12. Verify registration, login, refresh, logout, CSRF, representative reads, and
     authorized writes.
@@ -783,8 +800,9 @@ versioned Caddy configuration includes the intended policy.
 
 ## 16. Roll back or stop a failed release
 
-If verification fails before the commissioning gate is removed, keep the gate
-enabled and do not announce the release.
+If verification fails before the commissioning gate is disabled, keep the gate
+enabled and do not announce the release. If first-launch verification fails after
+the gate is disabled, automation shall re-enable it before remediation.
 
 For an application-only or backward-compatible change:
 
@@ -807,12 +825,13 @@ After rollback:
 
 | Frequency | Operation |
 | --- | --- |
-| Every 5 minutes | External HTTPS availability check |
+| Every 5 minutes | Better Stack sends `GET /api/health`, requires `200 OK` and exactly `{"status":"UP"}`, and alerts after three consecutive failures |
 | Daily 03:15 São Paulo | Online PostgreSQL recovery artifact, encryption, upload, validation, and Compliance retention |
 | Daily 04:30 São Paulo | Independent AWS backup-object validation and developer alert |
 | Daily 12:00 São Paulo | Escalate unresolved backup failure to both client custodians |
-| Continuously | Proxy, backend, database, container, CPU, memory, disk, certificate, and backup monitoring |
-| Each deployment | Explicit approval, fresh-backup check when applicable, immutable release manifest, verification, and rollback evidence |
+| Continuously | Better Stack metrics-only proxy, backend, database, container, CPU, memory, swap, filesystem, inode, network, and TLS monitoring; warn at 30 certificate days and alert immediately on invalidity |
+| Each deployment | Explicit Developer approval, fresh-backup check when applicable, immutable release manifest, automated verification, and rollback evidence |
+| Each disruptive maintenance | Friday 08:30–10:30 `America/Sao_Paulo`, announced at least 72 hours ahead and started only by explicit Developer approval |
 | At least every 90 days | Rotate the dedicated AWS writer access key |
 | After security updates | Reboot when required and verify automatic service recovery |
 | Annually | Scripted isolated data restoration |
@@ -872,6 +891,7 @@ Stop deployment or release when any of these conditions is true:
 - [ADR-0024: Deploy Production Directly to Hostinger KVM 2](../decisions/0024-deploy-production-directly-to-hostinger-kvm-2.md)
 - [ADR-0025: Use AWS São Paulo for Immutable Encrypted Production Backups](../decisions/0025-use-aws-sao-paulo-for-immutable-encrypted-production-backups.md)
 - [ADR-0026: Use an Isolated Member-information Import](../decisions/0026-use-isolated-member-information-import-with-explicit-account-linking.md)
+- [ADR-0028: Complete the Initial Production Commissioning and Release Contracts](../decisions/0028-complete-initial-production-commissioning-and-release-contracts.md)
 
 ## Official operational references
 
