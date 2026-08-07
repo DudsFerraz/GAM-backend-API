@@ -48,6 +48,23 @@ class GamNameTest {
     }
 
     @ParameterizedTest
+    @MethodSource("canonicallyCapitalizedNames")
+    @DisplayName("EP - canonically capitalized words, segments, and internal particles -> accepted")
+    void canonicallyCapitalizedNamesShouldBeAccepted(String firstName, String surname) {
+        GamName name = new GamName(firstName, surname);
+
+        assertThat(name.firstName()).isEqualTo(firstName);
+        assertThat(name.surname()).isEqualTo(surname);
+    }
+
+    @ParameterizedTest
+    @MethodSource("nonCanonicalNames")
+    @DisplayName("EP - noncanonical ordinary input -> validation error without casing repair")
+    void nonCanonicalOrdinaryInputShouldReturnValidationError(String firstName, String surname) {
+        assertCreationFails(() -> new GamName(firstName, surname));
+    }
+
+    @ParameterizedTest
     @MethodSource("firstNamesAtMaximumLength")
     @DisplayName("BVA - firstName length = 32 -> accepted")
     void firstNameAtMaximumLengthShouldBeAccepted(String firstName) {
@@ -318,27 +335,50 @@ class GamNameTest {
         );
     }
 
+    private static Stream<Arguments> canonicallyCapitalizedNames() {
+        return Stream.of(
+                Arguments.of("Eduardo", "Oliveira Ferraz de Campos"),
+                Arguments.of("Ana-Maria", "D'Avila dos Santos"),
+                Arguments.of("Joao e Maria", "De Souza")
+        );
+    }
+
+    private static Stream<Arguments> nonCanonicalNames() {
+        return Stream.of(
+                Arguments.of("eduardo", "Oliveira"),
+                Arguments.of("EDUARDO", "Oliveira"),
+                Arguments.of("EduARdo", "Oliveira"),
+                Arguments.of("Ana-maria", "Oliveira"),
+                Arguments.of("Ana", "D'avila dos Santos"),
+                Arguments.of("Ana", "Oliveira De Campos")
+        );
+    }
+
     private static Stream<String> firstNamesAtMaximumLength() {
-        return Stream.of("a".repeat(32), "\u00C1".repeat(32));
+        return Stream.of(canonicalLength(32), "\u00C1" + "\u00E1".repeat(31));
     }
 
     private static Stream<String> surnamesAtMaximumLength() {
-        return Stream.of("a".repeat(64), "\u00C1".repeat(64));
+        return Stream.of(canonicalLength(64), "\u00C1" + "\u00E1".repeat(63));
     }
 
     private static Stream<String> firstNamesAboveMaximumLength() {
-        return Stream.of("a".repeat(33), "\u00C1".repeat(33));
+        return Stream.of(canonicalLength(33), "\u00C1" + "\u00E1".repeat(32));
     }
 
     private static Stream<String> surnamesAboveMaximumLength() {
-        return Stream.of("a".repeat(65), "\u00C1".repeat(65));
+        return Stream.of(canonicalLength(65), "\u00C1" + "\u00E1".repeat(64));
     }
 
     private static Stream<String> firstNamesWithMaximumLength() {
-        return Stream.of("a".repeat(32), "\u00C1".repeat(32));
+        return Stream.of(canonicalLength(32), "\u00C1" + "\u00E1".repeat(31));
     }
 
     private static Stream<String> surnamesWithMaximumLength() {
-        return Stream.of("a".repeat(64), "\u00C1".repeat(64));
+        return Stream.of(canonicalLength(64), "\u00C1" + "\u00E1".repeat(63));
+    }
+
+    private static String canonicalLength(int length) {
+        return "A" + "a".repeat(length - 1);
     }
 }

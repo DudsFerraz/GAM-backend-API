@@ -4,7 +4,9 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
 import java.io.Serializable;
 import java.text.Normalizer;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 @Embeddable
@@ -17,6 +19,7 @@ public record GamName(
     private static final int MIN_LETTERS = 2;
     private static final Pattern ALLOWED_CHARACTERS = Pattern.compile("[\\p{L} '\\-]+");
     private static final Pattern REPEATED_OR_COMBINED_SEPARATORS = Pattern.compile("[ '\\-]{2,}");
+    private static final Set<String> INTERNAL_PARTICLES = Set.of("de", "da", "do", "das", "dos", "e");
 
     public GamName {
         Objects.requireNonNull(firstName, "firstName cannot be null");
@@ -67,7 +70,49 @@ public record GamName(
             throw new IllegalArgumentException(fieldName + " must contain at least 2 letters");
         }
 
+        if (!normalized.equals(canonicalCapitalization(normalized))) {
+            throw new IllegalArgumentException(fieldName + " must use canonical capitalization");
+        }
+
         return normalized;
+    }
+
+    private static String canonicalCapitalization(String value) {
+        String[] words = value.split(" ", -1);
+        StringBuilder canonical = new StringBuilder(value.length());
+
+        for (int wordIndex = 0; wordIndex < words.length; wordIndex++) {
+            if (wordIndex > 0) {
+                canonical.append(' ');
+            }
+
+            String word = words[wordIndex];
+            if (wordIndex > 0 && INTERNAL_PARTICLES.contains(word.toLowerCase(Locale.ROOT))) {
+                canonical.append(word.toLowerCase(Locale.ROOT));
+            } else {
+                appendCanonicalWord(canonical, word);
+            }
+        }
+
+        return canonical.toString();
+    }
+
+    private static void appendCanonicalWord(StringBuilder canonical, String word) {
+        boolean firstLetterOfSegment = true;
+
+        for (int offset = 0; offset < word.length();) {
+            int codePoint = word.codePointAt(offset);
+            if (codePoint == '-' || codePoint == '\'') {
+                canonical.appendCodePoint(codePoint);
+                firstLetterOfSegment = true;
+            } else {
+                canonical.appendCodePoint(firstLetterOfSegment
+                        ? Character.toUpperCase(codePoint)
+                        : Character.toLowerCase(codePoint));
+                firstLetterOfSegment = false;
+            }
+            offset += Character.charCount(codePoint);
+        }
     }
 
     private static String normalizeSeparators(String value) {
