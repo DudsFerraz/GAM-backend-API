@@ -25,72 +25,196 @@ through `REQ-OPS-012`, `REQ-WEB-013`, and ADR-0028 as the authoritative
 planning baseline. Return to Agent P only if implementation exposes a missing
 or contradictory contract.
 
-Follow this dependency order. Do not treat the list as ten independent files;
-each item must include its relevant tests, verification, documentation, and
-review.
+The order is wave-based, not globally serial. Wave numbers define hard
+dependencies. Every package within the same wave may and should run concurrently
+in its own worktree, branch, and Agent O task. The role cycle inside one package
+remains sequential.
 
-1. **Implement the production runtime seam and public health endpoint.** Add the
-   minimal public health behavior, production profile defaults or validation,
-   secure public-origin handling, trusted-proxy configuration, and tests that
-   prove no internal detail is disclosed.
-2. **Implement the production backend `Dockerfile`.** Build the verified JAR into
-   a minimal OCI image with the approved Java runtime, a non-root user, a health
-   check, explicit writable paths, no embedded secrets, and source/version labels.
-   Test the image locally against PostgreSQL 18.
-3. **Implement the backend CI and private GHCR publication workflow.** Run the
-   canonical Maven and OpenAPI gates, build the OCI image, scan it, publish it to
-   private GHCR, and record the immutable digest and source commit. Publication
-   must not deploy production.
-4. **Implement the versioned frontend release artifact in the frontend
-   repository.** Build and verify the static frontend, publish its immutable
-   versioned artifact and checksum, identify the supported backend contract, and
-   retain the previous compatible artifact.
-5. **Implement the production Docker Compose, Caddy, and release-manifest
-   configuration.** Compose the Caddy, backend, PostgreSQL 18, and static frontend
-   services; publish only ports 80 and 443; configure production health checks,
-   resource limits, persistent volumes, log rotation, the commissioning gate,
-   and immutable frontend/backend references.
-6. **Implement deployment, rollback, and verification commands.** Add the
-   exclusive deployment lock, backup-freshness gate, explicit Flyway step,
-   maintenance response, release-pair switch, public and private smoke checks,
-   release recording, and database-aware rollback behavior.
-7. **Implement the final backup and restoration format and commands.** Create the
-   PostgreSQL dump, password-free role export, sanitized manifest, checksum,
-   dual-recipient `age` encryption, upload metadata, cleanup, restore, and
-   restoration-verification commands. Prove the format locally with synthetic
-   production-like data before connecting it to production AWS resources.
-8. **Implement `member-info-import`.** Satisfy `REQ-MEMBER-IMPORT-010` through
-   `REQ-MEMBER-IMPORT-015`, including validation-only execution, atomic apply,
-   safe diagnostics, idempotency, minimized activity, tests, and the production
-   one-shot maintenance wrapper. This may be developed independently, but it
-   must be complete before production data initialization.
-9. **Implement the Ansible inventory, roles, and playbooks.** Automate Hostinger
-   host configuration, SSH hardening, Docker, firewall integration, directories,
-   secrets, Compose, Caddy, deployment commands, backup timers, restoration,
-   AWS backup resources, monitoring, and verification. Prove idempotency and
-   keep unavoidable account, billing, MFA, purchase, and email-confirmation
-   actions manual.
-10. **Implement external monitoring and alert delivery.** Configure five-minute
-    public availability checks, host and service alerts, disk thresholds,
-    certificate warnings, the independent 04:30 AWS backup check, the 12:00
-    client escalation, recovery notices, monitor-failure alerts, and billing
-    alerts. Test every notification path.
-11. **Complete an isolated end-to-end rehearsal and restoration.** Using the final
-    image, frontend artifact, Compose model, scripts, Ansible, backup format, and
-    synthetic data, rehearse provisioning, deployment, rollback, backup,
-    decryption, restoration, verification, and cleanup. Record a successful
-    isolated restoration using the final format.
-12. **Start paid VPS commissioning.** Purchase KVM 2, apply the verified
-    automation, run the 10–15-day gated burn-in, freeze version 1.0, recreate the
-    clean production database, validate and apply the Member-information import,
-    verify recovery again, and release the approved artifact pair.
+An immutable compatible backend/frontend candidate pair is strictly required
+only for Wave 4. Do not block Waves 1 or 2 on backend or frontend stabilization.
+Use contract-valid fixture images and frontend archives until the real artifacts
+become a hard verification dependency.
 
-Items 1 through 9 should be implemented before the paid commissioning window
-when practical. Item 10 can be prepared beforehand but must be activated and
-tested against the real VPS. Complete the local or otherwise isolated portion
-of item 11 before purchase when possible, then repeat the environment-specific
-restoration during gated VPS commissioning. The final restoration evidence must
-exist before real production data or version 1.0.
+### Wave 1: immediate concurrent implementation
+
+Start all five packages concurrently. Keep their ownership boundaries explicit
+so that worktree isolation does not turn into merge conflicts.
+
+#### 1. Production runtime seam and public health
+
+- **Scope:** Implement production profile validation, secure public-origin and
+  trusted-proxy behavior, and the minimal `GET /api/health` contract without
+  internal details. Include tests and OpenAPI verification.
+- **Suggested branch:** `codex/production-health-runtime`
+- **Agent O prompt:**
+
+  > Use `$gam-orchestration` for workflow `production-health-runtime`. Validate
+  > `REQ-OPS-011`, `REQ-WEB-002`, `REQ-WEB-012`, and ADR-0028, then orchestrate
+  > the complete T/D/R implementation cycle for only the production runtime seam
+  > and public health contract.
+
+#### 2. Production composition and deployment controls
+
+- **Scope:** Implement production Docker Compose, Caddy, the commissioning and
+  maintenance responses, the release-manifest model, deployment locking,
+  backup-freshness and Flyway gates, verification, release recording, and
+  database-aware rollback. Use fixture OCI digests and fixture frontend archives;
+  do not wait for the real artifact pipelines.
+- **Suggested branch:** `codex/production-compose-deploy`
+- **Agent O prompt:**
+
+  > Use `$gam-orchestration` for workflow `production-compose-deploy`. Validate
+  > the Production Operations and Web Delivery Requirement Specifications plus
+  > ADR-0024 and ADR-0028, then orchestrate the complete T/D/R cycle for Compose,
+  > Caddy, manifest, deployment, verification, and rollback controls using
+  > contract-valid fixture artifacts.
+
+#### 3. Production backup, restoration, and AWS monitoring
+
+- **Scope:** Implement the PostgreSQL dump, password-free role export, sanitized
+  manifest, checksums, dual-recipient `age` encryption, upload and cleanup,
+  restoration verification, S3 and IAM automation, Compliance retention,
+  lifecycle, audit, budgets, EventBridge, Lambda, SNS, and Better Stack
+  configuration. Parameterize the VPS source IP and defer only its binding and
+  environment-specific verification.
+- **Suggested branch:** `codex/production-backup-aws`
+- **Agent O prompt:**
+
+  > Use `$gam-orchestration` for workflow `production-backup-aws`. Validate the
+  > Production Backup and Recovery and Production Operations Requirement
+  > Specifications plus ADR-0025 and ADR-0028, then orchestrate the complete
+  > T/D/R cycle for backup, secure restoration, AWS resources, and monitoring.
+  > Keep the VPS IP parameterized and exclude human account and key-custody work.
+
+#### 4. Member-information import
+
+- **Scope:** Implement `REQ-MEMBER-IMPORT-010` through
+  `REQ-MEMBER-IMPORT-015`, including validation-only execution, atomic apply,
+  safe diagnostics, idempotency, minimized activity, tests, and the production
+  one-shot maintenance wrapper.
+- **Branch:** Continue the existing `codex/member-seed` branch and workflow. Do
+  not start a duplicate Agent O cycle while that cycle is active.
+- **Agent O prompt, only if the workflow must be restarted:**
+
+  > Use `$gam-orchestration` for workflow `member-information-import`. Validate
+  > the accepted Member Information Import and Account Linking Requirement
+  > Specification and ADR-0026, then orchestrate the complete T/D/R cycle for
+  > `REQ-MEMBER-IMPORT-010` through `REQ-MEMBER-IMPORT-015` only.
+
+#### 5. Host baseline provisioning
+
+- **Scope:** Implement the Ansible inventory and base Ubuntu 24.04 roles for SSH
+  hardening, operations users, Docker, firewall integration, directories,
+  recoverable secret inputs, and idempotency checks. Own the host baseline only;
+  consume rather than duplicate the Compose, Caddy, backup, restoration, AWS, or
+  monitoring components owned by packages 2 and 3.
+- **Suggested branch:** `codex/production-host-baseline`
+- **Agent O prompt:**
+
+  > Use `$gam-orchestration` for workflow `production-host-baseline`. Validate
+  > `REQ-OPS-001`, `REQ-OPS-002`, `REQ-OPS-010`, and ADR-0024, then orchestrate
+  > the complete T/D/R cycle for the Ubuntu 24.04 Ansible host baseline. Exclude
+  > package-owned Compose, deployment, backup, and AWS behavior.
+
+### Wave 2: pre-artifact infrastructure integration
+
+Start this package after packages 1, 2, 3, and 5 have completed review and their
+branches have been integrated. Package 4 may still be running concurrently
+because its result is not required for fixture-based infrastructure integration.
+
+#### 6. Fixture-based host integration and restoration
+
+- **Scope:** Connect the reviewed host baseline, Compose, Caddy, deployment,
+  backup, restoration, AWS, and monitoring automation. Prove Ansible idempotency,
+  deploy and rollback fixture artifacts, and complete the isolated synthetic-data
+  portion of restoration testing. Record which checks remain blocked only by a
+  real VPS or immutable candidate artifacts.
+- **Suggested branch:** `codex/production-preartifact-integration`
+- **Agent O prompt:**
+
+  > Use `$gam-orchestration` for workflow `production-preartifact-integration`.
+  > Validate the accepted production operations, backup, web-delivery, and
+  > ADR-0024, ADR-0025, and ADR-0028 contracts, then orchestrate the complete
+  > T/D/R cycle that integrates the reviewed infrastructure packages with
+  > fixture artifacts. Do not add backend or frontend artifact pipelines.
+
+Wave 2 is the pre-artifact ceiling. Do not begin artifact work merely because
+other application development is unfinished. Begin Wave 3 only when the
+remaining infrastructure checks specifically require immutable backend and
+frontend artifacts.
+
+Package 4 may continue concurrently through Waves 2, 3, and 4. It becomes a
+hard dependency only before production database initialization in Wave 5.
+
+### Wave 3: deferred artifact implementation
+
+Packages 7 and 8 may run concurrently in their separate repositories. They do
+not need to wait for each other.
+
+#### 7. Backend production artifact
+
+- **Scope:** Implement the production backend `Dockerfile` and CI workflow that
+  runs the canonical Maven and OpenAPI gates, builds and scans the OCI image,
+  publishes it to private GHCR, and records its immutable digest and source
+  commit. Publication must not deploy production.
+- **Suggested branch:** `codex/production-backend-artifact`
+- **Agent O prompt:**
+
+  > Use `$gam-orchestration` for workflow `production-backend-artifact`. Validate
+  > `REQ-WEB-011`, `REQ-OPS-008`, `REQ-OPS-010`, ADR-0024, and ADR-0028, then
+  > orchestrate the complete T/D/R cycle for the production Dockerfile and
+  > verified private-GHCR publication workflow. Exclude production deployment.
+
+#### 8. Frontend release artifact
+
+- **Scope:** In the frontend repository, implement the build and verification
+  pipeline that publishes the immutable versioned archive and checksum defined
+  by `REQ-WEB-013`, records the supported backend contract, and preserves the
+  previous compatible artifact.
+- **Suggested branch:** `codex/production-frontend-artifact`
+- **Agent O prompt:**
+
+  > Use `$gam-orchestration` for workflow `production-frontend-artifact`.
+  > Validate `REQ-WEB-011`, `REQ-WEB-013`, and ADR-0028, then orchestrate the
+  > complete T/D/R cycle in the frontend repository for the immutable release
+  > archive, checksum, verification, and retention interface. Exclude deployment.
+
+### Wave 4: artifact-dependent release rehearsal
+
+This is the first wave that requires a real immutable compatible candidate pair.
+It starts only after packages 7 and 8 are reviewed and integrated. The selected
+pair need not be named version 1.0 yet; the rehearsal and burn-in determine
+whether it is suitable for that release.
+
+#### 9. Final release-pair integration and isolated rehearsal
+
+- **Scope:** Replace fixture references with the selected immutable backend
+  digest and frontend release, verify download and checksums, exercise the real
+  production runtime, deploy, migrate, roll back, back up, decrypt, restore, and
+  verify with synthetic production-like data. Record the successful isolated
+  restoration using the final backup format.
+- **Suggested branch:** `codex/production-release-rehearsal`
+- **Agent O prompt:**
+
+  > Use `$gam-orchestration` for workflow `production-release-rehearsal`.
+  > Validate all accepted production operations, backup, web-delivery, and
+  > ADR-0024, ADR-0025, and ADR-0028 contracts, then orchestrate the complete
+  > T/D/R cycle for the real immutable release pair and final isolated deployment,
+  > rollback, backup, and restoration rehearsal. Exclude paid VPS actions.
+
+### Wave 5: paid VPS commissioning
+
+Purchase KVM 2 only after Wave 4 succeeds. Apply the reviewed automation, bind
+and verify the AWS writer source-IP policy, activate external monitoring, run the
+10–15-day gated burn-in, freeze the approved version 1.0 pair, recreate the clean
+production database, validate and apply the Member-information import, verify
+recovery again, and perform the approved public launch.
+
+This is a human-controlled operational phase executed from reviewed `main`, not
+an ordinary implementation branch. It has no standing Agent O prompt. If
+commissioning exposes a defect, open a narrowly scoped `codex/production-...`
+branch and start a new Agent O cycle for that defect; do not repair production
+manually.
 
 ## Recommended GAM agent workflow
 
@@ -103,27 +227,31 @@ monitoring, maintenance, rollback, or artifact-transfer interview. Agent O shall
 validate the accepted artifacts; return to Agent P only if implementation exposes
 a genuinely missing or contradictory contract.
 
-Use separate workflow packages in this order:
-
-1. **Backend production artifact:** implementation items 1–3.
-2. **Frontend release artifact:** implementation item 4 in the frontend
-   repository.
-3. **Production composition and deployment controls:** implementation items 5–6.
-4. **Production backup, restoration, and AWS monitoring:** implementation items
-   7 and 10 plus the related AWS portion of item 9. Build parameterized automation
-   before the VPS IP exists; bind and verify the source-IP policy during host
-   commissioning.
-5. **Member-information import:** implementation item 8, using its existing
-   accepted Requirement Specification and ADR.
-6. **Host provisioning and integration:** the remaining host portion of item 9
-   followed by item 11.
-
 For each package, a fresh Agent O validates the accepted planning artifacts and
 orchestrates Agent T, Agent D, the expanded Agent T verification, and independent
-Agent R review. Do not start the next dependent package until the previous
-package has a validated completion outcome. A package may return to Agent P only
-when implementation exposes a genuinely missing or contradictory requirement or
-architecture decision.
+Agent R review. Agent T and Agent D remain sequential inside that package.
+
+Different packages in the same wave may run concurrently because each has its
+own worktree, branch, Agent O task, and file ownership. Do not run two package
+workflows in one worktree. A dependent wave starts only after its prerequisite
+branches have completed review and have been integrated into `main`.
+
+Concurrent ownership is:
+
+- package 1 owns backend runtime, health, tests, and OpenAPI changes;
+- package 2 owns Compose, Caddy, release manifests, deployment, rollback, and
+  their direct tests;
+- package 3 owns backup, restoration, AWS, Better Stack configuration, and their
+  related Ansible components;
+- package 4 owns Member-information import behavior;
+- package 5 owns the base host inventory, bootstrap, and operating-system roles;
+- package 6 alone owns the first integration wiring among packages 1, 2, 3, and
+  5;
+- packages 7 and 8 own their respective repository artifact pipelines; and
+- package 9 owns final cross-package rehearsal changes.
+
+A package may return to Agent P only when implementation exposes a genuinely
+missing or contradictory requirement or architecture decision.
 
 Do not use the agent workflow to automate provider purchase, billing acceptance,
 root or client MFA enrollment, recovery private-key custody, alert-email
