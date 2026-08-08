@@ -196,8 +196,9 @@ class ProductionArtifactFixtureContractTest {
     }
 
     private static boolean isExactSha256sumLine(String sidecar, String digest, String artifact) {
-        return sidecar.equals(digest + "  " + artifact + "\n")
-                && sidecar.matches("[0-9a-f]{64}  " + Pattern.quote(artifact) + "\\n");
+        String normalized = sidecar.replace("\r\n", "\n");
+        return normalized.equals(digest + "  " + artifact + "\n")
+                && normalized.matches("[0-9a-f]{64}  " + Pattern.quote(artifact) + "\\n");
     }
 
     private static boolean isSafeArchive(List<TarEntry> entries) {

@@ -153,7 +153,8 @@ class ProductionReviewReturnContractStructuralTest {
                 "verify frontend archive structure before transfer"
         );
 
-        assertThat(invalidSidecar)
+        String normalizedInvalidSidecar = invalidSidecar.replace("\r\n", "\n");
+        assertThat(normalizedInvalidSidecar)
                 .endsWith("\n\n")
                 .doesNotMatch("(?s)^[0-9a-f]{64}  gam-frontend-v1\\.4\\.0\\.tar\\.gz\\n$");
         assertThat(checksumVerification)

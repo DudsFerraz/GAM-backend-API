@@ -435,11 +435,12 @@ class ProductionReviewReturnInfrastructureStructuralTest {
     }
 
     private static String section(String source, String startMarker, String endMarker) {
-        int start = source.indexOf(startMarker);
-        int end = source.indexOf(endMarker, start + startMarker.length());
+        String normalized = source.replace("\r\n", "\n");
+        int start = normalized.indexOf(startMarker);
+        int end = normalized.indexOf(endMarker, start + startMarker.length());
         assertThat(start).as("section start: %s", startMarker).isGreaterThanOrEqualTo(0);
         assertThat(end).as("section end: %s", endMarker).isGreaterThan(start);
-        return source.substring(start, end);
+        return normalized.substring(start, end);
     }
 
     private static int countOccurrences(String source, String marker) {
