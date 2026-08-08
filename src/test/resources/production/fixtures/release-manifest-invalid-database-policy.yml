@@ -1,0 +1,28 @@
+format_version: 1
+backend:
+  image: ghcr.io/gam-example/gam-api@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  release_commit: 0123456789abcdef0123456789abcdef01234567
+frontend:
+  repository: gam-example/gam-frontend
+  tag: v1.4.0
+  artifact: gam-frontend-v1.4.0.tar.gz
+  sha256: 1e08a298d6eed548924b9b2bea63aa723ece22ffea63df2d022c81a4bcf59211
+  release_commit: 89abcdef0123456789abcdef0123456789abcdef
+  published: true
+  prerelease: false
+  immutable: true
+compatibility:
+  pair: frontend-v1.4.0-backend-fixture
+  database_change: null
+  database_rollback_compatible: "false"
+rollback:
+  minimum_days: 14
+  minimum_verified_releases: 2
+  retain_backend_digest: true
+  retain_frontend_archive: true
+  retain_frontend_checksum: true
+  retain_manifest: true
+  retain_fingerprinted_assets: true
+previous:
+  retained: true
