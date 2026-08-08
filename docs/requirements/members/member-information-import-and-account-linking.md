@@ -363,14 +363,68 @@ A Draft or unresolved document shall be rejected.
 The document shall contain:
 
 - batch UUID, survey cycle, and declared dataset checksum;
-- preparation review summary and source headers;
+- a required top-level `preparation` object containing the preparation review
+  summary and source headers;
 - records whose `reviewStatus` is `APPROVED`, whose `reviewIssues` is empty,
   and whose importable payload contains one Member and one annual response; and
 - explicit UUID v7 identifiers and complete accepted value catalogs.
 
+For schema version `v1`, `preparation` shall be a non-null object containing
+exactly `reviewSummary` and `sourceHeaders`:
+
+```json
+{
+  "preparation": {
+    "reviewSummary": {
+      "csvCandidateCount": 76,
+      "additionalCandidateCount": 2,
+      "excludedDuplicateCount": 4,
+      "approvedRecordCount": 74,
+      "unresolvedIssueCount": 0
+    },
+    "sourceHeaders": [
+      "<first original source header>",
+      "<second original source header>"
+    ]
+  }
+}
+```
+
+`reviewSummary` shall be a non-null object containing exactly the five
+properties shown above. Every property shall be a JSON integer with the exact
+`v1` value shown. The summary shall also satisfy:
+
+```text
+csvCandidateCount + additionalCandidateCount - excludedDuplicateCount
+    = approvedRecordCount
+    = records.length
+```
+
+`sourceHeaders` shall be a non-empty ordered JSON array of strings. Every entry
+shall contain at least one non-Unicode-whitespace code point, and no two entries
+shall be identical. The document shall preserve the original source-header
+spelling and order. The importer shall validate this structure without
+requiring the values to match a fixed public header catalog and shall not trim,
+replace, reorder, or otherwise reinterpret them.
+
+Unknown properties inside `preparation` or `reviewSummary` shall be rejected.
+This closed-object rule shall not change the accepted unknown-property behavior
+of other `v1` document objects.
+
+Missing, null, malformed, or inconsistent preparation metadata shall reject
+the complete operation under `REQ-MEMBER-IMPORT-012` before any database
+mutation. The importer shall not infer, synthesize, or repair preparation
+metadata from the records or from a private source document.
+
 Preparation-only source references, review notes, source headers, candidate
 counts, and duplicate-review metadata shall not be persisted as Member,
 response, batch, or activity data.
+
+The complete `preparation` object shall be excluded from the declared checksum.
+Operational logs shall not serialize that object, expose its source-header
+strings, or report its candidate-source, excluded-duplicate, or unresolved-issue
+counts. This does not prohibit logging `records.length` as the operational
+record count allowed by `REQ-MEMBER-IMPORT-012`.
 
 The declared checksum shall be `sha256:` followed by the lowercase SHA-256 of
 compact UTF-8 canonical JSON containing exactly:
@@ -582,10 +636,19 @@ history alone shall not be a conflict.
 ```gherkin
 Scenario: Validate the approved private dataset without mutation
   Given the maintenance profile receives the supported approved document
+  And preparation.reviewSummary contains the exact consistent v1 counters
+  And preparation.sourceHeaders is a non-empty ordered array of unique nonblank strings
   And every input and database compatibility rule passes
   When maintenance.action is validate
   Then the process reports validation success and exits
   And no batch, Member, annual response, row audit timestamp, or activity is created
+
+Scenario: Reject invalid preparation metadata without mutation
+  Given the supported document has missing, malformed, unknown, or inconsistent preparation metadata
+  When the operator validates or applies the document
+  Then the complete operation fails with a safe preparation-field diagnostic
+  And no batch, Member, annual response, row audit timestamp, or activity is created
+  And no source-header string is logged
 
 Scenario: Apply the complete approved dataset once
   Given validation succeeds
