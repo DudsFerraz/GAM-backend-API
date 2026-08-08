@@ -30,7 +30,7 @@ class OpenApiOperationMetadataStructuralTest {
             List<String> lines = Files.readAllLines(controller);
             for (int index = 0; index < lines.size(); index++) {
                 if (HANDLER_MAPPING.matcher(lines.get(index)).find()) {
-                    String annotations = String.join("\n", lines.subList(Math.max(0, index - 12), index));
+                    String annotations = annotationBlockBefore(lines, index);
                     assertions.assertThat(annotations)
                             .as("%s handler at line %s", controller, index + 1)
                             .contains("@Operation", "operationId");
@@ -39,5 +39,13 @@ class OpenApiOperationMetadataStructuralTest {
         }
 
         assertions.assertAll();
+    }
+
+    private static String annotationBlockBefore(List<String> lines, int mappingIndex) {
+        int annotationStart = mappingIndex;
+        while (annotationStart > 0 && !lines.get(annotationStart - 1).isBlank()) {
+            annotationStart--;
+        }
+        return String.join("\n", lines.subList(annotationStart, mappingIndex));
     }
 }

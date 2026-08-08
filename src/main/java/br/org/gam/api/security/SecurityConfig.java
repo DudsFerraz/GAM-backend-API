@@ -1,6 +1,6 @@
 package br.org.gam.api.security;
 
-import br.org.gam.api.rbac.permission.domain.PermissionEnum;
+import br.org.gam.api.rbac.Permission.domain.PermissionEnum;
 import br.org.gam.api.security.application.DelegatedAccessDeniedHandler;
 import br.org.gam.api.security.application.DelegatedAuthenticationEntryPoint;
 import br.org.gam.api.security.jwt.JwtAuthFilter;
@@ -91,6 +91,7 @@ public class SecurityConfig {
                                 "/api/openapi.json", "/api/openapi.json/**", "/api/openapi.json.yaml",
                                 "/api/swagger-ui/**", "/swagger-ui/**", "/webjars/**"
                         ).permitAll()
+                        .requestMatchers("/health").permitAll()
                         .requestMatchers(
                                 "/auth/csrf", "/auth/login", "/auth/register", "/auth/refresh", "/auth/logout"
                         ).permitAll()

@@ -196,6 +196,7 @@ public class OpenApiConfig {
                     new Tag().name("GamLocations"),
                     new Tag().name("RBAC"),
                     new Tag().name("Accounts"),
+                    new Tag().name("Health"),
                     new Tag().name("Oratorios"),
                     new Tag().name("Oratorianos"),
                     new Tag().name("Oratoriano Forms")
@@ -527,6 +528,9 @@ public class OpenApiConfig {
     }
 
     private String consumerTag(String path) {
+        if ("/health".equals(path)) {
+            return "Health";
+        }
         if (path.startsWith("/oratorianos/") && path.contains("/forms")) {
             return "Oratoriano Forms";
         }
@@ -570,6 +574,7 @@ public class OpenApiConfig {
                 || "/auth/refresh".equals(path)
                 || "/auth/logout".equals(path)
                 || "/auth/csrf".equals(path)
+                || "/health".equals(path) && method == PathItem.HttpMethod.GET
                 || "/events/{id}".equals(path) && method == PathItem.HttpMethod.GET;
     }
 
@@ -933,6 +938,14 @@ public class OpenApiConfig {
     }
 
     private void documentErrorResponses(io.swagger.v3.oas.models.Operation operation) {
+        if ("getProductionHealth".equals(operation.getOperationId())) {
+            operation.getResponses().keySet().removeIf(status -> !Set.of("200", "405", "503").contains(status));
+            ApiResponse methodNotAllowed = operation.getResponses().get("405");
+            if (methodNotAllowed != null) {
+                methodNotAllowed.setContent(null);
+            }
+            return;
+        }
         if ("getCsrfProof".equals(operation.getOperationId())) {
             operation.getResponses().keySet().removeIf(status -> !"200".equals(status));
             return;
