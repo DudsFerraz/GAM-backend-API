@@ -1,0 +1,90 @@
+name: gam-production
+
+services:
+  caddy:
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      GAM_PUBLIC_ORIGIN: ${GAM_PUBLIC_ORIGIN:?GAM_PUBLIC_ORIGIN must be set}
+      GAM_COMMISSIONING_ENABLED: ${GAM_COMMISSIONING_ENABLED:-true}
+      GAM_OPERATOR_CIDRS: ${GAM_OPERATOR_CIDRS:?GAM_OPERATOR_CIDRS must be set}
+      GAM_MAINTENANCE_ENABLED: ${GAM_MAINTENANCE_ENABLED:-false}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /opt/gam/frontend:/opt/gam/frontend:ro
+      - ./logs/caddy:/var/log/caddy
+      - caddy-data:/data
+      - caddy-config:/config
+    # Caddy starts independently so the commissioning and maintenance gates,
+    # HTTP redirect, and TLS listener remain available while private services
+    # are unhealthy. Backend readiness condition: service_healthy is enforced
+    # by the backend dependency and deployment verification instead.
+    networks:
+      - edge
+      - private
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    env_file:
+      - ./secrets/postgres.env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-gam_api}
+      POSTGRES_USER: ${POSTGRES_USER:-gam}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - private
+
+  backend:
+    image: ghcr.io/gam-example/gam-api@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    env_file:
+      - ./secrets/backend.env
+    environment:
+      GAM_PUBLIC_ORIGIN: ${GAM_PUBLIC_ORIGIN:?GAM_PUBLIC_ORIGIN must be set}
+      GAM_REQUEST_CORRELATION_MODE: TRUSTED_PROXY
+      SPRING_PROFILES_ACTIVE: production
+      SPRING_FLYWAY_LOCATIONS: classpath:db/migration
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - private
+
+volumes:
+  caddy-data:
+  caddy-config:
+  postgres-data:
+
+networks:
+  edge:
+  private:
+    internal: true

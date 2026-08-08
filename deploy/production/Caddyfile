@@ -1,0 +1,95 @@
+# Keep HTTP-to-HTTPS redirect active while commissioning and maintenance are enabled.
+:80 {
+    redir https://{http.request.host}{http.request.uri} 308
+}
+
+{$GAM_PUBLIC_ORIGIN} {
+    encode zstd gzip
+
+    # Do not record credentials, cookies, or token-bearing response headers.
+    log {
+        output file /var/log/caddy/access.log
+        format filter {
+            wrap json
+            fields {
+                request>headers>Authorization delete
+                request>headers>Cookie delete
+                resp_headers>Authorization delete
+                resp_headers>Set-Cookie delete
+                request>headers>X-Access-Token delete
+                request>headers>X-Refresh-Token delete
+                request>headers>X-CSRF-Token delete
+                resp_headers>X-Access-Token delete
+                resp_headers>X-Refresh-Token delete
+                resp_headers>X-CSRF-Token delete
+                request>uri query {
+                    replace access_token REDACTED
+                    replace refresh_token REDACTED
+                    replace csrf_token REDACTED
+                }
+            }
+        }
+    }
+
+    # Baseline browser policy. HSTS is intentionally absent until the official
+    # domain is controlled and HTTPS operation has been verified.
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; form-action 'self'"
+    }
+
+    # Environment substitution makes the commissioning gate enabled by
+    # default. The operator CIDR allowlist is the only commissioning access
+    # path while the gate is enabled; Ansible can change it after approval.
+    @commissioning_denied {
+        expression `"{$GAM_COMMISSIONING_ENABLED}" == "true"`
+        not remote_ip {$GAM_OPERATOR_CIDRS}
+    }
+    @maintenance_enabled {
+        expression `"{$GAM_MAINTENANCE_ENABLED}" == "true"`
+    }
+    @api path /api/*
+    @fingerprinted path_regexp fingerprint \.(?:css|js|mjs|map|woff2?|png|jpg|jpeg|svg|webp)$
+    @entry path / /index.html
+
+    route {
+        handle @commissioning_denied {
+            header Cache-Control "no-store"
+            header Content-Type "text/plain; charset=utf-8"
+            respond "Service Unavailable" 503
+        }
+
+        handle @maintenance_enabled {
+            header Cache-Control "no-store"
+            header Content-Type "text/plain; charset=utf-8"
+            respond "Service Unavailable" 503
+        }
+
+        handle @api {
+            reverse_proxy backend:8080 {
+                # Remove client-provided forwarding values before setting the
+                # values accepted by the backend's TRUSTED_PROXY mode.
+                header_up -X-Forwarded-For
+                header_up -X-Forwarded-Host
+                header_up -X-Forwarded-Port
+                header_up -X-Forwarded-Proto
+                header_up -X-Request-Id
+                header_up X-Forwarded-For {http.request.remote.host}
+                header_up X-Forwarded-Host {http.request.host}
+                header_up X-Forwarded-Port {http.request.port}
+                header_up X-Forwarded-Proto {http.request.scheme}
+                header_up X-Request-Id {http.request.uuid}
+            }
+        }
+
+        handle {
+            root * /opt/gam/frontend/current/frontend
+            try_files {path} /index.html
+            header @fingerprinted Cache-Control "public, max-age=31536000, immutable"
+            header @entry Cache-Control "no-cache"
+            file_server
+        }
+    }
+}
