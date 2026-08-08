@@ -77,11 +77,11 @@ public class MemberController {
                 .body(responseDTO);
     }
 
-    @PreAuthorize("@memberSecurity.canGetMemberById(#id)")
+    @PreAuthorize("@memberSecurity.canGetMemberById(#memberId)")
     @Operation(operationId = "getMember")
-    @GetMapping("/{id}")
-    public ResponseEntity<MemberRDTO> getMemberById(@PathVariable UUID id) {
-        GetMember.VersionedMember result = getMember.byIdVersioned(id);
+    @GetMapping("/{memberId}")
+    public ResponseEntity<MemberRDTO> getMemberById(@PathVariable UUID memberId) {
+        GetMember.VersionedMember result = getMember.byIdVersioned(memberId);
         String etag;
         MemberRDTO dto;
         if (result != null) {
@@ -89,8 +89,8 @@ public class MemberController {
             etag = memberInformation == null ? null : memberInformation.etag(result.version());
         } else {
             // Compatibility boundary for isolated controller doubles that predate the versioned read.
-            etag = memberInformation == null ? null : memberInformation.etag(id);
-            dto = getMember.byId(id);
+            etag = memberInformation == null ? null : memberInformation.etag(memberId);
+            dto = getMember.byId(memberId);
         }
         ResponseEntity.BodyBuilder response = ResponseEntity.ok();
         if (etag != null) response.eTag(etag);
