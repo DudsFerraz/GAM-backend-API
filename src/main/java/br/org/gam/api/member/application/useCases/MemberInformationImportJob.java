@@ -151,10 +151,20 @@ public class MemberInformationImportJob implements ApplicationRunner {
         if (members.findById(batchId).isPresent() || responses.findById(batchId).isPresent()) {
             throw safe("BATCH_IDENTIFIER_COLLISION", -1, "batch.id");
         }
+        Optional<MemberInformationImportBatchEntity> existingBatch = Optional.empty();
+        boolean existingBatchLoaded = false;
         for (ImportRecord record : records) {
             if (members.findById(record.member().getId()).isPresent()
                     || responses.findById(record.response().getId()).isPresent()) {
-                if (batches.findById(batchId).isEmpty()) throw safe("IDENTIFIER_COLLISION", record.index(), "id");
+                if (!existingBatchLoaded) {
+                    existingBatch = batches.findById(batchId);
+                    existingBatchLoaded = true;
+                    if (existingBatch.isPresent()
+                            && !checksum.equals(existingBatch.get().getDatasetChecksum())) {
+                        throw safe("BATCH_IDENTIFIER_COLLISION", -1, "batch.id");
+                    }
+                }
+                if (existingBatch.isEmpty()) throw safe("IDENTIFIER_COLLISION", record.index(), "id");
             }
         }
         return new ValidatedDocument(batchId, cycle, checksum, List.copyOf(records));
