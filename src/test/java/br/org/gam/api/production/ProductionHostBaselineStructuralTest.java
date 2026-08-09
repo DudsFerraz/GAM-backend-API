@@ -289,7 +289,7 @@ class ProductionHostBaselineStructuralTest {
 
     @Test
     @DisplayName("REQ-OPS-010 - secret inputs -> external recoverable values are never committed")
-    void secretInputsShouldUseAnExternalRecoverableSource() throws IOException {
+    void secretInputsShouldUseAnExternalRecoverableSource() throws IOException, InterruptedException {
         String role = readRole("secret-inputs");
         Path example = requiredSingleFile(
                 ANSIBLE_ROOT,
@@ -308,6 +308,14 @@ class ProductionHostBaselineStructuralTest {
                 .doesNotMatch("(?im)^\\s*(?:password|secret|token|private[_-]?key)\\s*:\\s*[^$<{#\\s].*$");
         assertThat(read(Path.of(".gitignore")))
                 .containsPattern("(?im)(secret|vault)");
+        assertThat(gitCheckIgnore("operations/ansible/secrets.env", false))
+                .as("local Ansible secret input ignore rule")
+                .contains("operations/ansible/secrets.*")
+                .contains("operations/ansible/secrets.env");
+        assertThat(gitCheckIgnore("operations/ansible/secrets.example", true))
+                .as("sanitized Ansible secret example exception")
+                .contains("!operations/ansible/secrets.example")
+                .contains("operations/ansible/secrets.example");
     }
 
     @Test
@@ -489,6 +497,23 @@ class ProductionHostBaselineStructuralTest {
 
     private static String read(Path path) throws IOException {
         return Files.readString(path, StandardCharsets.UTF_8);
+    }
+
+    private static String gitCheckIgnore(String path, boolean includeNonMatching)
+            throws IOException, InterruptedException {
+        List<String> command = new java.util.ArrayList<>(List.of("git", "check-ignore", "-v"));
+        if (includeNonMatching) {
+            command.add("-n");
+        }
+        command.add("--no-index");
+        command.add(path);
+
+        Process git = new ProcessBuilder(command).redirectErrorStream(true).start();
+        String output = new String(git.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        int exitCode = git.waitFor();
+
+        assertThat(exitCode).as("git check-ignore exit code for %s: %s", path, output).isZero();
+        return output;
     }
 
     private static String readUnchecked(Path path) {

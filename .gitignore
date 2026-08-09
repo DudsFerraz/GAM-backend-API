@@ -50,3 +50,7 @@ Thumbs.db
 
 # Private data
 docs/private-data/
+
+# Local Ansible secret inputs; keep only the sanitized example in Git
+operations/ansible/secrets.*
+!operations/ansible/secrets.example
