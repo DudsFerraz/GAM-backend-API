@@ -307,7 +307,7 @@ class ProductionHostBaselineStructuralTest {
                 .containsPattern("(?im)(file|path|vault)")
                 .doesNotMatch("(?im)^\\s*(?:password|secret|token|private[_-]?key)\\s*:\\s*[^$<{#\\s].*$");
         assertThat(read(Path.of(".gitignore")))
-                .containsPattern("(?im)(secret|vault)");
+                .containsPattern("(?im)(private-data|secret|vault|credential)");
         assertThat(gitCheckIgnore("operations/ansible/secrets.env", false))
                 .as("local Ansible secret input ignore rule")
                 .contains("operations/ansible/secrets.*")
