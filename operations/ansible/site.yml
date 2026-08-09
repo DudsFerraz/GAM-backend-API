@@ -47,11 +47,27 @@
           - better_stack_collector_secret | length > 0
           - better_stack_collector_install_url | length > 0
           - better_stack_collector_install_checksum | length > 0
+          - better_stack_dashboard_id | length > 0
+          - better_stack_proxy_chart_id | length > 0
+          - better_stack_backend_chart_id | length > 0
+          - better_stack_postgresql_chart_id | length > 0
+          - better_stack_filesystem_chart_id | length > 0
+          - better_stack_proxy_target_host | length > 0
+          - better_stack_proxy_target_port | int > 0
+          - better_stack_proxy_target_service | length > 0
+          - better_stack_proxy_target_endpoint | length > 0
+          - better_stack_backend_target_host | length > 0
+          - better_stack_backend_target_port | int > 0
+          - better_stack_backend_target_service | length > 0
+          - better_stack_backend_target_endpoint | length > 0
+          - better_stack_postgresql_target_host | length > 0
+          - better_stack_postgresql_target_port | int > 0
         fail_msg: >-
           AWS account, VPS public source IP, production origin, and both public
           encryption recipients, Better Stack API token, dedicated collector
-          secret, and the verified vendor installer source must be supplied
-          outside version control.
+          secret, provider resource IDs, service target connection inputs, and
+          the verified vendor installer source must be supplied outside version
+          control.
 
     - name: Install production recovery dependencies
       ansible.builtin.package:
@@ -243,6 +259,353 @@
         fail_msg: >-
           Better Stack provider-side collector configuration must keep all
           broad log and distributed-trace components disabled.
+
+    - name: Read existing Better Stack collector metric targets
+      ansible.builtin.uri:
+        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}/targets?per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_existing_collector_targets
+      no_log: true
+
+    - name: Register the Better Stack proxy metrics target
+      ansible.builtin.uri:
+        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}/targets"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          kind: prometheus
+          host: "{{ better_stack_proxy_target_host }}"
+          port: "{{ better_stack_proxy_target_port }}"
+          service: "{{ better_stack_proxy_target_service }}"
+          endpoint: "{{ better_stack_proxy_target_endpoint }}"
+        status_code: [201]
+      when: >-
+        not (
+        better_stack_existing_collector_targets.json.data | default([])
+        | selectattr('attributes.kind', 'equalto', 'prometheus')
+        | selectattr('attributes.host', 'equalto', better_stack_proxy_target_host)
+        | selectattr('attributes.service', 'equalto', better_stack_proxy_target_service)
+        | list)
+      no_log: true
+
+    - name: Register the Better Stack backend metrics target
+      ansible.builtin.uri:
+        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}/targets"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          kind: prometheus
+          host: "{{ better_stack_backend_target_host }}"
+          port: "{{ better_stack_backend_target_port }}"
+          service: "{{ better_stack_backend_target_service }}"
+          endpoint: "{{ better_stack_backend_target_endpoint }}"
+        status_code: [201]
+      when: >-
+        not (
+        better_stack_existing_collector_targets.json.data | default([])
+        | selectattr('attributes.kind', 'equalto', 'prometheus')
+        | selectattr('attributes.host', 'equalto', better_stack_backend_target_host)
+        | selectattr('attributes.service', 'equalto', better_stack_backend_target_service)
+        | list)
+      no_log: true
+
+    - name: Register the Better Stack PostgreSQL metrics target
+      ansible.builtin.uri:
+        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}/targets"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          kind: postgres
+          host: "{{ better_stack_postgresql_target_host }}"
+          port: "{{ better_stack_postgresql_target_port }}"
+          ssl_mode: require
+        status_code: [201]
+      when: >-
+        not (
+        better_stack_existing_collector_targets.json.data | default([])
+        | selectattr('attributes.kind', 'equalto', 'postgres')
+        | selectattr('attributes.host', 'equalto', better_stack_postgresql_target_host)
+        | selectattr('attributes.port', 'equalto', better_stack_postgresql_target_port | int)
+        | list)
+      no_log: true
+
+    - name: Read back Better Stack collector metric targets
+      ansible.builtin.uri:
+        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}/targets?per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_collector_targets_readback
+      no_log: true
+
+    - name: Verify Better Stack service targets are provider-side resources
+      ansible.builtin.assert:
+        that:
+          - >-
+            better_stack_collector_targets_readback.json.data | default([])
+            | selectattr('attributes.kind', 'equalto', 'prometheus')
+            | selectattr('attributes.host', 'equalto', better_stack_proxy_target_host)
+            | selectattr('attributes.service', 'equalto', better_stack_proxy_target_service)
+            | list | length > 0
+          - >-
+            better_stack_collector_targets_readback.json.data | default([])
+            | selectattr('attributes.kind', 'equalto', 'prometheus')
+            | selectattr('attributes.host', 'equalto', better_stack_backend_target_host)
+            | selectattr('attributes.service', 'equalto', better_stack_backend_target_service)
+            | list | length > 0
+          - >-
+            better_stack_collector_targets_readback.json.data | default([])
+            | selectattr('attributes.kind', 'equalto', 'postgres')
+            | selectattr('attributes.host', 'equalto', better_stack_postgresql_target_host)
+            | selectattr('attributes.port', 'equalto', better_stack_postgresql_target_port | int)
+            | list | length > 0
+        fail_msg: >-
+          Better Stack must expose the declared proxy, backend, and PostgreSQL
+          service targets through the collector API.
+      no_log: true
+
+    - name: Read existing Better Stack dashboard alerts
+      ansible.builtin.uri:
+        url: "https://telemetry.betterstack.com/api/v2/alerts?per_page=250"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_existing_dashboard_alerts
+      no_log: true
+
+    - name: Register the Better Stack proxy service alert
+      ansible.builtin.uri:
+        url: "https://telemetry.betterstack.com/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts/{{ better_stack_proxy_chart_id }}/alerts"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          name: GAM proxy service unhealthy
+          alert_type: threshold
+          operator: lower_than
+          value: 1
+          check_period: 300
+          confirmation_period: 0
+          recovery_period: 300
+          email: true
+          push: true
+          incident_cause: GAM proxy service is unhealthy
+          metadata:
+            environment: production
+            service: proxy
+        status_code: [201]
+      when: >-
+        not (
+        better_stack_existing_dashboard_alerts.json.data | default([])
+        | selectattr('attributes.name', 'equalto', 'GAM proxy service unhealthy')
+        | selectattr('attributes.dashboard_id', 'equalto', better_stack_dashboard_id | int)
+        | selectattr('attributes.chart_id', 'equalto', better_stack_proxy_chart_id | int)
+        | list)
+      no_log: true
+
+    - name: Register the Better Stack backend service alert
+      ansible.builtin.uri:
+        url: "https://telemetry.betterstack.com/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts/{{ better_stack_backend_chart_id }}/alerts"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          name: GAM backend service unhealthy
+          alert_type: threshold
+          operator: lower_than
+          value: 1
+          check_period: 300
+          confirmation_period: 0
+          recovery_period: 300
+          email: true
+          push: true
+          incident_cause: GAM backend service is unhealthy
+          metadata:
+            environment: production
+            service: backend
+        status_code: [201]
+      when: >-
+        not (
+        better_stack_existing_dashboard_alerts.json.data | default([])
+        | selectattr('attributes.name', 'equalto', 'GAM backend service unhealthy')
+        | selectattr('attributes.dashboard_id', 'equalto', better_stack_dashboard_id | int)
+        | selectattr('attributes.chart_id', 'equalto', better_stack_backend_chart_id | int)
+        | list)
+      no_log: true
+
+    - name: Register the Better Stack PostgreSQL service alert
+      ansible.builtin.uri:
+        url: "https://telemetry.betterstack.com/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts/{{ better_stack_postgresql_chart_id }}/alerts"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          name: GAM postgresql service unhealthy
+          alert_type: threshold
+          operator: lower_than
+          value: 1
+          check_period: 300
+          confirmation_period: 0
+          recovery_period: 300
+          email: true
+          push: true
+          incident_cause: GAM PostgreSQL service is unhealthy
+          metadata:
+            environment: production
+            service: postgresql
+        status_code: [201]
+      when: >-
+        not (
+        better_stack_existing_dashboard_alerts.json.data | default([])
+        | selectattr('attributes.name', 'equalto', 'GAM postgresql service unhealthy')
+        | selectattr('attributes.dashboard_id', 'equalto', better_stack_dashboard_id | int)
+        | selectattr('attributes.chart_id', 'equalto', better_stack_postgresql_chart_id | int)
+        | list)
+      no_log: true
+
+    - name: Register the Better Stack filesystem warning alert
+      ansible.builtin.uri:
+        url: "https://telemetry.betterstack.com/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts/{{ better_stack_filesystem_chart_id }}/alerts"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          name: GAM filesystem usage warning
+          alert_type: threshold
+          operator: higher_than_or_equal
+          value: 80
+          check_period: 300
+          confirmation_period: 0
+          recovery_period: 300
+          email: true
+          push: true
+          incident_cause: GAM filesystem usage reached the warning threshold
+          metadata:
+            environment: production
+            service: filesystem
+            severity: warning
+        status_code: [201]
+      when: >-
+        not (
+        better_stack_existing_dashboard_alerts.json.data | default([])
+        | selectattr('attributes.name', 'equalto', 'GAM filesystem usage warning')
+        | selectattr('attributes.dashboard_id', 'equalto', better_stack_dashboard_id | int)
+        | selectattr('attributes.chart_id', 'equalto', better_stack_filesystem_chart_id | int)
+        | list)
+      no_log: true
+
+    - name: Register the Better Stack filesystem critical alert
+      ansible.builtin.uri:
+        url: "https://telemetry.betterstack.com/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts/{{ better_stack_filesystem_chart_id }}/alerts"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          name: GAM filesystem usage critical
+          alert_type: threshold
+          operator: higher_than_or_equal
+          value: 90
+          check_period: 300
+          confirmation_period: 0
+          recovery_period: 300
+          email: true
+          push: true
+          incident_cause: GAM filesystem usage reached the critical threshold
+          metadata:
+            environment: production
+            service: filesystem
+            severity: critical
+        status_code: [201]
+      when: >-
+        not (
+        better_stack_existing_dashboard_alerts.json.data | default([])
+        | selectattr('attributes.name', 'equalto', 'GAM filesystem usage critical')
+        | selectattr('attributes.dashboard_id', 'equalto', better_stack_dashboard_id | int)
+        | selectattr('attributes.chart_id', 'equalto', better_stack_filesystem_chart_id | int)
+        | list)
+      no_log: true
+
+    - name: Read back Better Stack dashboard alerts
+      ansible.builtin.uri:
+        url: "https://telemetry.betterstack.com/api/v2/alerts?per_page=250"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_dashboard_alerts_readback
+      no_log: true
+
+    - name: Verify Better Stack service and filesystem alerts are provider-side resources
+      ansible.builtin.assert:
+        that:
+          - >-
+            better_stack_dashboard_alerts_readback.json.data | default([])
+            | selectattr('attributes.name', 'equalto', 'GAM proxy service unhealthy')
+            | selectattr('attributes.dashboard_id', 'equalto', better_stack_dashboard_id | int)
+            | selectattr('attributes.chart_id', 'equalto', better_stack_proxy_chart_id | int)
+            | list | length > 0
+          - >-
+            better_stack_dashboard_alerts_readback.json.data | default([])
+            | selectattr('attributes.name', 'equalto', 'GAM backend service unhealthy')
+            | selectattr('attributes.dashboard_id', 'equalto', better_stack_dashboard_id | int)
+            | selectattr('attributes.chart_id', 'equalto', better_stack_backend_chart_id | int)
+            | list | length > 0
+          - >-
+            better_stack_dashboard_alerts_readback.json.data | default([])
+            | selectattr('attributes.name', 'equalto', 'GAM postgresql service unhealthy')
+            | selectattr('attributes.dashboard_id', 'equalto', better_stack_dashboard_id | int)
+            | selectattr('attributes.chart_id', 'equalto', better_stack_postgresql_chart_id | int)
+            | list | length > 0
+          - >-
+            better_stack_dashboard_alerts_readback.json.data | default([])
+            | selectattr('attributes.name', 'equalto', 'GAM filesystem usage warning')
+            | selectattr('attributes.dashboard_id', 'equalto', better_stack_dashboard_id | int)
+            | selectattr('attributes.chart_id', 'equalto', better_stack_filesystem_chart_id | int)
+            | selectattr('attributes.value', 'equalto', 80)
+            | list | length > 0
+          - >-
+            better_stack_dashboard_alerts_readback.json.data | default([])
+            | selectattr('attributes.name', 'equalto', 'GAM filesystem usage critical')
+            | selectattr('attributes.dashboard_id', 'equalto', better_stack_dashboard_id | int)
+            | selectattr('attributes.chart_id', 'equalto', better_stack_filesystem_chart_id | int)
+            | selectattr('attributes.value', 'equalto', 90)
+            | list | length > 0
+        fail_msg: >-
+          Better Stack provider-side dashboard alerts must cover proxy,
+          backend, PostgreSQL, and filesystem warning/critical thresholds.
+      no_log: true
 
     - name: Read existing Better Stack monitors before reconciliation
       ansible.builtin.uri:

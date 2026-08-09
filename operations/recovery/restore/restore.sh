@@ -20,6 +20,28 @@ set -Eeuo pipefail
 : "${RESTORATION_CORRECTIVE_ACTION:?RESTORATION_CORRECTIVE_ACTION is required}"
 : "${REPRESENTATIVE_ACCESS_CHECK_COMMAND:?representative application access check is required}"
 
+# S3 Glacier Flexible Retrieval is normally restored within a few hours, but
+# the recovery procedure keeps a configurable portion of the 24-hour RTO for
+# downloading, decrypting, and validating the recovery artifact.
+GLACIER_RESTORE_DAYS="${GLACIER_RESTORE_DAYS:-1}"
+GLACIER_RESTORE_POLL_INTERVAL_SECONDS="${GLACIER_RESTORE_POLL_INTERVAL_SECONDS:-300}"
+GLACIER_RESTORE_TIMEOUT_SECONDS="${GLACIER_RESTORE_TIMEOUT_SECONDS:-82800}"
+
+for glacier_setting in \
+    GLACIER_RESTORE_DAYS \
+    GLACIER_RESTORE_POLL_INTERVAL_SECONDS \
+    GLACIER_RESTORE_TIMEOUT_SECONDS; do
+    glacier_value="${!glacier_setting}"
+    if [[ ! "$glacier_value" =~ ^[1-9][0-9]*$ ]]; then
+        echo "$glacier_setting must be a positive integer" >&2
+        exit 1
+    fi
+done
+if (( GLACIER_RESTORE_TIMEOUT_SECONDS > 86400 )); then
+    echo "GLACIER_RESTORE_TIMEOUT_SECONDS must leave the recovery within the 24-hour RTO" >&2
+    exit 1
+fi
+
 RESTORATION_EVIDENCE_FILE="${RESTORATION_EVIDENCE_FILE:-/var/lib/gam-recovery/evidence/$(date -u '+%Y%m%dT%H%M%SZ').json}"
 export RESTORATION_EVIDENCE_FILE
 
@@ -76,16 +98,78 @@ cleanup() {
 }
 trap cleanup EXIT
 
-OBJECT_METADATA="$(aws s3api head-object \
+OBJECT_METADATA_ERROR="$STAGING_DIR/head-object-error"
+if ! OBJECT_METADATA="$(aws s3api head-object \
     --bucket "$RECOVERY_BUCKET" \
     --key "$RECOVERY_OBJECT_KEY" \
-    --region "$AWS_REGION")"
+    --region "$AWS_REGION" 2>"$OBJECT_METADATA_ERROR")"; then
+    cat "$OBJECT_METADATA_ERROR" >&2
+    exit 1
+fi
 REMOTE_SHA256="$(jq -r '.Metadata.sha256 // empty' <<<"$OBJECT_METADATA")"
 REMOTE_MODE="$(jq -r '.ObjectLockMode // empty' <<<"$OBJECT_METADATA")"
 REMOTE_SIZE="$(jq -r '.ContentLength // 0' <<<"$OBJECT_METADATA")"
+REMOTE_STORAGE_CLASS="$(jq -r '.StorageClass // "STANDARD"' <<<"$OBJECT_METADATA")"
 test "$REMOTE_SHA256" = "$RECOVERY_SHA256"
 test "$REMOTE_MODE" = COMPLIANCE
 test "$REMOTE_SIZE" -gt 0
+
+# Monthly recovery points older than 90 days use Glacier Flexible Retrieval.
+# S3 exposes the temporary availability state through the Restore response
+# field.  A restore request is accepted, already in progress, or already
+# restored without making the recovery fail; the copy is attempted only after
+# head-object reports ongoing-request="false".
+if [[ "$REMOTE_STORAGE_CLASS" == "GLACIER" ]]; then
+    RESTORE_STATE="$(jq -r '.Restore // empty' <<<"$OBJECT_METADATA")"
+    if [[ "$RESTORE_STATE" != *'ongoing-request="false"'* ]]; then
+        RESTORE_ALREADY_ACTIVE=false
+        RESTORE_OBJECT_ERROR="$STAGING_DIR/restore-object-error"
+        if ! aws s3api restore-object \
+            --bucket "$RECOVERY_BUCKET" \
+            --key "$RECOVERY_OBJECT_KEY" \
+            --region "$AWS_REGION" \
+            --restore-request "{\"Days\":${GLACIER_RESTORE_DAYS},\"GlacierJobParameters\":{\"Tier\":\"Standard\"}}" \
+            >"$STAGING_DIR/restore-object-output" \
+            2>"$RESTORE_OBJECT_ERROR"; then
+            if ! grep -qiE 'restorealreadyinprogress|restore already in progress' "$RESTORE_OBJECT_ERROR" \
+                && ! grep -qiE 'objectalreadyinactivetiererror|object already in active tier' "$RESTORE_OBJECT_ERROR"; then
+                cat "$RESTORE_OBJECT_ERROR" >&2
+                exit 1
+            elif grep -qiE 'objectalreadyinactivetiererror|object already in active tier' "$RESTORE_OBJECT_ERROR"; then
+                RESTORE_ALREADY_ACTIVE=true
+            fi
+        fi
+
+        GLACIER_RESTORE_DEADLINE="$(( $(date +%s) + GLACIER_RESTORE_TIMEOUT_SECONDS ))"
+        while true; do
+            RESTORE_HEAD_ERROR="$STAGING_DIR/restore-head-object-error"
+            if OBJECT_METADATA="$(aws s3api head-object \
+                --bucket "$RECOVERY_BUCKET" \
+                --key "$RECOVERY_OBJECT_KEY" \
+                --region "$AWS_REGION" 2>"$RESTORE_HEAD_ERROR")"; then
+                RESTORE_STATE="$(jq -r '.Restore // empty' <<<"$OBJECT_METADATA")"
+                if [[ "$RESTORE_STATE" == *'ongoing-request="false"'* \
+                    || ( "$RESTORE_ALREADY_ACTIVE" == true && -z "$RESTORE_STATE" ) ]]; then
+                    break
+                fi
+            elif ! grep -qi 'invalidobjectstate' "$RESTORE_HEAD_ERROR"; then
+                cat "$RESTORE_HEAD_ERROR" >&2
+                exit 1
+            fi
+
+            if (( $(date +%s) >= GLACIER_RESTORE_DEADLINE )); then
+                echo "timed out waiting for S3 Glacier Flexible Retrieval restore" >&2
+                exit 1
+            fi
+            GLACIER_RESTORE_SLEEP_SECONDS="$GLACIER_RESTORE_POLL_INTERVAL_SECONDS"
+            GLACIER_RESTORE_REMAINING_SECONDS="$(( GLACIER_RESTORE_DEADLINE - $(date +%s) ))"
+            if (( GLACIER_RESTORE_SLEEP_SECONDS > GLACIER_RESTORE_REMAINING_SECONDS )); then
+                GLACIER_RESTORE_SLEEP_SECONDS="$GLACIER_RESTORE_REMAINING_SECONDS"
+            fi
+            sleep "$GLACIER_RESTORE_SLEEP_SECONDS"
+        done
+    fi
+fi
 
 if [[ "${CONTROLLED_PRODUCTION_RECOVERY:-false}" != "true" ]]; then
     dropdb --if-exists --maintenance-db "$RESTORE_ADMIN_DATABASE_URL" "$RESTORE_DATABASE_NAME"
@@ -96,11 +180,19 @@ else
 fi
 RESTORED_DATABASE_CREATED=true
 
-aws s3 cp \
+ARCHIVE_COPY_ERROR="$STAGING_DIR/archive-copy-error"
+if ! aws s3 cp \
     "s3://${RECOVERY_BUCKET}/${RECOVERY_OBJECT_KEY}" \
     "$ENCRYPTED_ARCHIVE" \
     --region "$AWS_REGION" \
-    --only-show-errors
+    --only-show-errors \
+    2>"$ARCHIVE_COPY_ERROR"; then
+    if grep -qi 'invalidobjectstate' "$ARCHIVE_COPY_ERROR"; then
+        echo "S3 recovery object is still unavailable after Glacier restore polling" >&2
+    fi
+    cat "$ARCHIVE_COPY_ERROR" >&2
+    exit 1
+fi
 test "$(sha256sum "$ENCRYPTED_ARCHIVE" | awk '{print $1}')" = "$RECOVERY_SHA256"
 
 # Decryption occurs only in the temporary isolated staging directory.
