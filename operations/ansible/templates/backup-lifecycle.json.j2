@@ -1,0 +1,40 @@
+{#
+  Daily objects remain in S3 Standard for their 31-day Compliance retention.
+  Weekly objects transition to S3 Standard-IA after 30 days. Monthly objects
+  transition to S3 Standard-IA after 30 days and Glacier Flexible Retrieval
+  after 90 days. Compliance retention remains authoritative over expiration.
+  Incomplete multipart uploads are aborted after 7 days.
+#}
+{
+  "Rules": [
+    {
+      "ID": "daily-recovery-points",
+      "Status": "Enabled",
+      "Filter": {"Tag": {"Key": "classification", "Value": "daily"}},
+      "Expiration": {"Days": 31}
+    },
+    {
+      "ID": "weekly-recovery-points",
+      "Status": "Enabled",
+      "Filter": {"Tag": {"Key": "classification", "Value": "weekly"}},
+      "Transitions": [{"Days": 30, "StorageClass": "STANDARD_IA"}],
+      "Expiration": {"Days": 85}
+    },
+    {
+      "ID": "monthly-recovery-points",
+      "Status": "Enabled",
+      "Filter": {"Tag": {"Key": "classification", "Value": "monthly"}},
+      "Transitions": [
+        {"Days": 30, "StorageClass": "STANDARD_IA"},
+        {"Days": 90, "StorageClass": "GLACIER"}
+      ],
+      "Expiration": {"Days": 370}
+    },
+    {
+      "ID": "abort-incomplete-multipart-uploads",
+      "Status": "Enabled",
+      "Filter": {},
+      "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 7}
+    }
+  ]
+}

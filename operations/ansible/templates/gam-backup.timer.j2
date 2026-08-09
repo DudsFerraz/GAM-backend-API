@@ -1,0 +1,11 @@
+[Unit]
+Description=GAM daily recovery artifact at 03:15 America/Sao_Paulo
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 America/Sao_Paulo
+Persistent=true
+RandomizedDelaySec=0
+Unit=gam-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,53 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CreateMonitorLogGroup",
+      "Effect": "Allow",
+      "Action": "logs:CreateLogGroup",
+      "Resource": "*"
+    },
+    {
+      "Sid": "WriteMonitorLogs",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+      "Resource": "arn:aws:logs:{{ aws_region }}:{{ aws_account_id }}:log-group:/aws/lambda/{{ backup_monitor_lambda_function_name }}:*"
+    },
+    {
+      "Sid": "RecordMonitorFailures",
+      "Effect": "Allow",
+      "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"],
+      "Resource": "arn:aws:dynamodb:{{ aws_region }}:{{ aws_account_id }}:table/gam-production-backup-monitor-state"
+    },
+    {
+      "Sid": "ListRecoveryPrefix",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::{{ backup_bucket_name }}",
+      "Condition": {
+        "StringLike": {"s3:prefix": ["{{ backup_prefix }}", "{{ backup_prefix }}/*"]}
+      }
+    },
+    {
+      "Sid": "ReadRecoveryObjectMetadata",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:GetObjectAttributes", "s3:GetObjectTagging"],
+      "Resource": "arn:aws:s3:::{{ backup_bucket_name }}/{{ backup_prefix }}/*"
+    },
+    {
+      "Sid": "ReadRecoveryLifecycle",
+      "Effect": "Allow",
+      "Action": "s3:GetLifecycleConfiguration",
+      "Resource": "arn:aws:s3:::{{ backup_bucket_name }}"
+    },
+    {
+      "Sid": "PublishMonitorAlerts",
+      "Effect": "Allow",
+      "Action": "sns:Publish",
+      "Resource": [
+        "{{ developer_backup_alert_topic_arn }}",
+        "{{ client_custodian_backup_alert_topic_arn }}"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{# The audit destination is excluded because its own delivery must not create recursive data events. #}
+[
+  {
+    "Name": "GAM backup object read and write data events",
+    "FieldSelectors": [
+      {"Field": "eventCategory", "Equals": ["Data"]},
+      {"Field": "resources.type", "Equals": ["AWS::S3::Object"]},
+      {"Field": "resources.ARN", "StartsWith": ["arn:aws:s3:::{{ backup_bucket_name }}/"]}
+    ]
+  },
+  {
+    "Name": "GAM backup configuration write management events",
+    "FieldSelectors": [
+      {"Field": "eventCategory", "Equals": ["Management"]},
+      {"Field": "readOnly", "Equals": ["false"]},
+      {"Field": "eventSource", "Equals": ["s3.amazonaws.com", "iam.amazonaws.com"]}
+    ]
+  }
+]

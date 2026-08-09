@@ -1,0 +1,34 @@
+{
+  "BudgetName": "GAM-production-backup-cost-governance",
+  "BudgetLimit": {"Amount": "5", "Unit": "USD"},
+  "CostFilters": {
+    "TagKeyValue": [
+      "user:Project$GAM",
+      "user:Environment$production",
+      "user:Purpose$backup"
+    ]
+  },
+  "TimeUnit": "MONTHLY",
+  "NotificationsWithSubscribers": [
+    {
+      "Notification": {"NotificationType": "FORECASTED", "ComparisonOperator": "GREATER_THAN", "Threshold": 5, "ThresholdType": "ABSOLUTE_VALUE"},
+      "Subscribers": [{"Address": "{{ budget_notification_topic_arn }}", "SubscriptionType": "SNS"}]
+    },
+    {
+      "Notification": {"NotificationType": "ACTUAL", "ComparisonOperator": "GREATER_THAN", "Threshold": 5, "ThresholdType": "ABSOLUTE_VALUE"},
+      "Subscribers": [{"Address": "{{ budget_notification_topic_arn }}", "SubscriptionType": "SNS"}]
+    },
+    {
+      "Notification": {"NotificationType": "FORECASTED", "ComparisonOperator": "GREATER_THAN", "Threshold": 10, "ThresholdType": "ABSOLUTE_VALUE"},
+      "Subscribers": [{"Address": "{{ budget_notification_topic_arn }}", "SubscriptionType": "SNS"}]
+    },
+    {
+      "Notification": {"NotificationType": "ACTUAL", "ComparisonOperator": "GREATER_THAN", "Threshold": 10, "ThresholdType": "ABSOLUTE_VALUE"},
+      "Subscribers": [{"Address": "{{ budget_notification_topic_arn }}", "SubscriptionType": "SNS"}]
+    },
+    {
+      "Notification": {"NotificationType": "ACTUAL", "ComparisonOperator": "GREATER_THAN", "Threshold": 25, "ThresholdType": "ABSOLUTE_VALUE"},
+      "Subscribers": [{"Address": "{{ budget_notification_topic_arn }}", "SubscriptionType": "SNS"}]
+    }
+  ]
+}

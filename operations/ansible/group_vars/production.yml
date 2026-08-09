@@ -1,0 +1,64 @@
+---
+# All values below are deployment inputs.  Secrets and private recovery
+# identities are supplied by the operator's external custody process.
+aws_region: sa-east-1
+aws_account_id: "{{ lookup('env', 'GAM_AWS_ACCOUNT_ID') }}"
+
+vps_public_source_ip: "{{ lookup('env', 'GAM_VPS_PUBLIC_SOURCE_IP') }}"
+production_origin: "{{ lookup('env', 'GAM_PRODUCTION_ORIGIN') }}"
+
+backup_bucket_name: "gam-production-backups-{{ aws_account_id }}-sa-east-1"
+backup_audit_bucket_name: "gam-production-backup-audit-{{ aws_account_id }}-sa-east-1"
+backup_prefix: production/postgresql
+backup_writer_name: gam-production-backup-writer
+backup_access_key_rotation_days: 90
+postgresql_major_version: "18"
+
+backup_monitor_lambda_role_name: gam-production-backup-monitor-lambda
+backup_monitor_scheduler_role_name: gam-production-backup-monitor-scheduler
+backup_monitor_lambda_role_arn: "arn:aws:iam::{{ aws_account_id }}:role/{{ backup_monitor_lambda_role_name }}"
+backup_monitor_scheduler_role_arn: "arn:aws:iam::{{ aws_account_id }}:role/{{ backup_monitor_scheduler_role_name }}"
+backup_monitor_lambda_function_name: gam-production-backup-monitor
+backup_monitor_lambda_arn: "arn:aws:lambda:{{ aws_region }}:{{ aws_account_id }}:function:{{ backup_monitor_lambda_function_name }}"
+
+backup_schedule_timezone: America/Sao_Paulo
+backup_schedule_local_time: "03:15"
+backup_monitor_local_time: "04:30"
+backup_escalation_local_time: "12:00"
+backup_recovery_point_retention_days:
+  daily: 31
+  weekly: 85
+  monthly: 370
+backup_audit_retention_days: 400
+
+# Public age recipients are configuration inputs, never private identities.
+developer_age_recipient: "{{ lookup('env', 'GAM_DEVELOPER_AGE_RECIPIENT') }}"
+client_age_recipient: "{{ lookup('env', 'GAM_CLIENT_AGE_RECIPIENT') }}"
+
+# SNS topics and Better Stack credentials are external notification inputs.
+# Subscription confirmation remains a manual account step.
+developer_backup_alert_topic_arn: "{{ lookup('env', 'GAM_DEVELOPER_BACKUP_ALERT_TOPIC_ARN') }}"
+client_custodian_backup_alert_topic_arn: "{{ lookup('env', 'GAM_CLIENT_CUSTODIAN_BACKUP_ALERT_TOPIC_ARN') }}"
+budget_notification_topic_arn: "{{ lookup('env', 'GAM_BUDGET_NOTIFICATION_TOPIC_ARN') }}"
+better_stack_api_url: "{{ lookup('env', 'BETTER_STACK_API_URL') }}"
+better_stack_api_token: "{{ lookup('env', 'BETTER_STACK_API_TOKEN') }}"
+better_stack_collector_id: "{{ lookup('env', 'BETTER_STACK_COLLECTOR_ID') }}"
+better_stack_collector_secret: "{{ lookup('env', 'BETTER_STACK_COLLECTOR_SECRET') }}"
+better_stack_collector_install_url: "{{ lookup('env', 'BETTER_STACK_COLLECTOR_INSTALL_URL') | default('https://raw.githubusercontent.com/BetterStackHQ/collector/main/install.sh', true) }}"
+better_stack_collector_install_checksum: "{{ lookup('env', 'BETTER_STACK_COLLECTOR_INSTALL_CHECKSUM') }}"
+
+backup_state_directory: /var/lib/gam/backup
+backup_runtime_directory: /var/lib/gam/backup/runtime
+backup_environment_file: /etc/gam/backup.env
+backup_writer_credentials_file: /etc/gam/backup-writer.credentials
+backup_service_user: gam-backup
+backup_service_group: gam-backup
+
+cost_governance:
+  project: GAM
+  environment: production
+  purpose: backup
+  warning_usd: 5
+  reassessment_usd: 10
+  critical_usd: 25
+  anomaly_impact_usd: 5

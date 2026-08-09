@@ -1,0 +1,40 @@
+---
+# The AWS-hosted monitor is intentionally independent of the VPS backup job.
+backup_monitor:
+  provider: AWS
+  eventbridge:
+    lambda_function: gam-production-backup-monitor
+    daily_validation:
+      local_time: "04:30"
+      timezone: America/Sao_Paulo
+      expression: "cron(30 4 * * ? *)"
+      input:
+        phase: daily
+    unresolved_failure_escalation:
+      local_time: "12:00"
+      timezone: America/Sao_Paulo
+      expression: "cron(0 12 * * ? *)"
+      input:
+        phase: unresolved
+  validation:
+    current_local_date: true
+    object_exists: true
+    nonzero_size: true
+    checksum_metadata: true
+    encrypted_content_metadata: true
+    classification: true
+    compliance_retention: true
+    object_lock: true
+  notification:
+    developer: "{{ developer_backup_alert_topic_arn }}"
+    immediate_alert: true
+    unresolved: "{{ client_custodian_backup_alert_topic_arn }}"
+    client_custodian_escalation: true
+    recovery_notice: retry succeeded
+  state:
+    table: gam-production-backup-monitor-state
+    stores_plaintext_data: false
+  failure_detection:
+    cloudwatch: true
+    alarm: Lambda Errors >= 1
+    monitor_failure: external alert

@@ -1,0 +1,106 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListGAMRecoveryPrefix",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+      "Resource": "arn:aws:s3:::{{ backup_bucket_name }}",
+      "Condition": {
+        "StringLike": {"s3:prefix": ["{{ backup_prefix }}", "{{ backup_prefix }}/*"]},
+        "IpAddress": {"aws:SourceIp": {{ vps_public_source_ip | to_json }}},
+        "Bool": {"aws:SecureTransport": "true"}
+      }
+    },
+    {
+      "Sid": "ReadRecoveryMetadataForVerification",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectTagging",
+        "s3:GetObjectAttributes",
+        "s3:GetObjectRetention"
+      ],
+      "Resource": "arn:aws:s3:::{{ backup_bucket_name }}/{{ backup_prefix }}/*",
+      "Condition": {
+        "IpAddress": {"aws:SourceIp": {{ vps_public_source_ip | to_json }}},
+        "Bool": {"aws:SecureTransport": "true"}
+      }
+    },
+    {
+      "Sid": "PutDailyRecoveryObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:PutObjectRetention",
+        "s3:PutObjectTagging",
+        "s3:GetObjectAttributes",
+        "s3:GetObjectRetention"
+      ],
+      "Resource": "arn:aws:s3:::{{ backup_bucket_name }}/{{ backup_prefix }}/*",
+      "Condition": {
+        "IpAddress": {"aws:SourceIp": {{ vps_public_source_ip | to_json }}},
+        "Bool": {
+          "aws:SecureTransport": "true"
+        },
+        "StringEquals": {
+          "s3:RequestObjectTag/classification": "daily",
+          "s3:object-lock-mode": "COMPLIANCE"
+        },
+        "NumericGreaterThanEquals": {
+          "s3:object-lock-remaining-retention-days": 31
+        }
+      }
+    },
+    {
+      "Sid": "PutWeeklyRecoveryObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:PutObjectRetention",
+        "s3:PutObjectTagging",
+        "s3:GetObjectAttributes",
+        "s3:GetObjectRetention"
+      ],
+      "Resource": "arn:aws:s3:::{{ backup_bucket_name }}/{{ backup_prefix }}/*",
+      "Condition": {
+        "IpAddress": {"aws:SourceIp": {{ vps_public_source_ip | to_json }}},
+        "Bool": {
+          "aws:SecureTransport": "true"
+        },
+        "StringEquals": {
+          "s3:RequestObjectTag/classification": "weekly",
+          "s3:object-lock-mode": "COMPLIANCE"
+        },
+        "NumericGreaterThanEquals": {
+          "s3:object-lock-remaining-retention-days": 85
+        }
+      }
+    },
+    {
+      "Sid": "PutMonthlyRecoveryObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:PutObjectRetention",
+        "s3:PutObjectTagging",
+        "s3:GetObjectAttributes",
+        "s3:GetObjectRetention"
+      ],
+      "Resource": "arn:aws:s3:::{{ backup_bucket_name }}/{{ backup_prefix }}/*",
+      "Condition": {
+        "IpAddress": {"aws:SourceIp": {{ vps_public_source_ip | to_json }}},
+        "Bool": {
+          "aws:SecureTransport": "true"
+        },
+        "StringEquals": {
+          "s3:RequestObjectTag/classification": "monthly",
+          "s3:object-lock-mode": "COMPLIANCE"
+        },
+        "NumericGreaterThanEquals": {
+          "s3:object-lock-remaining-retention-days": 370
+        }
+      }
+    }
+  ]
+}

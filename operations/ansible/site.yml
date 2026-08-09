@@ -1,0 +1,352 @@
+---
+- import_playbook: playbooks/production-host-baseline.yml
+
+- name: Provision AWS recovery resources and independent backup monitoring
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - group_vars/production.yml
+  tasks:
+    - name: Apply the AWS backup bucket, audit, and cost governance contract
+      ansible.builtin.include_tasks: aws-resources.yml
+
+    - name: Require nonempty machine writer credentials before production activation
+      ansible.builtin.assert:
+        that:
+          - >-
+            backup_writer_access_key is defined
+            or lookup('env', 'GAM_BACKUP_ACCESS_KEY_ID') | length > 0
+          - >-
+            backup_writer_access_key is defined
+            or lookup('env', 'GAM_BACKUP_SECRET_ACCESS_KEY') | length > 0
+        fail_msg: >-
+          GAM_BACKUP_ACCESS_KEY_ID and GAM_BACKUP_SECRET_ACCESS_KEY must be
+          nonempty after the machine writer bootstrap before activation.
+
+    - name: Apply the AWS EventBridge and Lambda backup monitor contract
+      ansible.builtin.include_tasks: backup-monitor.yml
+
+- name: Provision GAM production backup, recovery, AWS, and monitoring behavior
+  hosts: production
+  become: true
+  vars_files:
+    - group_vars/production.yml
+  pre_tasks:
+    - name: Require parameterized deployment inputs
+      ansible.builtin.assert:
+        that:
+          - aws_account_id | length > 0
+          - vps_public_source_ip | length > 0
+          - production_origin | length > 0
+          - developer_age_recipient | length > 0
+          - client_age_recipient | length > 0
+          - better_stack_api_url | length > 0
+          - better_stack_api_token | length > 0
+          - better_stack_collector_id | length > 0
+          - better_stack_collector_secret | length > 0
+          - better_stack_collector_install_url | length > 0
+          - better_stack_collector_install_checksum | length > 0
+        fail_msg: >-
+          AWS account, VPS public source IP, production origin, and both public
+          encryption recipients, Better Stack API token, dedicated collector
+          secret, and the verified vendor installer source must be supplied
+          outside version control.
+
+    - name: Install production recovery dependencies
+      ansible.builtin.package:
+        name:
+          - age
+          - awscli
+          - jq
+          - openssl
+          - postgresql-client-18
+        state: present
+
+  tasks:
+    - name: Create the machine backup service group on a clean host
+      ansible.builtin.group:
+        name: "{{ backup_service_group }}"
+        system: true
+
+    - name: Create the non-login machine backup service user on a clean host
+      ansible.builtin.user:
+        name: "{{ backup_service_user }}"
+        group: "{{ backup_service_group }}"
+        system: true
+        shell: /usr/sbin/nologin
+        create_home: false
+
+    - name: Create backup runtime directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner | default(backup_service_user) }}"
+        group: "{{ item.group | default(backup_service_group) }}"
+        mode: "{{ item.mode | default('0700') }}"
+      loop:
+        - path: "{{ backup_state_directory }}"
+        - path: "{{ backup_runtime_directory }}"
+        - path: /etc/gam
+          owner: root
+          group: root
+          mode: "0750"
+
+    - name: Install backup environment inputs
+      ansible.builtin.template:
+        src: templates/backup.env.j2
+        dest: "{{ backup_environment_file }}"
+        owner: root
+        group: "{{ backup_service_group }}"
+        mode: "0640"
+
+    - name: Install restricted machine backup-writer credentials
+      ansible.builtin.template:
+        src: templates/backup-writer.credentials.j2
+        dest: "{{ backup_writer_credentials_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+      when:
+        - lookup('env', 'GAM_BACKUP_ACCESS_KEY_ID') | length > 0
+        - lookup('env', 'GAM_BACKUP_SECRET_ACCESS_KEY') | length > 0
+
+    - name: Install versioned backup and restoration procedures
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: root
+        group: root
+        mode: "0750"
+      loop:
+        - src: ../recovery/backup/backup.sh
+          dest: /usr/local/libexec/gam-backup
+        - src: ../recovery/restore/restore.sh
+          dest: /usr/local/libexec/gam-restore
+        - src: ../recovery/verify-restoration/verify-restoration.sh
+          dest: /usr/local/libexec/gam-verify-restoration
+
+    - name: Install persistent daily backup timer
+      ansible.builtin.template:
+        src: templates/gam-backup.service.j2
+        dest: /etc/systemd/system/gam-backup.service
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install persistent daily backup schedule
+      ansible.builtin.template:
+        src: templates/gam-backup.timer.j2
+        dest: /etc/systemd/system/gam-backup.timer
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Enable daily backup schedule with reboot catch-up
+      ansible.builtin.systemd:
+        name: gam-backup.timer
+        daemon_reload: true
+        enabled: true
+        state: started
+
+    - name: Install the Better Stack metrics-only verification contract
+      ansible.builtin.template:
+        src: templates/better-stack-monitoring.yml.j2
+        dest: /etc/gam/better-stack-monitoring-contract.yml
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Download the official Better Stack collector Docker Compose installer
+      ansible.builtin.get_url:
+        url: "{{ better_stack_collector_install_url }}"
+        dest: /usr/local/libexec/better-stack-collector-install.sh
+        owner: root
+        group: root
+        mode: "0750"
+        checksum: "{{ better_stack_collector_install_checksum }}"
+
+    - name: Run the official Better Stack collector Docker Compose deployment
+      ansible.builtin.command:
+        argv:
+          - /bin/bash
+          - /usr/local/libexec/better-stack-collector-install.sh
+      environment:
+        COLLECTOR_SECRET: "{{ better_stack_collector_secret }}"
+      register: better_stack_collector_install
+      changed_when: better_stack_collector_install.rc == 0
+      no_log: true
+
+    - name: Verify the Better Stack collector Docker Compose deployment
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - ps
+          - --all
+          - --format
+          - json
+      register: better_stack_collector_status
+      changed_when: false
+      failed_when: >-
+        better_stack_collector_status.rc != 0
+        or 'better-stack' not in (better_stack_collector_status.stdout | lower)
+
+    - name: Configure the Better Stack collector source through the official API
+      ansible.builtin.uri:
+        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}"
+        method: PATCH
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          configuration:
+            components:
+              logs_docker: false
+              logs_host: false
+              logs_kubernetes: false
+              logs_collector_internals: false
+              ebpf_tracing_basic: false
+              ebpf_tracing_full: false
+              traces_opentelemetry: false
+              ebpf_metrics: true
+              ebpf_red_metrics: true
+              metrics_databases: true
+        status_code: [200]
+      register: better_stack_collector_configuration
+      no_log: true
+
+    - name: Read back the Better Stack collector source configuration
+      ansible.builtin.uri:
+        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_collector_source
+      no_log: true
+
+    - name: Verify the Better Stack collector remains metrics-only
+      ansible.builtin.assert:
+        that:
+          - better_stack_collector_source.json.data.attributes.configuration.components.logs_docker is sameas false
+          - better_stack_collector_source.json.data.attributes.configuration.components.logs_host is sameas false
+          - better_stack_collector_source.json.data.attributes.configuration.components.logs_kubernetes is sameas false
+          - better_stack_collector_source.json.data.attributes.configuration.components.logs_collector_internals is sameas false
+          - better_stack_collector_source.json.data.attributes.configuration.components.ebpf_tracing_basic is sameas false
+          - better_stack_collector_source.json.data.attributes.configuration.components.ebpf_tracing_full is sameas false
+          - better_stack_collector_source.json.data.attributes.configuration.components.traces_opentelemetry is sameas false
+        fail_msg: >-
+          Better Stack provider-side collector configuration must keep all
+          broad log and distributed-trace components disabled.
+
+    - name: Read existing Better Stack monitors before reconciliation
+      ansible.builtin.uri:
+        url: "{{ better_stack_api_url }}/monitors"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_existing_monitors
+      no_log: true
+
+    - name: Reconcile the existing Better Stack availability monitor
+      ansible.builtin.uri:
+        url: "{{ better_stack_api_url }}/monitors/{{ item.id }}"
+        method: PATCH
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          pronounceable_name: GAM production availability
+          url: "{{ production_origin }}/api/health"
+          monitor_type: keyword
+          required_keyword: '{"status":"UP"}'
+          http_method: GET
+          check_frequency: 300
+          confirmation_period: 600
+          email: true
+          push: true
+        status_code: [200, 204]
+      loop: "{{ better_stack_existing_monitors.json.data | default([]) }}"
+      when: item.attributes.pronounceable_name | default('') == 'GAM production availability'
+      no_log: true
+
+    - name: Reconcile the existing Better Stack TLS monitor
+      ansible.builtin.uri:
+        url: "{{ better_stack_api_url }}/monitors/{{ item.id }}"
+        method: PATCH
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          pronounceable_name: GAM production TLS certificate
+          url: "{{ production_origin }}"
+          monitor_type: status
+          check_frequency: 3600
+          ssl_expiration: 30
+          verify_ssl: true
+          email: true
+          push: true
+        status_code: [200, 204]
+      loop: "{{ better_stack_existing_monitors.json.data | default([]) }}"
+      when: item.attributes.pronounceable_name | default('') == 'GAM production TLS certificate'
+      no_log: true
+
+    - name: Register the Better Stack external availability health check
+      ansible.builtin.uri:
+        url: "{{ better_stack_api_url }}/monitors"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          pronounceable_name: GAM production availability
+          url: "{{ production_origin }}/api/health"
+          monitor_type: keyword
+          required_keyword: '{"status":"UP"}'
+          http_method: GET
+          check_frequency: 300
+          confirmation_period: 600
+          email: true
+          push: true
+        status_code: [200, 201, 204]
+      when: >-
+        not (better_stack_existing_monitors.json.data | default([])
+        | selectattr('attributes.pronounceable_name', 'equalto', 'GAM production availability')
+        | list)
+      no_log: true
+
+    - name: Register the Better Stack external TLS certificate check
+      ansible.builtin.uri:
+        url: "{{ better_stack_api_url }}/monitors"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          pronounceable_name: GAM production TLS certificate
+          url: "{{ production_origin }}"
+          monitor_type: status
+          check_frequency: 3600
+          ssl_expiration: 30
+          verify_ssl: true
+          email: true
+          push: true
+        status_code: [200, 201, 204]
+      when: >-
+        not (better_stack_existing_monitors.json.data | default([])
+        | selectattr('attributes.pronounceable_name', 'equalto', 'GAM production TLS certificate')
+        | list)
+      no_log: true
+

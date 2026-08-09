@@ -1,0 +1,38 @@
+---
+# This is the complete non-console writer contract.  It is deliberately
+# limited to object creation and verification; no human account or billing
+# permissions are part of this identity.
+identity:
+  name: gam-production-backup-writer
+  type: non-console
+  source_ip: "{{ vps_public_source_ip }}"
+  tls_required: true
+  access_key_rotation: 90 days
+  credentials_file_mode: "0600"
+  allowed_bucket: "{{ backup_bucket_name }}"
+  allowed_prefix: "{{ backup_prefix }}"
+permissions:
+  allow:
+    - s3:ListBucket
+    - s3:GetBucketLocation
+    - s3:PutObject
+    - s3:PutObjectRetention
+    - s3:PutObjectTagging
+    - s3:GetObject
+    - s3:GetObjectAttributes
+    - s3:GetObjectRetention
+  retention:
+    mode: COMPLIANCE
+    daily_days: 31
+    weekly_days: 85
+    monthly_days: 370
+  conditions:
+    aws:SourceIp: "{{ vps_public_source_ip }}"
+    aws:SecureTransport: true
+  forbidden:
+    - object deletion
+    - retention bypass
+    - bucket administration
+    - lifecycle administration
+    - IAM administration
+    - billing access

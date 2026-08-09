@@ -1,0 +1,18 @@
+[Unit]
+Description=GAM complete encrypted PostgreSQL recovery artifact
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User={{ backup_service_user }}
+Group={{ backup_service_group }}
+EnvironmentFile={{ backup_environment_file }}
+LoadCredential=backup-writer.credentials:{{ backup_writer_credentials_file }}
+Environment=AWS_SHARED_CREDENTIALS_FILE=%d/backup-writer.credentials
+ExecStart=/usr/local/libexec/gam-backup
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ backup_state_directory }} {{ backup_runtime_directory }}

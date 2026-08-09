@@ -1,0 +1,9 @@
+{
+  "SubscriptionName": "GAM production backup cost anomaly",
+  "MonitorArnList": ["{{ cost_anomaly_monitor_arn }}"],
+  "Frequency": "DAILY",
+  "Subscribers": [
+    {"Address": "{{ budget_notification_topic_arn }}", "Type": "SNS"}
+  ],
+  "Threshold": 5
+}

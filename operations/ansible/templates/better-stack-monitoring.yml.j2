@@ -1,0 +1,51 @@
+---
+# Better Stack is the independent public availability and metrics provider.
+provider: better stack
+availability:
+  url: "{{ production_origin }}/api/health"
+  http_method: GET
+  expected_status: 200
+  required_keyword: '{"status":"UP"}'
+  interval_seconds: 300
+  confirmation_period_seconds: 600
+  alert_channels: [email, mobile push]
+  cache_policy: no-store
+tls:
+  certificate_expiry_warning_days: 30
+  invalid_certificate: immediate alert
+  expired_certificate: immediate alert
+  hostname_mismatched_certificate: immediate alert
+  unverifiable_certificate: immediate alert
+  resolve_after_valid_days: 30
+collector:
+  mode: metrics-only
+  host_metrics:
+    - cpu
+    - memory
+    - swap
+    - filesystem
+    - inode
+    - network
+    - container
+    - container-restart
+    - proxy
+    - backend
+    - postgresql
+  service_checks:
+    proxy:
+      enabled: true
+      alert_on_unhealthy: true
+    backend:
+      enabled: true
+      alert_on_unhealthy: true
+    postgresql:
+      enabled: true
+      alert_on_unhealthy: true
+  filesystem:
+    warning_percent: 80
+    critical_percent: 90
+  export_request_body: false
+  export_application_logs: false
+  export_distributed_traces: false
+credentials:
+  collector_secret_from_environment: COLLECTOR_SECRET

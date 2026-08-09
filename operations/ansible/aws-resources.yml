@@ -1,0 +1,715 @@
+---
+- name: Validate AWS resource provisioning inputs
+  ansible.builtin.assert:
+    that:
+      - aws_region == 'sa-east-1'
+      - aws_account_id | length > 0
+      - budget_notification_topic_arn | length > 0
+    fail_msg: AWS São Paulo and the external budget notification target are required.
+
+- name: Inspect the two immutable buckets
+  ansible.builtin.command:
+    argv:
+      - aws
+      - s3api
+      - head-bucket
+      - --bucket
+      - "{{ item.bucket }}"
+      - --region
+      - "{{ aws_region }}"
+  register: bucket_probes
+  changed_when: false
+  failed_when: false
+  loop:
+    - bucket: "{{ backup_bucket_name }}"
+    - bucket: "{{ backup_audit_bucket_name }}"
+
+- name: Create private Brazilian Object Lock buckets
+  ansible.builtin.command:
+    argv:
+      - aws
+      - s3api
+      - create-bucket
+      - --bucket
+      - "{{ item.item.bucket }}"
+      - --region
+      - "{{ aws_region }}"
+      - --create-bucket-configuration
+      - "LocationConstraint={{ aws_region }}"
+      - --object-lock-enabled-for-bucket
+  when: item.rc != 0
+  loop: "{{ bucket_probes.results }}"
+  changed_when: true
+
+- name: Block public access on both buckets
+  ansible.builtin.command:
+    argv:
+      - aws
+      - s3api
+      - put-public-access-block
+      - --bucket
+      - "{{ item }}"
+      - --region
+      - "{{ aws_region }}"
+      - --public-access-block-configuration
+      - BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+  loop:
+    - "{{ backup_bucket_name }}"
+    - "{{ backup_audit_bucket_name }}"
+
+- name: Enforce bucket-owner-enforced object ownership
+  ansible.builtin.command:
+    argv:
+      - aws
+      - s3api
+      - put-bucket-ownership-controls
+      - --bucket
+      - "{{ item }}"
+      - --region
+      - "{{ aws_region }}"
+      - --ownership-controls
+      - Rules=[{ObjectOwnership=BucketOwnerEnforced}]
+  loop:
+    - "{{ backup_bucket_name }}"
+    - "{{ backup_audit_bucket_name }}"
+
+- name: Enable versioning on both immutable buckets
+  ansible.builtin.command:
+    argv:
+      - aws
+      - s3api
+      - put-bucket-versioning
+      - --bucket
+      - "{{ item }}"
+      - --region
+      - "{{ aws_region }}"
+      - --versioning-configuration
+      - Status=Enabled
+  loop:
+    - "{{ backup_bucket_name }}"
+    - "{{ backup_audit_bucket_name }}"
+
+- name: Add default SSE-S3 encryption
+  ansible.builtin.command:
+    argv:
+      - aws
+      - s3api
+      - put-bucket-encryption
+      - --bucket
+      - "{{ item }}"
+      - --region
+      - "{{ aws_region }}"
+      - --server-side-encryption-configuration
+      - Rules=[{ApplyServerSideEncryptionByDefault={SSEAlgorithm=AES256}}]
+  loop:
+    - "{{ backup_bucket_name }}"
+    - "{{ backup_audit_bucket_name }}"
+
+- name: Set immutable backup Object Lock defaults
+  ansible.builtin.command:
+    argv:
+      - aws
+      - s3api
+      - put-object-lock-configuration
+      - --bucket
+      - "{{ item.bucket }}"
+      - --region
+      - "{{ aws_region }}"
+      - --object-lock-configuration
+      - "ObjectLockEnabled=Enabled,Rule={DefaultRetention={Mode=COMPLIANCE,Days={{ item.days }}}}"
+  loop:
+    - bucket: "{{ backup_bucket_name }}"
+      days: 31
+    - bucket: "{{ backup_audit_bucket_name }}"
+      days: 400
+
+- name: Render the parameterized backup-writer policy
+  ansible.builtin.template:
+    src: templates/backup-writer-policy.json.j2
+    dest: /tmp/gam-production-backup-writer-policy.json
+    mode: "0600"
+
+- name: Inspect the dedicated non-console backup-writer identity
+  ansible.builtin.command:
+    argv:
+      - aws
+      - iam
+      - get-user
+      - --user-name
+      - gam-production-backup-writer
+  register: backup_writer_probe
+  changed_when: false
+  failed_when: false
+
+- name: Create the dedicated non-console backup-writer identity
+  ansible.builtin.command:
+    argv:
+      - aws
+      - iam
+      - create-user
+      - --user-name
+      - gam-production-backup-writer
+      - --tags
+      - Key=Project,Value=GAM
+      - Key=Environment,Value=production
+      - Key=Purpose,Value=backup
+  when: backup_writer_probe.rc != 0
+
+- name: List existing attached backup-writer policies for least-privilege reconciliation
+  ansible.builtin.command:
+    argv:
+      - aws
+      - iam
+      - list-attached-user-policies
+      - --user-name
+      - gam-production-backup-writer
+  register: backup_writer_attached_policies
+  changed_when: false
+  failed_when: false
+
+- name: List existing inline backup-writer policies for least-privilege reconciliation
+  ansible.builtin.command:
+    argv:
+      - aws
+      - iam
+      - list-user-policies
+      - --user-name
+      - gam-production-backup-writer
+  register: backup_writer_inline_policies
+  changed_when: false
+  failed_when: false
+
+- name: Select all attached policies for removal from the machine writer
+  ansible.builtin.set_fact:
+    backup_writer_excess_attached_policies: >-
+      {{ ((backup_writer_attached_policies.stdout | default('{}', true) | from_json).AttachedPolicies | default([])) | list }}
+
+- name: Select inline policies other than the desired writer policy
+  ansible.builtin.set_fact:
+    backup_writer_excess_inline_policies: >-
+      {{ (((backup_writer_inline_policies.stdout | default('{}', true) | from_json).PolicyNames | default([]))
+          | reject('equalto', 'gam-production-backup-writer-policy') | list) }}
+
+- name: Detach excess policies from the machine backup-writer
+  ansible.builtin.command:
+    argv:
+      - aws
+      - iam
+      - detach-user-policy
+      - --user-name
+      - gam-production-backup-writer
+      - --policy-arn
+      - "{{ item.PolicyArn }}"
+  loop: "{{ backup_writer_excess_attached_policies }}"
+  changed_when: true
+
+- name: Delete excess inline policies from the machine backup-writer
+  ansible.builtin.command:
+    argv:
+      - aws
+      - iam
+      - delete-user-policy
+      - --user-name
+      - gam-production-backup-writer
+      - --policy-name
+      - "{{ item }}"
+  loop: "{{ backup_writer_excess_inline_policies }}"
+  changed_when: true
+
+- name: Attach only create-and-verify permissions to the backup-writer
+  ansible.builtin.command:
+    argv:
+      - aws
+      - iam
+      - put-user-policy
+      - --user-name
+      - gam-production-backup-writer
+      - --policy-name
+      - gam-production-backup-writer-policy
+      - --policy-document
+      - file:///tmp/gam-production-backup-writer-policy.json
+
+- name: Keep backup-writer access-key rotation at 90 days
+  ansible.builtin.debug:
+    msg: >-
+      Rotate the one active machine writer access key every
+      {{ backup_access_key_rotation_days }} days; the active credential is
+      materialized on the production host with root-only permissions.
+
+- name: List current machine backup-writer access keys before rotation
+  ansible.builtin.command:
+    argv:
+      - aws
+      - iam
+      - list-access-keys
+      - --user-name
+      - "{{ backup_writer_name }}"
+  register: backup_writer_access_keys
+  changed_when: false
+
+- name: Parse current machine writer key metadata
+  ansible.builtin.set_fact:
+    backup_writer_key_metadata: "{{ (backup_writer_access_keys.stdout | from_json).AccessKeyMetadata | default([]) }}"
+
+- name: Count active machine writer keys and select their oldest CreateDate
+  ansible.builtin.set_fact:
+    backup_writer_active_key_metadata: "{{ backup_writer_key_metadata | selectattr('Status', 'equalto', 'Active') | list }}"
+    backup_writer_active_key_count: "{{ backup_writer_key_metadata | selectattr('Status', 'equalto', 'Active') | list | length }}"
+    backup_writer_key_count: "{{ backup_writer_key_metadata | length }}"
+
+- name: Select oldest active machine writer CreateDate
+  ansible.builtin.set_fact:
+    backup_writer_oldest_create_date: >-
+      {{ (backup_writer_active_key_metadata | sort(attribute='CreateDate') | list | first | default({'CreateDate': ''}, true)).CreateDate | default('') }}
+
+- name: Read current UTC time for machine writer key age evaluation
+  ansible.builtin.command:
+    argv:
+      - date
+      - -u
+      - +%s
+  register: backup_writer_now
+  changed_when: false
+
+- name: Convert oldest machine writer CreateDate to epoch
+  ansible.builtin.command:
+    argv:
+      - date
+      - -u
+      - --date
+      - "{{ backup_writer_oldest_create_date }}"
+      - +%s
+  register: backup_writer_oldest_epoch
+  changed_when: false
+  when: backup_writer_active_key_count | int > 0
+
+- name: Enforce exactly one active machine writer key
+  ansible.builtin.set_fact:
+    backup_writer_rotation_required: >-
+      {{ backup_writer_active_key_count | int != 1
+         or backup_writer_key_count | int != 1
+         or (
+           backup_writer_active_key_count | int == 1
+           and (backup_writer_now.stdout | int
+                - (backup_writer_oldest_epoch.stdout | default('0') | int))
+              >= (backup_access_key_rotation_days | int * 86400)
+         ) }}
+
+- name: Select excess machine writer keys to retire before replacement
+  ansible.builtin.set_fact:
+    backup_writer_pre_rotation_retire_keys: >-
+      {{ (backup_writer_key_metadata | rejectattr('Status', 'equalto', 'Active') | list)
+         + ((backup_writer_active_key_metadata | sort(attribute='CreateDate') | list)[:-1]) }}
+  when:
+    - backup_writer_rotation_required | bool
+    - backup_writer_key_count | int >= 2
+
+- name: Retire excess machine writer keys before replacement
+  ansible.builtin.command:
+    argv:
+      - aws
+      - iam
+      - delete-access-key
+      - --user-name
+      - "{{ backup_writer_name }}"
+      - --access-key-id
+      - "{{ item.AccessKeyId }}"
+  loop: "{{ backup_writer_pre_rotation_retire_keys | default([]) }}"
+  when:
+    - backup_writer_rotation_required | bool
+    - backup_writer_key_count | int >= 2
+  changed_when: true
+  no_log: true
+
+- name: List machine writer keys ready for replacement
+  ansible.builtin.command:
+    argv:
+      - aws
+      - iam
+      - list-access-keys
+      - --user-name
+      - "{{ backup_writer_name }}"
+  register: backup_writer_access_keys_ready
+  changed_when: false
+  when: backup_writer_rotation_required | bool
+
+- name: Create a machine backup-writer access key when CreateDate age reaches backup_access_key_rotation_days
+  ansible.builtin.command:
+    argv:
+      - aws
+      - iam
+      - create-access-key
+      - --user-name
+      - "{{ backup_writer_name }}"
+  when: backup_writer_rotation_required | bool
+  register: backup_writer_access_key
+  changed_when: backup_writer_access_key.rc == 0
+  no_log: true
+
+- name: Require nonempty machine writer credentials before activation
+  ansible.builtin.assert:
+    that:
+      - active_backup_writer_access_key.AccessKey.AccessKeyId | default('') | length > 0
+      - active_backup_writer_access_key.AccessKey.SecretAccessKey | default('') | length > 0
+    fail_msg: a newly created machine writer key must have nonempty activation credentials
+  vars:
+    active_backup_writer_access_key: "{{ backup_writer_access_key.stdout | from_json }}"
+  when:
+    - backup_writer_access_key is defined
+    - backup_writer_access_key.rc == 0
+
+- name: Materialize the active machine credential on the production host
+  ansible.builtin.copy:
+    dest: "{{ backup_writer_credentials_file }}"
+    content: |
+      [default]
+      aws_access_key_id={{ active_backup_writer_access_key.AccessKey.AccessKeyId }}
+      aws_secret_access_key={{ active_backup_writer_access_key.AccessKey.SecretAccessKey }}
+    owner: root
+    group: root
+    mode: "0600"
+  vars:
+    active_backup_writer_access_key: "{{ backup_writer_access_key.stdout | from_json }}"
+  delegate_to: "{{ groups['production'][0] }}"
+  become: true
+  when:
+    - backup_writer_access_key is defined
+    - backup_writer_access_key.rc == 0
+  no_log: true
+
+- name: Retire prior machine backup-writer access keys after materialization
+  ansible.builtin.command:
+    argv:
+      - aws
+      - iam
+      - delete-access-key
+      - --user-name
+      - "{{ backup_writer_name }}"
+      - --access-key-id
+      - "{{ item.AccessKeyId }}"
+  loop: >-
+    {{ ((backup_writer_access_keys_ready.stdout
+        if backup_writer_access_keys_ready is defined
+        else backup_writer_access_keys.stdout) | from_json).AccessKeyMetadata | default([]) }}
+  when:
+    - backup_writer_access_key is defined
+    - backup_writer_access_key.rc == 0
+    - item.AccessKeyId != (backup_writer_access_key.stdout | from_json).AccessKey.AccessKeyId
+  changed_when: true
+  no_log: true
+
+- name: Apply GAM cost-allocation tags
+  ansible.builtin.command:
+    argv:
+      - aws
+      - s3api
+      - put-bucket-tagging
+      - --bucket
+      - "{{ item.bucket }}"
+      - --region
+      - "{{ aws_region }}"
+      - --tagging
+      - "TagSet=[{Key=Project,Value=GAM},{Key=Environment,Value=production},{Key=Purpose,Value=backup}]"
+  loop:
+    - bucket: "{{ backup_bucket_name }}"
+    - bucket: "{{ backup_audit_bucket_name }}"
+
+- name: Render HTTPS-only bucket policies and lifecycle policies
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/tmp/{{ item.dest }}"
+    mode: "0600"
+  loop:
+    - src: templates/backup-bucket-policy.json.j2
+      dest: gam-backup-bucket-policy.json
+    - src: templates/audit-bucket-policy.json.j2
+      dest: gam-backup-audit-bucket-policy.json
+    - src: templates/backup-lifecycle.json.j2
+      dest: gam-backup-lifecycle.json
+    - src: templates/audit-lifecycle.json.j2
+      dest: gam-backup-audit-lifecycle.json
+
+- name: Enforce HTTPS-only access on recovery bucket
+  ansible.builtin.command:
+    argv:
+      - aws
+      - s3api
+      - put-bucket-policy
+      - --bucket
+      - "{{ backup_bucket_name }}"
+      - --region
+      - "{{ aws_region }}"
+      - --policy
+      - file:///tmp/gam-backup-bucket-policy.json
+
+- name: Enforce HTTPS-only access on separate audit bucket
+  ansible.builtin.command:
+    argv:
+      - aws
+      - s3api
+      - put-bucket-policy
+      - --bucket
+      - "{{ backup_audit_bucket_name }}"
+      - --region
+      - "{{ aws_region }}"
+      - --policy
+      - file:///tmp/gam-backup-audit-bucket-policy.json
+
+- name: Apply class-specific retention lifecycle
+  ansible.builtin.command:
+    argv:
+      - aws
+      - s3api
+      - put-bucket-lifecycle-configuration
+      - --bucket
+      - "{{ item.bucket }}"
+      - --region
+      - "{{ aws_region }}"
+      - --lifecycle-configuration
+      - "file://{{ item.file }}"
+  loop:
+    - bucket: "{{ backup_bucket_name }}"
+      file: /tmp/gam-backup-lifecycle.json
+    - bucket: "{{ backup_audit_bucket_name }}"
+      file: /tmp/gam-backup-audit-lifecycle.json
+
+- name: Inspect the existing backup audit CloudTrail
+  ansible.builtin.command:
+    argv:
+      - aws
+      - cloudtrail
+      - describe-trails
+      - --trail-name-list
+      - gam-production-backup-audit
+      - --region
+      - "{{ aws_region }}"
+  register: cloudtrail_probe
+  changed_when: false
+  failed_when: false
+
+- name: Create the backup audit CloudTrail with log file integrity validation when absent
+  ansible.builtin.command:
+    argv:
+      - aws
+      - cloudtrail
+      - create-trail
+      - --name
+      - gam-production-backup-audit
+      - --s3-bucket-name
+      - "{{ backup_audit_bucket_name }}"
+      - --s3-key-prefix
+      - cloudtrail
+      - --enable-log-file-validation
+      - --include-global-service-events
+      - --no-is-multi-region-trail
+      - --region
+      - "{{ aws_region }}"
+  register: cloudtrail_create
+  changed_when: cloudtrail_create.rc == 0
+  failed_when: cloudtrail_create.rc != 0 and 'already exists' not in (cloudtrail_create.stderr | lower)
+
+- name: Reconcile the backup audit CloudTrail configuration
+  ansible.builtin.command:
+    argv:
+      - aws
+      - cloudtrail
+      - update-trail
+      - --name
+      - gam-production-backup-audit
+      - --s3-bucket-name
+      - "{{ backup_audit_bucket_name }}"
+      - --s3-key-prefix
+      - cloudtrail
+      - --enable-log-file-validation
+      - --include-global-service-events
+      - --no-is-multi-region-trail
+      - --region
+      - "{{ aws_region }}"
+  register: cloudtrail_update
+  changed_when: cloudtrail_update.rc == 0
+
+- name: Render CloudTrail selectors
+  ansible.builtin.template:
+    src: templates/cloudtrail-advanced-selectors.json.j2
+    dest: /tmp/gam-cloudtrail-advanced-selectors.json
+    mode: "0600"
+
+- name: Configure CloudTrail read and write data events without audit recursion
+  ansible.builtin.command:
+    argv:
+      - aws
+      - cloudtrail
+      - put-advanced-event-selectors
+      - --trail-name
+      - gam-production-backup-audit
+      - --advanced-event-selectors
+      - file:///tmp/gam-cloudtrail-advanced-selectors.json
+      - --region
+      - "{{ aws_region }}"
+
+- name: Start the separate backup audit trail
+  ansible.builtin.command:
+    argv:
+      - aws
+      - cloudtrail
+      - start-logging
+      - --name
+      - gam-production-backup-audit
+      - --region
+      - "{{ aws_region }}"
+
+- name: Render GAM-filtered actual-or-forecast budget
+  ansible.builtin.template:
+    src: templates/backup-budget.json.j2
+    dest: /tmp/gam-production-backup-budget.json
+    mode: "0600"
+
+- name: Inspect the existing backup cost budget
+  ansible.builtin.command:
+    argv:
+      - aws
+      - budgets
+      - describe-budget
+      - --account-id
+      - "{{ aws_account_id }}"
+      - --budget-name
+      - GAM-production-backup-cost-governance
+  register: budget_probe
+  changed_when: false
+  failed_when: false
+
+- name: Configure actual-or-forecast cost governance thresholds
+  ansible.builtin.command:
+    argv:
+      - aws
+      - budgets
+      - create-budget
+      - --account-id
+      - "{{ aws_account_id }}"
+      - --budget
+      - file:///tmp/gam-production-backup-budget.json
+  register: budget_create
+  changed_when: budget_create.rc == 0
+  failed_when: budget_create.rc != 0 and 'already exists' not in (budget_create.stderr | lower)
+
+- name: Reconcile the existing backup cost budget
+  ansible.builtin.command:
+    argv:
+      - aws
+      - budgets
+      - update-budget
+      - --account-id
+      - "{{ aws_account_id }}"
+      - --new-budget
+      - file:///tmp/gam-production-backup-budget.json
+  register: budget_update
+  changed_when: budget_update.rc == 0
+
+- name: Configure Cost Anomaly Detection at 5 USD impact
+  ansible.builtin.command:
+    argv:
+      - aws
+      - ce
+      - create-anomaly-monitor
+      - --anomaly-monitor
+      - '{"MonitorName":"GAM production backup cost anomaly","MonitorType":"DIMENSIONAL","MonitorDimension":"SERVICE"}'
+  register: anomaly_monitor
+  changed_when: anomaly_monitor.rc == 0
+  failed_when: anomaly_monitor.rc != 0 and 'already exists' not in (anomaly_monitor.stderr | lower)
+
+- name: Discover the GAM cost anomaly monitor ARN
+  ansible.builtin.command:
+    argv:
+      - aws
+      - ce
+      - get-anomaly-monitors
+      - --max-results
+      - "100"
+  register: anomaly_monitors
+  changed_when: false
+
+- name: Select the GAM cost anomaly monitor
+  ansible.builtin.set_fact:
+    cost_anomaly_monitor_arn: >-
+      {{ (anomaly_monitors.stdout | from_json).AnomalyMonitors
+         | selectattr('MonitorName', 'equalto', 'GAM production backup cost anomaly')
+         | map(attribute='MonitorArn') | first }}
+
+- name: Reconcile the existing GAM cost anomaly monitor dimensions
+  ansible.builtin.command:
+    argv:
+      - aws
+      - ce
+      - update-anomaly-monitor
+      - --monitor-arn
+      - "{{ cost_anomaly_monitor_arn }}"
+      - --anomaly-monitor
+      - '{"MonitorName":"GAM production backup cost anomaly","MonitorType":"DIMENSIONAL","MonitorDimension":"SERVICE"}'
+  when: cost_anomaly_monitor_arn | default('') | length > 0
+  register: anomaly_monitor_update
+  changed_when: anomaly_monitor_update.rc == 0
+
+- name: Render the 5 USD cost anomaly notification
+  ansible.builtin.template:
+    src: templates/anomaly-subscription.json.j2
+    dest: /tmp/gam-cost-anomaly-subscription.json
+    mode: "0600"
+
+- name: Discover the existing cost anomaly notification subscription
+  ansible.builtin.command:
+    argv:
+      - aws
+      - ce
+      - get-anomaly-subscriptions
+      - --max-results
+      - "100"
+  register: anomaly_subscriptions
+  changed_when: false
+  failed_when: false
+
+- name: Select the existing GAM cost anomaly notification subscription
+  ansible.builtin.set_fact:
+    cost_anomaly_subscription_arn: >-
+      {{ (anomaly_subscriptions.stdout | default('{}') | from_json).AnomalySubscriptions
+         | default([])
+         | selectattr('SubscriptionName', 'equalto', 'GAM production backup cost anomaly')
+         | map(attribute='SubscriptionArn') | first | default('') }}
+
+- name: Reconcile the existing cost anomaly notification configuration
+  ansible.builtin.command:
+    argv:
+      - aws
+      - ce
+      - update-anomaly-subscription
+      - --subscription-arn
+      - "{{ cost_anomaly_subscription_arn }}"
+      - --frequency
+      - DAILY
+      - --monitor-arn-list
+      - "{{ cost_anomaly_monitor_arn }}"
+      - --subscribers
+      - "Address={{ budget_notification_topic_arn }},Type=SNS"
+      - --threshold
+      - "5"
+  when: cost_anomaly_subscription_arn | length > 0
+  register: anomaly_subscription_update
+  changed_when: anomaly_subscription_update.rc == 0
+
+- name: Enable daily Cost Anomaly Detection notification at 5 USD impact
+  ansible.builtin.command:
+    argv:
+      - aws
+      - ce
+      - create-anomaly-subscription
+      - --anomaly-subscription
+      - file:///tmp/gam-cost-anomaly-subscription.json
+  register: anomaly_subscription
+  changed_when: anomaly_subscription.rc == 0
+  failed_when: anomaly_subscription.rc != 0 and 'already exists' not in (anomaly_subscription.stderr | lower)
+
+- name: Keep recovery alerts observational
+  ansible.builtin.debug:
+    msg: >-
+      Cost anomaly and budget alerts at US$5, US$10, and US$25 only notify the
+      external operator; retained recovery objects and backup uploads remain
+      governed by their Compliance policy.
