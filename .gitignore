@@ -50,9 +50,3 @@ Thumbs.db
 
 # Private data
 docs/private-data/
-
-# Production secret inputs are supplied from external recovery custody.
-/operations/ansible/.vault-password-file
-/operations/ansible/inventory/*secret*.yml
-/operations/ansible/inventory/*vault*.yml
-/operations/ansible/secrets.yml
