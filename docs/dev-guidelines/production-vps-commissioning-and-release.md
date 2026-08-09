@@ -21,7 +21,7 @@ versioned automation first.
 ## Recommended implementation order
 
 Focused planning is complete. Before implementation, validate `REQ-OPS-006`
-through `REQ-OPS-012`, `REQ-WEB-013`, and ADR-0028 as the authoritative
+through `REQ-OPS-013`, `REQ-WEB-013`, and ADR-0028 as the authoritative
 planning baseline. Return to Agent P only if implementation exposes a missing
 or contradictory contract.
 
@@ -112,9 +112,9 @@ so that worktree isolation does not turn into merge conflicts.
 - **Agent O prompt:**
 
   > Use `$gam-orchestration` for workflow `production-host-baseline`. Validate
-  > `REQ-OPS-001`, `REQ-OPS-002`, `REQ-OPS-010`, and ADR-0024, then orchestrate
-  > the complete T/D/R cycle for the Ubuntu 24.04 Ansible host baseline. Exclude
-  > package-owned Compose, deployment, backup, and AWS behavior.
+  > `REQ-OPS-001`, `REQ-OPS-002`, `REQ-OPS-010`, `REQ-OPS-013`, and ADR-0024,
+  > then orchestrate the complete T/D/R cycle for the Ubuntu 24.04 Ansible host
+  > baseline. Exclude package-owned Compose, deployment, backup, and AWS behavior.
 
 ### Wave 2: pre-artifact infrastructure integration
 
@@ -392,6 +392,10 @@ GitHub signing or authentication key.
 ssh-keygen -t ed25519 -a 100 -f ~/.ssh/gam_production -C "gam-production"
 ```
 
+Set a strong passphrase when prompted and load the key through the workstation's
+SSH agent for automation runs. Do not place the passphrase or private key in
+inventory, Ansible variables, the repository, or the VPS.
+
 Store the private key only on the developer workstation and its approved backup.
 Upload only the public key to Hostinger and the provisioned operations account.
 
@@ -492,6 +496,12 @@ the approved AWS database backups.
 7. Keep the hPanel browser terminal available until the operations account and
    host firewall have been verified, so an SSH mistake can be recovered.
 
+This root connection is the temporary bootstrap path. Do not supply the root
+password to Ansible. The permanent inventory must use `gamops`, but only after
+the bootstrap entry point creates that account and a separate connection proves
+both its SSH key and privilege escalation. If that proof fails, stop before SSH
+hardening or host-firewall activation and preserve the initial root access path.
+
 The Ansible playbook, not a sequence of undocumented manual commands, performs
 the permanent host configuration.
 
@@ -586,27 +596,63 @@ Cost alerts must notify only. They must not stop backups or delete retained data
 
 ## 8. Provision the VPS with Ansible
 
-Add the VPS IP and public hostname to the production inventory. First validate
-connectivity:
+Provision through separate bootstrap and steady-state access paths. The
+bootstrap inventory connects as `root`; the production inventory connects as
+`gamops`. Before either path runs, supply the real host and a restricted
+single-address or approved operator CIDR. Reserved documentation values such as
+`kvm2.example.invalid` or `198.51.100.0/24` must make a real run fail.
+
+From WSL, load the dedicated private key without copying it into Ansible and set
+the required non-secret connection inputs:
 
 ```bash
 cd /mnt/c/Users/Eduardo/GAM/gam-api
-ansible production -i operations/ansible/inventory/production.yml -m ping
+ssh-add ~/.ssh/gam_production
+export GAM_PRODUCTION_HOST="<VPS_IPV4>"
+export GAM_SSH_ALLOWED_CIDR="<DEVELOPER_PUBLIC_IPV4>/32"
 ```
 
-Review and apply the host playbook:
+Run the versioned bootstrap entry point. It may create only the operations-access
+foundation needed to replace root safely:
 
 ```bash
-ansible-playbook -i operations/ansible/inventory/production.yml operations/ansible/playbooks/provision-host.yml --check --diff --extra-vars "@$HOME/.config/gam/production-secrets.yml"
-ansible-playbook -i operations/ansible/inventory/production.yml operations/ansible/playbooks/provision-host.yml --extra-vars "@$HOME/.config/gam/production-secrets.yml"
+ansible-playbook -i operations/ansible/inventory/bootstrap.yml operations/ansible/playbooks/bootstrap-host.yml --extra-vars "operations_user_authorized_keys_file=$HOME/.ssh/gam_production.pub"
+```
+
+The bootstrap entry point must create the locked-password `gamops` account,
+install the supplied public key, create and validate a mode-`0440` passwordless
+sudoers policy, and stop without hardening when any required input or action
+fails. The root password must not be an Ansible input.
+
+Open a new steady-state connection and prove both authentication and privilege
+escalation:
+
+```bash
+ansible production -i operations/ansible/inventory/production.yml -m ping
+ansible production -i operations/ansible/inventory/production.yml --become -m command -a "id -u"
+```
+
+The second command must return `0`. Do not continue from the existing root SSH
+session as evidence that `gamops` works. Only after both checks succeed may the
+baseline enable the host firewall and disable root or password-based SSH access.
+
+Review and apply the host baseline through the production inventory:
+
+```bash
+ansible-playbook -i operations/ansible/inventory/production.yml operations/ansible/playbooks/production-host-baseline.yml --check --diff --extra-vars "@$HOME/.config/gam/production-secrets.yml"
+ansible-playbook -i operations/ansible/inventory/production.yml operations/ansible/playbooks/production-host-baseline.yml --extra-vars "@$HOME/.config/gam/production-secrets.yml"
 ```
 
 The playbook must configure and verify:
 
-- a non-root operations user with `sudo` and the dedicated SSH key;
+- a non-root operations user with the dedicated SSH key and validated
+  passwordless privilege escalation;
 - root SSH login disabled after the operations user is proven;
 - password SSH login disabled;
-- SSH restricted by provider and host firewall policy;
+- SSH restricted by provider and host firewall policy, with the restricted SSH
+  allow rule installed before the deny-by-default host firewall is enabled;
+- firewall inspection, configuration, and verification failing closed rather
+  than silently skipping enforcement;
 - current OS security updates and automatic security updates;
 - time synchronization and `America/Sao_Paulo` operational scheduling;
 - Docker Engine from Docker's official Ubuntu repository;
@@ -624,8 +670,13 @@ The playbook must configure and verify:
 - the metrics-only Better Stack collector for host and service monitoring; and
 - an exclusive deployment lock.
 
-Rerun the playbook. The second successful run should report no unexplained
-changes.
+Run the versioned idempotency command. It must perform a successful real apply
+followed by a successful replay of the same baseline. The replay must report
+`changed=0`; two check-only runs are not accepted as evidence.
+
+```bash
+operations/ansible/idempotency-check.sh --extra-vars "@$HOME/.config/gam/production-secrets.yml"
+```
 
 After the operations account is verified, stop using root for routine work.
 

@@ -48,16 +48,20 @@ The backend and database shall communicate through a private host or container n
 
 Administrative access such as SSH shall be a separate, restricted operational channel and shall not be represented as part of the public GAM web surface.
 
+Host-firewall automation shall establish the approved restricted SSH rule before enabling the deny-by-default incoming policy. Failure to inspect, configure, or verify the host firewall shall stop provisioning and shall not silently skip network-boundary enforcement.
+
 Rationale:
 The network boundary limits public attack surface and ensures all browser traffic passes through the accepted TLS, routing, and header policy.
 
 Valid examples:
 - The proxy reaches the backend through a private service address.
 - The database accepts connections only from the private application network and approved local administration.
+- A failed firewall-status command stops provisioning before the host is represented as protected.
 
 Invalid examples:
 - The backend's application port is reachable directly from the internet.
 - PostgreSQL is exposed publicly for deployment convenience.
+- Firewall tasks are skipped because the current firewall state could not be read.
 
 ---
 
@@ -205,6 +209,8 @@ Invalid examples:
 ### REQ-OPS-010: Recoverable deployment configuration
 Host, proxy, composition, deployment, rollback, backup, monitoring, and restoration configuration shall be versioned and reproducible through the accepted Ansible-only provisioning model.
 
+Provisioning idempotency evidence shall include one successful real apply followed by a successful replay of the same baseline that reports no unexplained changes. Two check-only executions shall not be accepted as evidence that the applied host converges idempotently.
+
 Provider-account creation, billing, root MFA, initial client MFA enrollment, recovery-key custody, and alert-subscription confirmation may remain documented manual actions.
 
 Production secrets shall use a separate recoverable secret-management process and shall not be committed, embedded in images, or included in database backups.
@@ -215,10 +221,12 @@ Database recovery alone cannot restore service when host configuration, release 
 Valid examples:
 - Ansible recreates the Caddy, backend, PostgreSQL, backup, and monitoring configuration on a replacement Ubuntu 24.04 host.
 - A recovery operator supplies secrets from approved external custody during provisioning.
+- The baseline is applied successfully and its immediate replay completes with zero unexplained changes.
 
 Invalid examples:
 - The only copy of a production secret exists on KVM 2.
 - A manual firewall or Compose change is required but absent from versioned configuration and the runbook.
+- Two check-mode executions are reported as proof that a real apply is idempotent.
 
 ---
 
@@ -266,6 +274,33 @@ Invalid examples:
 - Changing an application environment label silently exposes the host.
 - A shared Basic-authentication password is forwarded through the proxy during commissioning.
 
+---
+
+### REQ-OPS-013: Safe initial SSH bootstrap
+Initial KVM 2 access shall use a dedicated production-administration SSH key whose public key is installed through Hostinger onboarding or hPanel. The private key shall remain on the developer-controlled workstation and its approved recovery location. The initial root password shall remain outside Ansible and may be retained only in the approved password manager for provider-console recovery.
+
+Provisioning shall have a bootstrap access path that connects as `root` and a steady-state access path that connects as the dedicated `gamops` operations user. Before changing SSH access or enabling the host firewall, bootstrap automation shall require the real VPS address, at least one explicitly restricted operator CIDR, and a non-empty controller-supplied operations public-key file. Documentation or reserved-example host and network values shall not be accepted for a real provisioning run.
+
+The bootstrap path shall create `gamops` with password authentication locked, install the dedicated production-administration public key, and grant the privilege escalation required by Ansible through a separately validated mode-`0440` sudoers policy. Because the operating-system account has no usable password, routine automated privilege escalation shall not require a sudo password.
+
+Before the bootstrap path may disable root or password-based SSH authentication, restrict accepted SSH users, or enable the deny-by-default host firewall, it shall prove a new SSH connection as `gamops` and successful privilege escalation through that connection. The approved restricted SSH firewall rule shall exist before the firewall is enabled.
+
+When operations-user connection or privilege verification fails, provisioning shall stop before hardening and preserve the initial root access path for recovery through the still-open Hostinger browser terminal. After verification succeeds and hardening is applied, routine Ansible execution shall use `gamops`; root SSH and password-based SSH authentication shall remain disabled.
+
+Rationale:
+KVM 2 is provisioned without a pre-existing operations account. Separating initial root bootstrap from steady-state administration prevents automation from targeting an account that does not exist and prevents SSH or firewall hardening from making the host unreachable.
+
+Valid examples:
+- The developer installs only the dedicated public key through Hostinger, verifies the host fingerprint independently, and uses the matching local private key for the initial root bootstrap.
+- Bootstrap creates `gamops`, proves a new key-authenticated connection and passwordless privilege escalation, and only then disables root SSH and enables the restricted firewall.
+- A failed `gamops` verification leaves the original root SSH path unchanged while the developer retains the hPanel browser terminal for recovery.
+
+Invalid examples:
+- The normal inventory attempts to connect as `gamops` before bootstrap creates the account.
+- Bootstrap continues with an empty authorized-key input or a documentation-only host or CIDR placeholder.
+- Root SSH is disabled or the firewall is enabled before a new `gamops` connection and privilege escalation succeed.
+- A locked-password `gamops` account is placed only in the `sudo` group but has no usable privilege-escalation method.
+
 ## Acceptance scenarios
 
 ```gherkin
@@ -295,6 +330,25 @@ Scenario: Keep an uncommissioned host closed
   When a public address outside the operator allowlist requests GAM
   Then Caddy returns the static commissioning response with status 503
   And the request does not reach the application
+
+Scenario: Bootstrap operations access before hardening SSH
+  Given Hostinger installed the dedicated production-administration public key for initial root access
+  And the developer supplied the real VPS address, a restricted operator CIDR, and the operations public key
+  When the bootstrap automation provisions the new Ubuntu 24.04 host
+  Then a new SSH connection as gamops succeeds
+  And gamops can perform the privilege escalation required by Ansible
+  And only afterward may root SSH, password authentication, and unrestricted incoming traffic be disabled
+
+Scenario: Preserve recovery access when operations bootstrap fails
+  Given the initial root SSH path and Hostinger browser terminal are available
+  When gamops connection or privilege verification fails
+  Then provisioning stops before SSH hardening and host-firewall activation
+  And the initial root access path remains available for remediation
+
+Scenario: Prove host provisioning idempotency
+  Given the production host baseline has completed one successful real apply
+  When the same baseline is replayed immediately
+  Then the replay succeeds with no unexplained changes
 
 Scenario: Block unsafe database deployment
   Given a release contains a database migration

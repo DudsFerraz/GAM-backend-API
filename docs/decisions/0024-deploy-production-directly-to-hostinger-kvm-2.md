@@ -25,6 +25,10 @@ Run the production composition with Docker Engine and the Docker Compose plugin:
 
 Use Ansible as the only infrastructure-configuration automation for the initial deployment. The versioned Ansible content owns host hardening, operations users, Docker, firewall integration, directories, Compose and Caddy configuration, secret-file placement, resource controls, logs, backup and restore scripts, systemd timers, monitoring, deployment, rollback, and verification.
 
+Bootstrap SSH access in two phases. The developer installs a dedicated production-administration public key through Hostinger and uses the initial `root` path only to create the locked-password `gamops` account, install the same public key, and configure its validated passwordless privilege escalation. Automation must prove a new `gamops` SSH connection and privileged execution before it enables the deny-by-default host firewall or disables root and password-based SSH access. A failed verification stops before hardening and preserves the initial root path and Hostinger browser terminal for recovery. Steady-state Ansible runs use `gamops`, not root.
+
+Provisioning verification uses a successful real apply followed by a successful replay with no unexplained changes. Failure to inspect or enforce the firewall is fatal and cannot be converted into skipped configuration.
+
 Use the same Ansible approach from the developer workstation to configure GAM-specific AWS backup resources where supported. Provider-account creation, billing, root MFA, initial Hostinger console actions, client MFA enrollment, and email-subscription confirmation remain documented manual actions.
 
 Terraform is deferred. Hostinger- or AWS-specific APIs may be introduced through Ansible modules or narrowly scoped commands without creating a second infrastructure state model.
@@ -95,6 +99,26 @@ Cons:
 - Requires Docker and private-registry credentials.
 - Image cleanup, scanning, and base-image updates remain operational work.
 
+### Option 7: Harden SSH and the firewall in one initial connection
+Pros:
+- Uses one inventory identity and one provisioning phase.
+- Requires fewer explicit access-verification steps.
+
+Cons:
+- The steady-state operations account may not exist when Ansible first connects.
+- Missing keys or privilege escalation can become visible only after root access is disabled.
+- A firewall or SSH mistake can make the new production host unreachable.
+
+### Option 8: Separate root bootstrap from steady-state operations access
+Pros:
+- Proves the replacement administrative path before removing initial access.
+- Makes the transition from provider-created root access to versioned GAM operations access explicit and testable.
+- Preserves Hostinger console recovery when bootstrap verification fails.
+
+Cons:
+- Requires separate bootstrap and steady-state entry points.
+- The passwordless privileged operations key becomes security-critical and must remain protected and recoverable.
+
 ## Consequences
 
 Positive consequences:
@@ -103,6 +127,7 @@ Positive consequences:
 - Caddy, backend, PostgreSQL, and static frontend delivery share one reproducible Compose model.
 - Immutable GHCR digests identify the exact backend artifact.
 - Ansible is the single initial provisioning system.
+- SSH and firewall hardening cannot precede proof of the replacement operations path.
 - The design remains portable to a replacement VPS despite the Hostinger selection.
 
 Negative consequences:
@@ -110,6 +135,7 @@ Negative consequences:
 - Validation mistakes occur on the future production host and require careful data separation or clean re-provisioning before launch.
 - The developer owns patching, firewalling, Docker, Caddy, PostgreSQL, backups, monitoring, recovery, and capacity management.
 - Hostinger console and account operations are not fully automated.
+- Compromise of the dedicated operations private key grants passwordless privileged host access until that key is revoked.
 - Adding substantial cloud infrastructure may justify a future Terraform decision.
 
 ## Related requirements
@@ -123,6 +149,7 @@ Negative consequences:
 - `REQ-OPS-010`
 - `REQ-OPS-011`
 - `REQ-OPS-012`
+- `REQ-OPS-013`
 - `REQ-WEB-013`
 
 ## Related ADRs
