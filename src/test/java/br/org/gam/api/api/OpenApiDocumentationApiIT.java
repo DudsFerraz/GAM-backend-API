@@ -66,6 +66,7 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
                 "JORNADA_MISSIONARIA", "CURSO_DE_LIDERANCA", "PASCOA_JUVENIL", "ACAMPABOSCO");
         List<String> sacramentKeys = List.of("BATISMO", "PRIMEIRA_COMUNHAO", "CRISMA");
 
+        assertThat(responseSchema).containsEntry("additionalProperties", false);
         assertThat(properties).containsOnlyKeys("experiences", "sacraments");
         assertThat(strings(responseSchema, "required")).containsExactlyInAnyOrder("experiences", "sacraments");
         assertThat(object(experiences, "properties")).containsOnlyKeys(experienceKeys.toArray(String[]::new));
@@ -94,8 +95,10 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
         Map<String, Object> properties = object(responseSchema, "properties");
         Map<String, Object> contribution = resolveSchema(contract, object(properties, "contributionProfile"));
 
+        assertThat(responseSchema).containsEntry("additionalProperties", false);
         assertThat(properties).containsOnlyKeys("contributionProfile").doesNotContainKey("reason");
         assertThat(strings(responseSchema, "required")).containsExactly("contributionProfile");
+        assertThat(contribution).containsEntry("additionalProperties", false);
         assertThat(object(contribution, "properties"))
                 .containsOnlyKeys("contributionAreas", "otherContributionAreas")
                 .doesNotContainKey("reason");
@@ -128,19 +131,28 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
         );
         assertThat(properties).containsOnlyKeys(completeShape.toArray(String[]::new));
         assertThat(strings(schema, "required")).containsExactlyInAnyOrderElementsOf(completeShape);
+        assertThat(schema).containsEntry("additionalProperties", false);
         for (String nullable : List.of("submittedAt", "formationAndMeetingInterests", "additionalComments",
                 "oratorioActivitySuggestions", "instagramPostSuggestions")) {
-            assertThat(object(properties, nullable).toString()).as(nullable + " nullability").contains("null");
+            assertThat(object(properties, nullable).get("type"))
+                    .as(nullable + " nullability")
+                    .isEqualTo(List.of("string", "null"));
         }
         Map<String, Object> occupations = resolveSchema(contract, object(properties, "occupations"));
         Map<String, Object> health = resolveSchema(contract, object(properties, "healthCondition"));
         Map<String, Object> impediment = resolveSchema(contract, object(properties, "saturdayOratorioImpediment"));
-        assertThat(object(object(occupations, "properties"), "details").toString())
-                .as("occupations.details nullability").contains("null");
-        assertThat(object(object(health, "properties"), "details").toString())
-                .as("healthCondition.details nullability").contains("null");
-        assertThat(object(object(impediment, "properties"), "details").toString())
-                .as("saturdayOratorioImpediment.details nullability").contains("null");
+        assertThat(occupations).containsEntry("additionalProperties", false);
+        assertThat(health).containsEntry("additionalProperties", false);
+        assertThat(impediment).containsEntry("additionalProperties", false);
+        assertThat(strings(occupations, "required")).containsExactlyInAnyOrder("values", "details");
+        assertThat(strings(health, "required")).containsExactlyInAnyOrder("status", "details");
+        assertThat(strings(impediment, "required")).containsExactlyInAnyOrder("status", "details");
+        assertThat(object(object(occupations, "properties"), "details").get("type"))
+                .as("occupations.details nullability").isEqualTo(List.of("string", "null"));
+        assertThat(object(object(health, "properties"), "details").get("type"))
+                .as("healthCondition.details nullability").isEqualTo(List.of("string", "null"));
+        assertThat(object(object(impediment, "properties"), "details").get("type"))
+                .as("saturdayOratorioImpediment.details nullability").isEqualTo(List.of("string", "null"));
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> parameters = (List<Map<String, Object>>) operation.get("parameters");
         assertThat(parameters)
@@ -153,6 +165,331 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
         assertThat(object(example, "healthCondition")).containsOnlyKeys("status", "details");
         assertThat(object(example, "saturdayOratorioImpediment")).containsOnlyKeys("status", "details");
         assertThat(example.toString()).doesNotContain("experiences={}", "sacraments={}", "experiences: {}", "sacraments: {}");
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-INFO-007 - Member response -> exact required properties, nullable account, and closed nested objects")
+    void memberResponseShouldDocumentExactRequiredNullableAndClosedShape() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> schemas = object(object(contract, "components"), "schemas");
+        Map<String, Object> member = object(schemas, "MemberRDTO");
+        Map<String, Object> properties = object(member, "properties");
+        List<String> completeShape = List.of(
+                "id", "account", "firstName", "surname", "birthDate", "gamEntryDate",
+                "residentialCity", "phoneNumber", "contactEmail", "dietaryRestriction", "status"
+        );
+
+        assertThat(member).containsEntry("additionalProperties", false);
+        assertThat(properties).containsOnlyKeys(completeShape.toArray(String[]::new));
+        assertThat(strings(member, "required")).containsExactlyInAnyOrderElementsOf(completeShape);
+        assertThat(object(properties, "account").get("type"))
+                .as("Member.account nullability")
+                .isEqualTo(List.of("object", "null"));
+
+        Map<String, Object> account = resolveSchema(contract, object(properties, "account"));
+        assertThat(account).containsEntry("additionalProperties", false);
+        assertThat(object(account, "properties")).containsOnlyKeys("id", "email", "displayName");
+        assertThat(strings(account, "required")).containsExactlyInAnyOrder("id", "email", "displayName");
+
+        Map<String, Object> dietary = resolveSchema(contract, object(properties, "dietaryRestriction"));
+        assertThat(dietary).containsEntry("additionalProperties", false);
+        assertThat(object(dietary, "properties")).containsOnlyKeys("status", "details");
+        assertThat(strings(dietary, "required")).containsExactlyInAnyOrder("status", "details");
+        assertThat(object(object(dietary, "properties"), "details").get("type"))
+                .as("Member.dietaryRestriction.details nullability")
+                .isEqualTo(List.of("string", "null"));
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-INFO-004/005/006/009 - Member information requests -> exact catalogs and nullable dietary details")
+    void memberInformationRequestsShouldDocumentClosedCatalogsAndFixedContributionEnum() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> paths = object(contract, "paths");
+        Map<String, Object> experiencesRequest = requestSchema(
+                contract, object(object(paths, "/members/{memberId}/experiences"), "put"));
+        Map<String, Object> sacramentRequest = requestSchema(
+                contract, object(object(paths, "/members/{memberId}/sacraments"), "put"));
+
+        assertThat(strings(experiencesRequest, "required"))
+                .containsExactlyInAnyOrder("experiences", "reason");
+        assertThat(strings(sacramentRequest, "required"))
+                .containsExactlyInAnyOrder("sacraments", "reason");
+        assertClosedCatalog(
+                resolveSchema(contract, object(object(experiencesRequest, "properties"), "experiences")),
+                List.of("JORNADA_MISSIONARIA", "CURSO_DE_LIDERANCA", "PASCOA_JUVENIL", "ACAMPABOSCO")
+        );
+        assertClosedCatalog(
+                resolveSchema(contract, object(object(sacramentRequest, "properties"), "sacraments")),
+                List.of("BATISMO", "PRIMEIRA_COMUNHAO", "CRISMA")
+        );
+
+        Map<String, Object> contributionRequest = requestSchema(
+                contract, object(object(paths, "/members/{memberId}/contribution-profile"), "put"));
+        assertThat(strings(contributionRequest, "required"))
+                .containsExactlyInAnyOrder("contributionAreas", "otherContributionAreas", "reason");
+        Map<String, Object> contributionAreas = object(object(contributionRequest, "properties"), "contributionAreas");
+        Map<String, Object> fixedItem = resolveSchema(contract, object(contributionAreas, "items"));
+        assertThat(fixedItem.get("enum")).isEqualTo(List.of(
+                "GAME_REFEREE", "CRAFTS", "MUSIC", "PRAYER_LEADERSHIP", "BOA_TARDE_STORYTELLING",
+                "DANCE", "BALLOON_SCULPTURE", "FOOTBALL", "VOLLEYBALL", "BASKETBALL", "HANDBALL",
+                "PHOTOGRAPHY_AND_VIDEO", "PUBLIC_READING", "FACE_PAINTING", "FIRST_AID",
+                "GINCANA_LEADERSHIP", "TECHNOLOGY", "TERERE"
+        ));
+
+        Map<String, Object> dietaryRequest = requestSchema(
+                contract, object(object(paths, "/members/{memberId}/dietary-restriction"), "put"));
+        assertThat(dietaryRequest).containsEntry("additionalProperties", false);
+        assertThat(object(dietaryRequest, "properties")).containsOnlyKeys("status", "details", "reason");
+        assertThat(strings(dietaryRequest, "required"))
+                .containsExactlyInAnyOrder("status", "details", "reason");
+        assertThat(object(object(dietaryRequest, "properties"), "details").get("type"))
+                .as("dietary request details nullability")
+                .isEqualTo(List.of("string", "null"));
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-INFO-002/003/004/007 and REQ-OPENAPI-003/004 - normalized bounds and collection semantics are documented")
+    void memberInformationSchemasShouldDocumentNormalizedBoundsAndCollectionSemantics() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> schemas = object(object(contract, "components"), "schemas");
+        List<String> memberInformationSchemas = List.of(
+                "Core", "GamEntryDate", "DietaryRestriction", "Experiences", "Sacraments",
+                "ContributionProfile", "RegisterMemberDTO"
+        );
+        assertThat(schemas).containsKeys(
+                "Core", "GamEntryDate", "DietaryRestriction", "Experiences", "Sacraments",
+                "ContributionProfile", "RegisterMemberDTO", "SubmitMembershipSolicitationDTO"
+        );
+
+        assertUnicodeBoundedText(
+                object(object(object(schemas, "Core"), "properties"), "residentialCity"),
+                100, "Core.residentialCity"
+        );
+        assertUnicodeBoundedText(
+                object(object(object(schemas, "RegisterMemberDTO"), "properties"), "residentialCity"),
+                100, "RegisterMemberDTO.residentialCity"
+        );
+        assertUnicodeBoundedText(
+                object(object(object(schemas, "SubmitMembershipSolicitationDTO"), "properties"), "residentialCity"),
+                100, "SubmitMembershipSolicitationDTO.residentialCity"
+        );
+
+        for (String schemaName : memberInformationSchemas) {
+            assertNormalizedReason(
+                    object(object(object(schemas, schemaName), "properties"), "reason"),
+                    schemaName + ".reason"
+            );
+        }
+        assertTrimmedBoundedText(
+                object(object(object(schemas, "SubmitMembershipSolicitationDTO"), "properties"), "justification"),
+                "SubmitMembershipSolicitationDTO.justification"
+        );
+        assertNullableUnicodeBoundedText(
+                object(object(object(schemas, "DietaryRestriction"), "properties"), "details"),
+                2000, "DietaryRestriction.details"
+        );
+
+        Map<String, Object> contribution = object(schemas, "ContributionProfile");
+        Map<String, Object> contributionAreas = object(object(contribution, "properties"), "contributionAreas");
+        assertThat(contributionAreas)
+                .as("ContributionProfile.contributionAreas")
+                .containsEntry("type", "array")
+                .containsEntry("uniqueItems", true)
+                .containsEntry("maxItems", 18);
+
+        Map<String, Object> customAreas = object(object(contribution, "properties"), "otherContributionAreas");
+        assertThat(customAreas)
+                .as("ContributionProfile.otherContributionAreas")
+                .containsEntry("type", "array")
+                .containsEntry("uniqueItems", true)
+                .containsEntry("maxItems", 10);
+        assertUnicodeBoundedText(
+                resolveSchema(contract, object(customAreas, "items")),
+                100, "ContributionProfile.otherContributionAreas[]"
+        );
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-INFO-007/014/015 and REQ-OPENAPI-004 - response schemas -> semantic bounds and set semantics")
+    void memberInformationResponseSchemasShouldDocumentSemanticBoundsAndSetSemantics() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> schemas = object(object(contract, "components"), "schemas");
+        SoftAssertions softly = new SoftAssertions();
+
+        Map<String, Object> annual = object(schemas, "AnnualMemberInformationRDTO");
+        Map<String, Object> annualProperties = object(annual, "properties");
+        for (String field : List.of(
+                "formationAndMeetingInterests",
+                "additionalComments",
+                "oratorioActivitySuggestions",
+                "instagramPostSuggestions"
+        )) {
+            assertSoftNullableUnicodeBoundedText(
+                    softly,
+                    object(annualProperties, field),
+                    2000,
+                    "AnnualMemberInformationRDTO." + field
+            );
+        }
+
+        Map<String, Object> occupations = resolveSchema(contract, object(annualProperties, "occupations"));
+        Map<String, Object> occupationProperties = object(occupations, "properties");
+        Map<String, Object> occupationValues = object(occupationProperties, "values");
+        softly.assertThat(occupationValues)
+                .as("Occupations.values")
+                .containsEntry("type", "array")
+                .containsEntry("maxItems", 4)
+                .containsEntry("uniqueItems", true);
+        softly.assertThat(resolveSchema(contract, object(occupationValues, "items")).get("enum"))
+                .as("Occupations.values catalog")
+                .isEqualTo(List.of("WORK", "UNIVERSITY", "PREP_COURSE", "OTHER"));
+        assertSoftNullableUnicodeBoundedText(
+                softly,
+                object(occupationProperties, "details"),
+                2000,
+                "Occupations.details"
+        );
+
+        for (String field : List.of("healthCondition", "saturdayOratorioImpediment")) {
+            Map<String, Object> statusDetails = resolveSchema(contract, object(annualProperties, field));
+            assertSoftNullableUnicodeBoundedText(
+                    softly,
+                    object(object(statusDetails, "properties"), "details"),
+                    2000,
+                    "AnnualMemberInformationRDTO." + field + ".details"
+            );
+        }
+
+        Map<String, Object> memberProperties = object(object(schemas, "MemberRDTO"), "properties");
+        assertSoftUnicodeBoundedText(
+                softly,
+                object(memberProperties, "residentialCity"),
+                100,
+                "MemberRDTO.residentialCity"
+        );
+        Map<String, Object> dietary = resolveSchema(contract, object(memberProperties, "dietaryRestriction"));
+        assertSoftNullableUnicodeBoundedText(
+                softly,
+                object(object(dietary, "properties"), "details"),
+                2000,
+                "MemberRDTO.dietaryRestriction.details"
+        );
+
+        Map<String, Object> solicitationProperties = object(
+                object(schemas, "MembershipSolicitationRDTO"), "properties");
+        assertSoftUnicodeBoundedText(
+                softly,
+                object(solicitationProperties, "residentialCity"),
+                100,
+                "MembershipSolicitationRDTO.residentialCity"
+        );
+
+        Map<String, Object> requestContribution = object(schemas, "ContributionProfile");
+        Map<String, Object> requestCustomAreas = object(
+                object(requestContribution, "properties"), "otherContributionAreas");
+        softly.assertThat(requestCustomAreas)
+                .as("ContributionProfile.otherContributionAreas array")
+                .containsEntry("type", "array")
+                .containsEntry("maxItems", 10)
+                .containsEntry("uniqueItems", true);
+        softly.assertThat(resolveSchema(contract, object(requestCustomAreas, "items")))
+                .as("ContributionProfile.otherContributionAreas item")
+                .doesNotContainKeys("maxItems", "uniqueItems");
+
+        Map<String, Object> readContribution = object(schemas, "MemberContributionProfileRead");
+        Map<String, Object> readProperties = object(readContribution, "properties");
+        Map<String, Object> readFixedAreas = object(readProperties, "contributionAreas");
+        softly.assertThat(readFixedAreas)
+                .as("MemberContributionProfileRead.contributionAreas array")
+                .containsEntry("type", "array")
+                .containsEntry("maxItems", 18)
+                .containsEntry("uniqueItems", true);
+        softly.assertThat(resolveSchema(contract, object(readFixedAreas, "items")).get("enum"))
+                .as("MemberContributionProfileRead.contributionAreas catalog")
+                .isEqualTo(List.of(
+                        "GAME_REFEREE", "CRAFTS", "MUSIC", "PRAYER_LEADERSHIP", "BOA_TARDE_STORYTELLING",
+                        "DANCE", "BALLOON_SCULPTURE", "FOOTBALL", "VOLLEYBALL", "BASKETBALL", "HANDBALL",
+                        "PHOTOGRAPHY_AND_VIDEO", "PUBLIC_READING", "FACE_PAINTING", "FIRST_AID",
+                        "GINCANA_LEADERSHIP", "TECHNOLOGY", "TERERE"
+                ));
+
+        Map<String, Object> readCustomAreas = object(readProperties, "otherContributionAreas");
+        softly.assertThat(readCustomAreas)
+                .as("MemberContributionProfileRead.otherContributionAreas array")
+                .containsEntry("type", "array")
+                .containsEntry("maxItems", 10)
+                .containsEntry("uniqueItems", true);
+        Map<String, Object> readCustomItem = resolveSchema(contract, object(readCustomAreas, "items"));
+        softly.assertThat(readCustomItem)
+                .as("MemberContributionProfileRead.otherContributionAreas item")
+                .containsEntry("type", "string")
+                .containsEntry("minLength", 1)
+                .containsEntry("maxLength", 100)
+                .doesNotContainKeys("maxItems", "uniqueItems");
+
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-SOL-006 and REQ-OPENAPI-004 - solicitation response -> complete required nullable closed shape and bounded reasons")
+    void membershipSolicitationResponseShouldDocumentCompleteRequiredNullableClosedShape() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> schemas = object(object(contract, "components"), "schemas");
+        Map<String, Object> solicitation = object(schemas, "MembershipSolicitationRDTO");
+        Map<String, Object> properties = object(solicitation, "properties");
+        List<String> completeShape = List.of(
+                "id", "account", "firstName", "surname", "birthDate", "gamEntryDate",
+                "residentialCity", "phoneNumber", "contactEmail", "justification", "status",
+                "submittedAt", "reviewedBy", "decidedAt", "reviewReason", "memberId"
+        );
+        SoftAssertions softly = new SoftAssertions();
+
+        softly.assertThat(solicitation)
+                .as("MembershipSolicitationRDTO")
+                .containsEntry("type", "object")
+                .containsEntry("additionalProperties", false);
+        softly.assertThat(properties)
+                .as("MembershipSolicitationRDTO properties")
+                .containsOnlyKeys(completeShape.toArray(String[]::new));
+        softly.assertThat(strings(solicitation, "required"))
+                .as("MembershipSolicitationRDTO required properties")
+                .containsExactlyInAnyOrderElementsOf(completeShape);
+
+        softly.assertThat(object(properties, "justification"))
+                .as("MembershipSolicitationRDTO.justification")
+                .containsEntry("type", "string")
+                .containsEntry("minLength", 1)
+                .containsEntry("maxLength", 2000);
+        softly.assertThat(object(properties, "reviewReason"))
+                .as("MembershipSolicitationRDTO.reviewReason")
+                .containsEntry("type", List.of("string", "null"))
+                .containsEntry("minLength", 1)
+                .containsEntry("maxLength", 2000);
+        softly.assertThat(object(properties, "reviewedBy"))
+                .as("MembershipSolicitationRDTO.reviewedBy nullability")
+                .containsEntry("type", List.of("object", "null"));
+        softly.assertThat(object(properties, "decidedAt"))
+                .as("MembershipSolicitationRDTO.decidedAt nullability")
+                .containsEntry("type", List.of("string", "null"))
+                .containsEntry("format", "date-time");
+        softly.assertThat(object(properties, "memberId"))
+                .as("MembershipSolicitationRDTO.memberId nullability")
+                .containsEntry("type", List.of("string", "null"))
+                .containsEntry("format", "uuid");
+
+        Map<String, Object> reviewedBy = resolveSchema(contract, object(properties, "reviewedBy"));
+        softly.assertThat(reviewedBy)
+                .as("MembershipSolicitationRDTO.reviewedBy schema")
+                .containsEntry("type", "object")
+                .containsEntry("additionalProperties", false);
+        softly.assertThat(object(reviewedBy, "properties"))
+                .as("MembershipSolicitationRDTO.reviewedBy properties")
+                .containsOnlyKeys("id", "email", "displayName");
+        softly.assertThat(strings(reviewedBy, "required"))
+                .as("MembershipSolicitationRDTO.reviewedBy required properties")
+                .containsExactlyInAnyOrder("id", "email", "displayName");
+
+        softly.assertAll();
     }
 
     @Test
@@ -795,6 +1132,12 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
         return resolveSchema(contract, object(json, "schema"));
     }
 
+    private void assertClosedCatalog(Map<String, Object> schema, List<String> keys) {
+        assertThat(schema).containsEntry("type", "object").containsEntry("additionalProperties", false);
+        assertThat(object(schema, "properties")).containsOnlyKeys(keys.toArray(String[]::new));
+        assertThat(strings(schema, "required")).containsExactlyInAnyOrderElementsOf(keys);
+    }
+
     private void assertNormalizedObservationsSchema(Map<String, Object> observations) {
         assertThat(observations.get("type")).isEqualTo(List.of("string", "null"));
         assertThat(observations).doesNotContainKey("maxLength");
@@ -804,5 +1147,91 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
                 .containsIgnoringCase("code point")
                 .containsIgnoringCase("blank")
                 .containsIgnoringCase("null");
+    }
+
+    private void assertNormalizedReason(Map<String, Object> reason, String field) {
+        assertThat(reason)
+                .as(field)
+                .containsEntry("type", "string")
+                .containsEntry("minLength", 1)
+                .containsEntry("maxLength", 2000);
+        assertThat(reason.get("description")).as(field + " description").isNotNull().asString()
+                .containsIgnoringCase("Unicode White_Space")
+                .containsIgnoringCase("2,000")
+                .containsIgnoringCase("code point");
+    }
+
+    private void assertUnicodeBoundedText(Map<String, Object> schema, int maximum, String field) {
+        assertThat(schema)
+                .as(field)
+                .containsEntry("type", "string")
+                .containsEntry("minLength", 1)
+                .containsEntry("maxLength", maximum);
+        assertThat(schema.get("description")).as(field + " description").isNotNull().asString()
+                .containsIgnoringCase("Unicode White_Space")
+                .contains(String.valueOf(maximum))
+                .containsIgnoringCase("code point");
+    }
+
+    private void assertTrimmedBoundedText(Map<String, Object> schema, String field) {
+        assertThat(schema)
+                .as(field)
+                .containsEntry("type", "string")
+                .containsEntry("minLength", 1)
+                .containsEntry("maxLength", 2000);
+        assertThat(schema.get("description")).as(field + " description").isNotNull().asString()
+                .containsIgnoringCase("trim")
+                .contains("2,000")
+                .containsIgnoringCase("character");
+    }
+
+    private void assertNullableUnicodeBoundedText(Map<String, Object> schema, int maximum, String field) {
+        assertThat(schema)
+                .as(field)
+                .containsEntry("maxLength", maximum);
+        assertThat(schema.get("type"))
+                .as(field + " nullability")
+                .isEqualTo(List.of("string", "null"));
+        assertThat(schema.get("description")).as(field + " description").isNotNull().asString()
+                .containsIgnoringCase("Unicode White_Space")
+                .contains(String.valueOf(maximum))
+                .containsIgnoringCase("code point");
+    }
+
+    private void assertSoftUnicodeBoundedText(
+            SoftAssertions softly,
+            Map<String, Object> schema,
+            int maximum,
+            String field
+    ) {
+        softly.assertThat(schema)
+                .as(field)
+                .containsEntry("type", "string")
+                .containsEntry("minLength", 1)
+                .containsEntry("maxLength", maximum);
+        softly.assertThat(String.valueOf(schema.get("description")))
+                .as(field + " description")
+                .containsIgnoringCase("Unicode White_Space")
+                .contains(String.valueOf(maximum))
+                .containsIgnoringCase("code point");
+    }
+
+    private void assertSoftNullableUnicodeBoundedText(
+            SoftAssertions softly,
+            Map<String, Object> schema,
+            int maximum,
+            String field
+    ) {
+        softly.assertThat(schema)
+                .as(field)
+                .containsEntry("maxLength", maximum);
+        softly.assertThat(schema.get("type"))
+                .as(field + " nullability")
+                .isEqualTo(List.of("string", "null"));
+        softly.assertThat(String.valueOf(schema.get("description")))
+                .as(field + " description")
+                .containsIgnoringCase("Unicode White_Space")
+                .contains(String.valueOf(maximum))
+                .containsIgnoringCase("code point");
     }
 }

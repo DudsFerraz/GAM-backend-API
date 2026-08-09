@@ -11,6 +11,7 @@ import io.restassured.response.Response;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -22,6 +23,9 @@ import java.util.concurrent.Future;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -80,6 +84,62 @@ class MemberAccountLinkApiIT extends MemberApiTestSupport {
         assertThat(activity("MEMBER_ACCOUNT_LINKED").get("metadata").toString())
                 .contains(accountId.toString(), "VISITOR")
                 .doesNotContain("Synthetic Account-less", "@example.com");
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-IMPORT-016 - retained soft-deleted Member account collision -> 409 without link, role, version, or activity mutation")
+    void linkShouldRejectAccountUsedByRetainedSoftDeletedMemberWithoutMutation() {
+        AuthSession coordinator = newSession("COORD");
+        UUID memberId = insertAccountlessMember("ACTIVE");
+        UUID accountId = newAccount("Synthetic soft-deleted account collision target");
+        insertSoftDeletedMemberForAccount(accountId);
+        long versionBefore = memberVersion(memberId);
+        Set<String> rolesBefore = Set.copyOf(activeRoleNames(accountId));
+        clearActivities();
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(coordinator)
+                .body(Map.of("accountId", accountId.toString(), "reason", "Synthetic account collision review"))
+                .patch("/members/{memberId}/account/link", memberId).then().extract();
+
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(409);
+        assertThat(linkedAccount(memberId)).isNull();
+        assertThat(memberVersion(memberId)).isEqualTo(versionBefore);
+        assertThat(activeRoleNames(accountId)).containsExactlyInAnyOrderElementsOf(rolesBefore);
+        assertThat(activityCount("MEMBER_ACCOUNT_LINKED")).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM members WHERE account_id = ? AND deleted_at IS NOT NULL",
+                Long.class, accountId)).isEqualTo(1L);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidLinkReasons")
+    @DisplayName("REQ-MEMBER-IMPORT-016 and REQ-API-ERROR-002/003/004 - invalid account-link reason -> structured validation without mutation")
+    void invalidAccountLinkReasonShouldReturnValidationError(
+            String label,
+            String reason,
+            String expectedViolationCode
+    ) {
+        AuthSession coordinator = newSession("COORD");
+        UUID memberId = insertAccountlessMember("ACTIVE");
+        UUID accountId = newAccount("Synthetic invalid link reason target");
+        long versionBefore = memberVersion(memberId);
+        Set<String> rolesBefore = Set.copyOf(activeRoleNames(accountId));
+        clearActivities();
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("accountId", accountId.toString());
+        body.put("reason", reason);
+        ExtractableResponse<Response> response = authenticatedJsonRequest(coordinator)
+                .body(body)
+                .patch("/members/{memberId}/account/link", memberId)
+                .then()
+                .extract();
+
+        assertStructuredValidationError(response, "/reason", expectedViolationCode);
+        assertThat(linkedAccount(memberId)).isNull();
+        assertThat(memberVersion(memberId)).isEqualTo(versionBefore);
+        assertThat(activeRoleNames(accountId)).containsExactlyInAnyOrderElementsOf(rolesBefore);
+        assertThat(activityCount("MEMBER_ACCOUNT_LINKED")).isZero();
     }
 
     @Test
@@ -205,6 +265,20 @@ class MemberAccountLinkApiIT extends MemberApiTestSupport {
         return memberId;
     }
 
+    private UUID insertSoftDeletedMemberForAccount(UUID accountId) {
+        UUID memberId = UUIDGenerator.generateUUIDV7();
+        importedMembers.add(memberId);
+        Timestamp now = Timestamp.from(Instant.now());
+        jdbcTemplate.update("INSERT INTO members (id, account_id, first_name, surname, birth_date, gam_entry_date, "
+                        + "residential_city, phone_number, contact_email, dietary_restriction_status, status, "
+                        + "version, created_at, updated_at, deleted_at) VALUES (?, ?, 'Synthetic', 'Retained', "
+                        + "DATE '2000-01-01', DATE '2020-01-01', 'Synthetic City', '+5519998877665', ?, "
+                        + "CAST('NOT_INFORMED' AS member_information_status_enum), CAST('ACTIVE' AS member_status_enum), "
+                        + "0, ?, ?, ?)",
+                memberId, accountId, "soft-deleted-account-" + memberId + "@example.com", now, now, now);
+        return memberId;
+    }
+
     private UUID insertCustomRole(String name) {
         UUID roleId = UUIDGenerator.generateUUIDV7();
         customRoles.add(roleId);
@@ -217,6 +291,20 @@ class MemberAccountLinkApiIT extends MemberApiTestSupport {
     private void assignRole(UUID accountId, UUID roleId) {
         jdbcTemplate.update("INSERT INTO account_roles (id, account_id, role_id, created_at) VALUES (?, ?, ?, ?)",
                 UUIDGenerator.generateUUIDV7(), accountId, roleId, Timestamp.from(Instant.now()));
+    }
+
+    private static java.util.stream.Stream<Arguments> invalidLinkReasons() {
+        return java.util.stream.Stream.of(
+                Arguments.of("EP - null", null, "REQUIRED"),
+                Arguments.of("EP - empty", "", "NOT_BLANK"),
+                Arguments.of("EP - Unicode whitespace only", "\u00A0\u2003\u3000", "NOT_BLANK"),
+                Arguments.of("EP - NEXT LINE Unicode whitespace only", "\u0085", "NOT_BLANK"),
+                Arguments.of(
+                        "BVA - normalized reason over 2,000 code points",
+                        "\u00A0" + "r".repeat(2_001) + "\u3000",
+                        "SIZE"
+                )
+        );
     }
 
     private UUID linkedAccount(UUID memberId) {

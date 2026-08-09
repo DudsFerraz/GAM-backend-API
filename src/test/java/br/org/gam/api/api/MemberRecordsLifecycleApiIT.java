@@ -164,6 +164,50 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
     }
 
     @Test
+    @DisplayName("REQ-MEMBER-INFO-002/004 - direct registration city -> Unicode-only blank and 100-code-point bounds")
+    void directRegistrationCityShouldUseNotBlankAndCodePointBounds() {
+        AuthSession coordinator = newSession("COORD");
+
+        UUID blankAccount = newAccount("Synthetic blank registration city target");
+        Map<String, Object> blankPayload = new java.util.HashMap<>(
+                memberPayload(blankAccount, LocalDate.now().minusYears(20), VALID_REASON));
+        blankPayload.put("residentialCity", "\u0085");
+        ExtractableResponse<Response> blankResponse = authenticatedJsonRequest(coordinator)
+                .body(blankPayload).post("/members").then().extract();
+        assertThat(blankResponse.statusCode()).as(blankResponse.asString()).isEqualTo(400);
+        assertThat(blankResponse.<String>path("code")).isEqualTo("VALIDATION_ERROR");
+        assertThat(blankResponse.<List<Map<String, Object>>>path("details.violations"))
+                .singleElement()
+                .satisfies(violation -> assertThat(violation)
+                        .containsEntry("field", "/residentialCity")
+                        .containsEntry("code", "NOT_BLANK"));
+        assertThat(memberCount(blankAccount)).isZero();
+
+        UUID validAccount = newAccount("Synthetic 100-point registration city target");
+        Map<String, Object> validPayload = new java.util.HashMap<>(
+                memberPayload(validAccount, LocalDate.now().minusYears(20), VALID_REASON));
+        validPayload.put("residentialCity", "A".repeat(100));
+        authenticatedJsonRequest(coordinator).body(validPayload).post("/members")
+                .then().statusCode(201).body("residentialCity", equalTo("A".repeat(100)));
+
+        UUID overflowAccount = newAccount("Synthetic overflow registration city target");
+        Map<String, Object> overflowPayload = new java.util.HashMap<>(validPayload);
+        overflowPayload.put("accountId", overflowAccount.toString());
+        overflowPayload.put("contactEmail", "overflow-city-" + overflowAccount + "@example.com");
+        overflowPayload.put("residentialCity", "A".repeat(101));
+        ExtractableResponse<Response> overflowResponse = authenticatedJsonRequest(coordinator)
+                .body(overflowPayload).post("/members").then().extract();
+        assertThat(overflowResponse.statusCode()).as(overflowResponse.asString()).isEqualTo(400);
+        assertThat(overflowResponse.<String>path("code")).isEqualTo("VALIDATION_ERROR");
+        assertThat(overflowResponse.<List<Map<String, Object>>>path("details.violations"))
+                .singleElement()
+                .satisfies(violation -> assertThat(violation)
+                        .containsEntry("field", "/residentialCity")
+                        .containsEntry("code", "SIZE"));
+        assertThat(memberCount(overflowAccount)).isZero();
+    }
+
+    @Test
     @DisplayName("REQ-MEMBER-005 and REQ-MEMBER-012 - audit persistence failure -> Member and lifecycle-role writes roll back")
     void failedRegistrationAuditShouldRollBackMemberAndRoleProjection() {
         AuthSession coordinator = newSession("COORD");
@@ -262,6 +306,7 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
                     assertThat(violation.get("message")).isInstanceOf(String.class);
                     assertThat(String.valueOf(violation.get("message"))).isNotBlank();
                 });
+        assertThat(response.asString()).doesNotContain("IllegalArgumentException", "INVALID_REQUEST");
 
         assertThat(memberCount(targetId)).isZero();
         assertThat(allLifecycleActivityCount()).isZero();
@@ -491,7 +536,8 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
             String initialStatus,
             String initialRole,
             String route,
-            String reason
+            String reason,
+            String expectedViolationCode
     ) {
         AuthSession coordinator = newSession("COORD");
         UUID targetId = newAccount("Invalid lifecycle reason target");
@@ -499,12 +545,13 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
         forceMemberState(memberId, targetId, initialStatus, initialRole);
         clearActivities();
 
-        authenticatedJsonRequest(coordinator)
+        ExtractableResponse<Response> response = authenticatedJsonRequest(coordinator)
                 .body(reasonPayload(reason))
                 .patch(route, memberId)
                 .then()
-                .statusCode(400)
-                .body("status", equalTo(400));
+                .extract();
+
+        assertStructuredValidationError(response, "/reason", expectedViolationCode);
 
         assertThat(memberStatus(memberId)).isEqualTo(initialStatus);
         assertThat(activeRoleNames(targetId)).contains(initialRole);
@@ -863,7 +910,12 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
     private static Stream<Arguments> acceptedReasonBoundaries() {
         return Stream.of(
                 Arguments.of("BVA - one character", "  x  ", "x"),
-                Arguments.of("BVA - 2,000 characters", "  " + "r".repeat(2_000) + "  ", "r".repeat(2_000))
+                Arguments.of("BVA - 2,000 characters", "  " + "r".repeat(2_000) + "  ", "r".repeat(2_000)),
+                Arguments.of(
+                        "BVA - 2,000 code points surrounded by Unicode whitespace",
+                        "\u00A0" + "\ud83c\udf06".repeat(2_000) + "\u3000",
+                        "\ud83c\udf06".repeat(2_000)
+                )
         );
     }
 
@@ -924,6 +976,13 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
                 Arguments.of("EP - null", null, "REQUIRED"),
                 Arguments.of("EP - empty", "", "NOT_BLANK"),
                 Arguments.of("EP - whitespace", " \n\t ", "NOT_BLANK"),
+                Arguments.of("EP - Unicode whitespace only", "\u00A0\u2003\u3000", "NOT_BLANK"),
+                Arguments.of("EP - NEXT LINE Unicode whitespace only", "\u0085", "NOT_BLANK"),
+                Arguments.of(
+                        "BVA - normalized reason over 2,000 code points",
+                        "\u00A0" + "r".repeat(2_001) + "\u3000",
+                        "SIZE"
+                ),
                 Arguments.of("BVA - 2,001 characters", "r".repeat(2_001), "SIZE")
         );
     }
@@ -945,7 +1004,8 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
                     "ACTIVE",
                     "MEMBER",
                     "/members/{id}/deactivate",
-                    values[1]
+                    values[1],
+                    values[2]
             ));
             arguments.add(Arguments.of(
                     "activate",
@@ -953,7 +1013,8 @@ class MemberRecordsLifecycleApiIT extends MemberApiTestSupport {
                     "INACTIVE",
                     "VISITOR",
                     "/members/{id}/activate",
-                    values[1]
+                    values[1],
+                    values[2]
             ));
         }
         return arguments.stream();

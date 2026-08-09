@@ -1,5 +1,6 @@
 package br.org.gam.api.api;
 
+import br.org.gam.api.shared.activitylog.ActivityAction;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
 import br.org.gam.api.testing.annotation.ApiTest;
 import br.org.gam.api.testing.annotation.FunctionalTest;
@@ -10,6 +11,7 @@ import io.restassured.response.Response;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -202,6 +204,129 @@ class MemberInformationApiIT extends MemberApiTestSupport {
                 .body(Map.of("status", "YES", "details", "", "reason", "Synthetic validation"))
                 .put("/members/{id}/dietary-restriction", memberId).then().extract();
         assertValidationViolation(invalidDietary, "/details", "RELATION", "Dietary restriction details");
+
+        ExtractableResponse<Response> unicodeBlankDietary = authenticatedJsonRequest(coordinator)
+                .header("If-Match", etag)
+                .body(Map.of("status", "YES", "details", "\u0085", "reason", "Synthetic validation"))
+                .put("/members/{id}/dietary-restriction", memberId).then().extract();
+        assertValidationViolation(unicodeBlankDietary, "/details", "RELATION", "Dietary restriction details");
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-INFO-004/016 and REQ-API-ERROR-002/003 - invalid update reasons -> structured /reason violations")
+    void invalidMemberInformationReasonsShouldUseStructuredValidationErrors() {
+        AuthSession coordinator = newSession("COORD");
+        UUID accountId = newAccount("Synthetic invalid update reason target");
+        UUID memberId = registerMember(coordinator, accountId);
+        String etag = authenticatedJsonRequest(coordinator).get("/members/{id}", memberId)
+                .then().statusCode(200).extract().header("ETag");
+
+        List<Map.Entry<String, String>> invalidReasons = List.of(
+                Map.entry("Unicode White_Space only", "\u0085"),
+                Map.entry("normalized over-limit", "\u00A0" + "r".repeat(2_001) + "\u3000")
+        );
+        for (Map.Entry<String, String> invalidReason : invalidReasons) {
+            ExtractableResponse<Response> response = authenticatedJsonRequest(coordinator)
+                    .header("If-Match", etag)
+                    .body(Map.of(
+                            "firstName", "Ana", "surname", "Silva", "birthDate", "2000-01-01",
+                            "residentialCity", "Synthetic City", "phoneNumber", CANONICAL_PHONE,
+                            "contactEmail", "invalid-update-reason@example.com",
+                            "reason", invalidReason.getValue()
+                    ))
+                    .put("/members/{id}", memberId).then().extract();
+            assertValidationViolation(response, "/reason",
+                    invalidReason.getKey().equals("Unicode White_Space only") ? "NOT_BLANK" : "SIZE",
+                    "INVALID_REQUEST");
+        }
+
+        assertThat(authenticatedJsonRequest(coordinator).get("/members/{id}", memberId)
+                .then().statusCode(200).extract().header("ETag")).isEqualTo(etag);
+        assertThat(activityCount(ActivityAction.MEMBER_PROFILE_UPDATED.name())).isZero();
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-INFO-004/016 - contribution collection failures use allowed public violation codes")
+    void contributionCollectionFailuresShouldUseAllowedViolationCodesWithoutMutation() {
+        AuthSession coordinator = newSession("COORD");
+        UUID accountId = newAccount("Synthetic contribution validation target");
+        UUID memberId = registerMember(coordinator, accountId);
+        String etag = authenticatedJsonRequest(coordinator).get("/members/{id}", memberId)
+                .then().statusCode(200).extract().header("ETag");
+        clearActivities();
+
+        String updatedEtag = authenticatedJsonRequest(coordinator)
+                .header("If-Match", etag)
+                .body(contributionPayload(List.of(), List.of("Football")))
+                .put("/members/{id}/contribution-profile", memberId)
+                .then().statusCode(204).extract().header("ETag");
+        assertThat(updatedEtag).isNotBlank().isNotEqualTo(etag);
+        assertThat(authenticatedJsonRequest(coordinator)
+                .get("/members/{id}/contribution-profile", memberId)
+                .then().statusCode(200).extract()
+                .<List<String>>path("contributionProfile.otherContributionAreas"))
+                .containsExactly("Football");
+        assertThat(activityCount("MEMBER_CONTRIBUTION_PROFILE_UPDATED")).isEqualTo(1);
+
+        List<Map<String, Object>> invalidPayloads = new ArrayList<>();
+        invalidPayloads.add(contributionPayload(List.of("FOOTBALL", "FOOTBALL"), List.of()));
+        invalidPayloads.add(contributionPayload(null, List.of()));
+        invalidPayloads.add(contributionPayload(List.of("FOOTBALL"), null));
+        invalidPayloads.add(contributionPayload(List.of("NOT_A_MEMBER_CONTRIBUTION"), List.of()));
+        invalidPayloads.add(contributionPayload(List.of(), List.of("Synthetic", "\u0085Synthetic\u0085")));
+        invalidPayloads.add(contributionPayload(List.of(), List.of("Basketball")));
+
+        for (Map<String, Object> payload : invalidPayloads) {
+            ExtractableResponse<Response> response = authenticatedJsonRequest(coordinator)
+                    .header("If-Match", updatedEtag)
+                    .body(payload)
+                    .put("/members/{id}/contribution-profile", memberId).then().extract();
+            assertThat(response.statusCode()).as(response.asString()).isEqualTo(400);
+            assertThat(response.<String>path("code")).isEqualTo("VALIDATION_ERROR");
+            Map<String, Object> violation = response.path("details.violations[0]");
+            assertThat(violation.get("field")).isIn("/contributionAreas", "/otherContributionAreas");
+            assertThat(violation.get("code")).isIn("RELATION", "SIZE", "ALLOWED_VALUE");
+            assertThat(response.asString()).doesNotContain("DUPLICATE", "INVALID_REQUEST",
+                    "IllegalArgumentException", "MemberEntity");
+        }
+
+        assertThat(authenticatedJsonRequest(coordinator).get("/members/{id}", memberId)
+                .then().statusCode(200).extract().header("ETag")).isEqualTo(updatedEtag);
+        assertThat(activityCount("MEMBER_CONTRIBUTION_PROFILE_UPDATED")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-INFO-002/004 - direct Member city blank and code-point bounds use distinct violations")
+    void directMemberCityShouldRejectUnicodeBlankAndPreserveCodePointBounds() {
+        AuthSession coordinator = newSession("COORD");
+        UUID accountId = newAccount("Synthetic city boundary target");
+        UUID memberId = registerMember(coordinator, accountId);
+        String etag = authenticatedJsonRequest(coordinator).get("/members/{id}", memberId)
+                .then().statusCode(200).extract().header("ETag");
+
+        Map<String, Object> blankCity = new HashMap<>(Map.of(
+                "firstName", "Ana", "surname", "Silva", "birthDate", "2000-01-01",
+                "residentialCity", "\u0085", "phoneNumber", CANONICAL_PHONE,
+                "contactEmail", "city-blank@example.com", "reason", "Synthetic city validation"));
+        ExtractableResponse<Response> blankResponse = authenticatedJsonRequest(coordinator)
+                .header("If-Match", etag).body(blankCity).put("/members/{id}", memberId).then().extract();
+        assertValidationViolation(blankResponse, "/residentialCity", "NOT_BLANK", "\u0085");
+
+        Map<String, Object> validBoundary = new HashMap<>(blankCity);
+        validBoundary.put("residentialCity", "A".repeat(100));
+        String boundaryEtag = authenticatedJsonRequest(coordinator)
+                .header("If-Match", etag).body(validBoundary)
+                .put("/members/{id}", memberId).then().statusCode(204).extract().header("ETag");
+        assertThat(authenticatedJsonRequest(coordinator).get("/members/{id}", memberId)
+                .then().statusCode(200).extract().<String>path("residentialCity"))
+                .isEqualTo("A".repeat(100));
+
+        Map<String, Object> overflow = new HashMap<>(validBoundary);
+        overflow.put("residentialCity", "A".repeat(101));
+        ExtractableResponse<Response> overflowResponse = authenticatedJsonRequest(coordinator)
+                .header("If-Match", boundaryEtag).body(overflow)
+                .put("/members/{id}", memberId).then().extract();
+        assertValidationViolation(overflowResponse, "/residentialCity", "SIZE", "A".repeat(101));
     }
 
     @Test
@@ -217,7 +342,7 @@ class MemberInformationApiIT extends MemberApiTestSupport {
                 .header("If-Match", etag)
                 .body(Map.of(
                         "firstName", "Ana", "surname", "Silva", "birthDate", "2000-01-01",
-                        "residentialCity", "\u00a0Synthetic\u2003City\u00a0", "phoneNumber", CANONICAL_PHONE,
+                        "residentialCity", "\u0085\u00a0Synthetic\u2003\u0085City\u00a0\u0085", "phoneNumber", CANONICAL_PHONE,
                         "contactEmail", "unicode@example.com", "reason", "Synthetic Unicode review"
                 ))
                 .put("/members/{id}", memberId).then().statusCode(204).extract();
@@ -229,7 +354,7 @@ class MemberInformationApiIT extends MemberApiTestSupport {
                 .header("If-Match", etag)
                 .body(Map.of(
                         "contributionAreas", List.of("FOOTBALL"),
-                        "otherContributionAreas", List.of("\u00a0Synthetic\u2003Cooking\u00a0"),
+                        "otherContributionAreas", List.of("\u0085\u00a0Synthetic\u2003\u0085Cooking\u00a0\u0085"),
                         "reason", "Synthetic Unicode review"
                 ))
                 .put("/members/{id}/contribution-profile", memberId).then().statusCode(204).extract();
@@ -240,7 +365,7 @@ class MemberInformationApiIT extends MemberApiTestSupport {
 
         authenticatedJsonRequest(coordinator)
                 .header("If-Match", etag)
-                .body(Map.of("status", "YES", "details", "\u00a0Lactose\u00a0", "reason", "Synthetic Unicode review"))
+                .body(Map.of("status", "YES", "details", "\u0085\u00a0Lactose\u00a0\u0085", "reason", "Synthetic Unicode review"))
                 .put("/members/{id}/dietary-restriction", memberId).then().statusCode(204);
         assertThat(authenticatedJsonRequest(coordinator).get("/members/{id}", memberId)
                 .then().statusCode(200).extract().<String>path("dietaryRestriction.details")).isEqualTo("Lactose");
@@ -265,6 +390,32 @@ class MemberInformationApiIT extends MemberApiTestSupport {
         assertValidationViolation(response, "/residentialCity", "SIZE", "A".repeat(20));
     }
 
+    @Test
+    @DisplayName("REQ-MEMBER-INFO-002/003 and REQ-API-ERROR-002/003 - solicitation city -> Unicode-only blank is a structured validation error")
+    void solicitationCityShouldRejectUnicodeOnlyBlankWithoutPersistence() {
+        AuthSession applicant = newSession("VISITOR");
+        Map<String, Object> payload = new HashMap<>(
+                solicitationPayload(LocalDate.now().minusYears(20), VALID_JUSTIFICATION));
+        payload.put("residentialCity", "\u00A0\u2003\u3000");
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(applicant)
+                .body(payload).post("/membership-solicitations").then().extract();
+
+        assertValidationViolation(response, "/residentialCity", "NOT_BLANK", "\u00A0");
+        assertThat(solicitationCount(applicant.accountId())).isZero();
+
+        AuthSession nextApplicant = newSession("VISITOR");
+        Map<String, Object> nextPayload = new HashMap<>(
+                solicitationPayload(LocalDate.now().minusYears(20), VALID_JUSTIFICATION));
+        nextPayload.put("residentialCity", "\u0085");
+
+        ExtractableResponse<Response> nextResponse = authenticatedJsonRequest(nextApplicant)
+                .body(nextPayload).post("/membership-solicitations").then().extract();
+
+        assertValidationViolation(nextResponse, "/residentialCity", "NOT_BLANK", "\u0085");
+        assertThat(solicitationCount(nextApplicant.accountId())).isZero();
+    }
+
     private static void assertValidationViolation(
             ExtractableResponse<Response> response,
             String field,
@@ -280,6 +431,14 @@ class MemberInformationApiIT extends MemberApiTestSupport {
                 .containsEntry("field", field)
                 .containsEntry("code", code));
         assertThat(response.asString()).doesNotContain(forbiddenText, "IllegalArgumentException", "MemberEntity");
+    }
+
+    private static Map<String, Object> contributionPayload(Object contributionAreas, Object otherContributionAreas) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("contributionAreas", contributionAreas);
+        payload.put("otherContributionAreas", otherContributionAreas);
+        payload.put("reason", "Synthetic contribution validation");
+        return payload;
     }
 
     private UUID insertSyntheticAnnualResponse(UUID memberId) {

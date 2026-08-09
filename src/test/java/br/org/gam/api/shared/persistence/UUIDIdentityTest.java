@@ -60,7 +60,10 @@ class UUIDIdentityTest {
                     Instant.parse("2030-01-05T17:00:00Z"),
                     EventType.ORATORIO
             );
-            Member member = Member.register(account, name(), LocalDate.of(1990, 1, 1), phoneNumber());
+            Member member = Member.register(
+                    account, name(), LocalDate.of(1990, 1, 1), phoneNumber(),
+                    LocalDate.of(2020, 1, 1), "Synthetic City", GamEmail.of("member.contact@example.com")
+            );
             Oratoriano oratoriano = Oratoriano.register(name(), LocalDate.of(2015, 1, 1), phoneNumber());
 
             assertThat(account.getId()).isNotNull().extracting(UUID::version).isEqualTo(7);

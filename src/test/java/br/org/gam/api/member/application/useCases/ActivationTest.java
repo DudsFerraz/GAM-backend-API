@@ -328,7 +328,10 @@ class ActivationTest {
                 account,
                 new GamName("Ana", "Silva"),
                 LocalDate.now().minusYears(20),
-                GamPhoneNumber.fromString("+5519998877665")
+                GamPhoneNumber.fromString("+5519998877665"),
+                LocalDate.of(2020, 1, 1),
+                "Synthetic City",
+                GamEmail.of("member.contact@example.com")
         );
     }
 

@@ -8,6 +8,7 @@ import br.org.gam.api.member.persistence.MemberInformationImportBatchRepository;
 import br.org.gam.api.member.persistence.MemberRepository;
 import br.org.gam.api.shared.activitylog.ActivityAction;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
+import br.org.gam.api.shared.activitylog.DeveloperActorReference;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -48,6 +49,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.isNull;
@@ -118,6 +120,358 @@ class MemberInformationImportJobTest {
                 .hasMessageContaining(expectedDiagnostic);
 
         verifyNoInteractions(batches, activities);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("missingSourceReferenceCases")
+    @DisplayName("REQ-MEMBER-IMPORT-010 - omitted or null sourceReference -> valid record remains importable")
+    void omittedOrNullSourceReferenceShouldNotRejectOtherwiseValidRecord(
+            String scenario,
+            Consumer<ObjectNode> mutation,
+            @TempDir Path directory
+    ) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode document = syntheticApprovedDocument(mapper, 74);
+        mutation.accept(document);
+        ((ObjectNode) document.path("batch")).put("datasetChecksum", checksum(mapper, document));
+        Path input = directory.resolve("synthetic-source-reference-" + scenario + ".json");
+        Files.writeString(input, mapper.writeValueAsString(document));
+        when(context.getBeansOfType(ExitCodeGenerator.class)).thenReturn(Map.of());
+
+        new MemberInformationImportJob(mapper, batches, members, responses, activities, context)
+                .run(new DefaultApplicationArguments(
+                        "--maintenance.action=validate",
+                        "--maintenance.file=" + input
+                ));
+
+        verify(batches, never()).save(any());
+        verify(members, never()).save(any());
+        verify(members, never()).flush();
+        verify(responses, never()).save(any());
+        verify(responses, never()).flush();
+        verifyNoInteractions(activities);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("missingSourceReferenceCases")
+    @DisplayName("REQ-MEMBER-IMPORT-012 - omitted or null sourceReference -> later invalid record diagnostic uses record index only")
+    void omittedOrNullSourceReferenceShouldFallBackToRecordIndexOnlyDiagnostic(
+            String scenario,
+            Consumer<ObjectNode> mutation,
+            @TempDir Path directory
+    ) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode document = syntheticApprovedDocument(mapper, 74);
+        mutation.accept(document);
+        ((ObjectNode) document.path("records").path(0).path("member"))
+                .putArray("contributionAreas")
+                .add("UNSUPPORTED_SYNTHETIC_CONTRIBUTION");
+        ((ObjectNode) document.path("batch")).put("datasetChecksum", checksum(mapper, document));
+        Path input = directory.resolve("synthetic-source-reference-invalid-" + scenario + ".json");
+        Files.writeString(input, mapper.writeValueAsString(document));
+
+        assertThatThrownBy(() -> new MemberInformationImportJob(
+                mapper, batches, members, responses, activities, context)
+                .run(new DefaultApplicationArguments(
+                        "--maintenance.action=validate",
+                        "--maintenance.file=" + input
+                )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("member-info-import")
+                .hasMessageContaining("recordIndex=0")
+                .hasMessageContaining("field=member.contributionAreas")
+                .satisfies(failure -> assertThat(failure.getMessage())
+                        .doesNotContain(input.toString(), input.getFileName().toString(),
+                                "sourceReference", "CSV_ROW_1", "Ana", "Silva",
+                                "ana.fixture@example.com"));
+
+        verify(batches, never()).save(any());
+        verify(members, never()).save(any());
+        verify(members, never()).flush();
+        verify(responses, never()).save(any());
+        verify(responses, never()).flush();
+        verifyNoInteractions(activities);
+    }
+
+    @ParameterizedTest(name = "{0} surveyCycle/{1}")
+    @MethodSource("invalidSurveyCycleJsonNodeCases")
+    @DisplayName("REQ-MEMBER-IMPORT-008/012 - surveyCycle rejects every non-integral JSON node without writes")
+    void surveyCycleShouldRejectNonIntegralJsonNodesWithoutCoercion(
+            String location,
+            String nodeType,
+            @TempDir Path directory
+    ) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode document = syntheticApprovedDocument(mapper, 74);
+        ObjectNode cycleParent;
+        String diagnosticField;
+        int diagnosticIndex;
+        if ("batch".equals(location)) {
+            cycleParent = (ObjectNode) document.path("batch");
+            diagnosticField = "batch.surveyCycle";
+            diagnosticIndex = -1;
+        } else {
+            cycleParent = (ObjectNode) document.path("records").path(0).path("annualResponse");
+            diagnosticField = "annualResponse.surveyCycle";
+            diagnosticIndex = 0;
+        }
+        putSurveyCycleNode(cycleParent, nodeType);
+        ((ObjectNode) document.path("batch")).put("datasetChecksum", checksum(mapper, document));
+        Path input = directory.resolve("synthetic-invalid-cycle-" + location + "-" + nodeType + ".json");
+        Files.writeString(input, mapper.writeValueAsString(document));
+
+        assertThatThrownBy(() -> new MemberInformationImportJob(
+                mapper, batches, members, responses, activities, context)
+                .run(new DefaultApplicationArguments(
+                        "--maintenance.action=validate", "--maintenance.file=" + input
+                )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("member-info-import INVALID_SURVEY_CYCLE")
+                .hasMessageContaining("recordIndex=" + diagnosticIndex)
+                .hasMessageContaining("field=" + diagnosticField)
+                .satisfies(failure -> assertThat(failure.getMessage())
+                        .doesNotContain(input.toString(), input.getFileName().toString())
+                        .doesNotContain("Ana", "Silva", "Synthetic City",
+                                "ana.fixture@example.com", "+5519998877665"));
+
+        verify(batches, never()).save(any());
+        verify(members, never()).save(any());
+        verify(members, never()).flush();
+        verify(responses, never()).save(any());
+        verify(responses, never()).flush();
+        verifyNoInteractions(activities);
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-IMPORT-008/012 - integral JSON surveyCycle -> accepted for batch and annual response")
+    void integralSurveyCycleNumberShouldBeAcceptedForBatchAndAnnualResponse(@TempDir Path directory) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode document = syntheticApprovedDocument(mapper, 74);
+        ((ObjectNode) document.path("batch")).put("surveyCycle", 2026);
+        document.path("records").forEach(record ->
+                ((ObjectNode) record.path("annualResponse")).put("surveyCycle", 2026));
+        ((ObjectNode) document.path("batch")).put("datasetChecksum", checksum(mapper, document));
+        Path input = directory.resolve("synthetic-integral-cycle.json");
+        Files.writeString(input, mapper.writeValueAsString(document));
+        when(context.getBeansOfType(ExitCodeGenerator.class)).thenReturn(Map.of());
+
+        new MemberInformationImportJob(mapper, batches, members, responses, activities, context)
+                .run(new DefaultApplicationArguments(
+                        "--maintenance.action=validate", "--maintenance.file=" + input
+                ));
+
+        verify(batches, never()).save(any());
+        verify(members, never()).save(any());
+        verify(members, never()).flush();
+        verify(responses, never()).save(any());
+        verify(responses, never()).flush();
+        verifyNoInteractions(activities);
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-IMPORT-011 - non-null preparation maintenanceReason -> rejected before writes")
+    void validationShouldRejectNonNullPreparationMaintenanceReasonWithoutWrites(@TempDir Path directory)
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode document = syntheticApprovedDocument(mapper, 74);
+        document.put("maintenanceReason", "Synthetic preparation note");
+        ((ObjectNode) document.path("batch")).put("datasetChecksum", checksum(mapper, document));
+        Path input = directory.resolve("synthetic-non-null-preparation-reason.json");
+        Files.writeString(input, mapper.writeValueAsString(document));
+
+        assertThatThrownBy(() -> new MemberInformationImportJob(
+                mapper, batches, members, responses, activities, context)
+                .run(new DefaultApplicationArguments(
+                        "--maintenance.action=validate", "--maintenance.file=" + input
+                )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("member-info-import")
+                .hasMessageContaining("maintenanceReason")
+                .satisfies(failure -> assertThat(failure.getMessage())
+                        .doesNotContain(input.toString(), input.getFileName().toString(),
+                                "Ana", "Silva", "Synthetic preparation note"));
+
+        verify(batches, never()).save(any());
+        verify(members, never()).save(any());
+        verify(members, never()).flush();
+        verify(responses, never()).save(any());
+        verify(responses, never()).flush();
+        verifyNoInteractions(activities);
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-IMPORT-010 - v1 preparation is accepted, excluded from checksum, and absent from diagnostics")
+    void validPreparationShouldBeAcceptedWithoutChecksumOrDiagnosticLeakage(
+            @TempDir Path directory, CapturedOutput output) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode document = syntheticApprovedDocument(mapper, 74);
+        String checksum = checksum(mapper, document);
+        ArrayNode sourceHeaders = (ArrayNode) document.path("preparation").path("sourceHeaders");
+        sourceHeaders.set(0, mapper.getNodeFactory().textNode("Synthetic alternate source header"));
+        assertThat(checksum(mapper, document)).isEqualTo(checksum);
+        ((ObjectNode) document.path("batch")).put("datasetChecksum", checksum);
+        Path input = directory.resolve("synthetic-preparation-v1.json");
+        Files.writeString(input, mapper.writeValueAsString(document));
+        when(context.getBeansOfType(ExitCodeGenerator.class)).thenReturn(Map.of());
+
+        new MemberInformationImportJob(mapper, batches, members, responses, activities, context)
+                .run(new DefaultApplicationArguments(
+                        "--maintenance.action=validate", "--maintenance.file=" + input
+                ));
+
+        verify(batches, never()).save(any());
+        verify(members, never()).save(any());
+        verify(members, never()).flush();
+        verify(responses, never()).save(any());
+        verify(responses, never()).flush();
+        verifyNoInteractions(activities);
+        assertThat(output.getAll())
+                .doesNotContain("Synthetic alternate source header", "sourceHeaders", "reviewSummary",
+                        "csvCandidateCount", "approvedRecordCount");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidPreparationCases")
+    @DisplayName("REQ-MEMBER-IMPORT-010/012 - malformed preparation metadata fails closed before writes")
+    void invalidPreparationShouldFailClosedWithoutWrites(
+            String scenario, Consumer<ObjectNode> mutation, @TempDir Path directory) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode document = syntheticApprovedDocument(mapper, 74);
+        mutation.accept(document);
+        ((ObjectNode) document.path("batch")).put("datasetChecksum", checksum(mapper, document));
+        Path input = directory.resolve("synthetic-invalid-preparation-" + scenario + ".json");
+        Files.writeString(input, mapper.writeValueAsString(document));
+
+        assertThatThrownBy(() -> new MemberInformationImportJob(
+                mapper, batches, members, responses, activities, context)
+                .run(new DefaultApplicationArguments(
+                        "--maintenance.action=validate", "--maintenance.file=" + input
+                )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("member-info-import")
+                .hasMessageContaining("recordIndex=-1")
+                .hasMessageContaining("field=preparation")
+                .satisfies(failure -> assertThat(failure.getMessage())
+                        .doesNotContain(input.toString(), input.getFileName().toString(),
+                                "Synthetic source header", "Synthetic alternate source header"));
+
+        verify(batches, never()).save(any());
+        verify(members, never()).save(any());
+        verify(members, never()).flush();
+        verify(responses, never()).save(any());
+        verify(responses, never()).flush();
+        verifyNoInteractions(activities);
+    }
+
+    @ParameterizedTest(name = "empty or whitespace input case {index}")
+    @ValueSource(strings = {"", " \t\r\n"})
+    @DisplayName("REQ-MEMBER-IMPORT-010/012 - empty or whitespace input -> safe read diagnostic without writes")
+    void emptyOrWhitespaceMaintenanceInputShouldFailWithSafeDiagnosticWithoutWrites(
+            String contents, @TempDir Path directory) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        Path input = directory.resolve("synthetic-empty-maintenance-input.json");
+        Files.writeString(input, contents);
+
+        assertThatThrownBy(() -> new MemberInformationImportJob(
+                mapper, batches, members, responses, activities, context)
+                .run(new DefaultApplicationArguments(
+                        "--maintenance.action=validate", "--maintenance.file=" + input
+                )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("member-info-import INPUT_READ_FAILED recordIndex=-1");
+
+        verifyNoInteractions(batches, members, responses, activities);
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-IMPORT-010/012 - invalid maintenance path -> safe read diagnostic without path leakage or writes")
+    void invalidMaintenancePathShouldFailWithSafeDiagnosticWithoutWrites() {
+        ObjectMapper mapper = new ObjectMapper();
+        String invalidPath = "\u0000synthetic-invalid-maintenance-path.json";
+
+        assertThatThrownBy(() -> new MemberInformationImportJob(
+                mapper, batches, members, responses, activities, context)
+                .run(new DefaultApplicationArguments(
+                        "--maintenance.action=validate", "--maintenance.file=" + invalidPath
+                )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("member-info-import INPUT_READ_FAILED recordIndex=-1")
+                .satisfies(failure -> assertThat(failure.getMessage())
+                        .doesNotContain(invalidPath, "synthetic-invalid-maintenance-path.json"));
+
+        verifyNoInteractions(batches, members, responses, activities);
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-IMPORT-010/012 - standalone validate -> wrong checksum fails closed without persistence or activity")
+    void validationShouldRejectWrongChecksumWithoutWrites(@TempDir Path directory) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode document = syntheticApprovedDocument(mapper, 74);
+        ((ObjectNode) document.path("batch")).put("datasetChecksum", "sha256:" + "0".repeat(64));
+        Path input = directory.resolve("synthetic-wrong-checksum.json");
+        Files.writeString(input, mapper.writeValueAsString(document));
+
+        assertThatThrownBy(() -> new MemberInformationImportJob(
+                mapper, batches, members, responses, activities, context)
+                .run(new DefaultApplicationArguments(
+                        "--maintenance.action=validate", "--maintenance.file=" + input
+                )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("member-info-import CHECKSUM_MISMATCH recordIndex=-1 field=batch.datasetChecksum");
+
+        verify(batches, never()).save(any());
+        verify(members, never()).save(any());
+        verify(members, never()).flush();
+        verify(responses, never()).save(any());
+        verify(responses, never()).flush();
+        verifyNoInteractions(activities);
+    }
+
+    @Test
+    @DisplayName("REQ-MEMBER-IMPORT-012/014 - standalone validate -> partial existing batch fails closed without writes")
+    void validationShouldRejectPartialExistingBatchWithoutWrites(@TempDir Path directory) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode document = syntheticApprovedDocument(mapper, 74);
+        String checksum = checksum(mapper, document);
+        ((ObjectNode) document.path("batch")).put("datasetChecksum", checksum);
+        Path input = directory.resolve("synthetic-partial-existing-batch-validation.json");
+        Files.writeString(input, mapper.writeValueAsString(document));
+        UUID batchId = UUID.fromString(document.path("batch").path("id").asText());
+        Map<UUID, MemberEntity> partialMembers = new java.util.HashMap<>();
+        document.path("records").forEach(record -> {
+            UUID memberId = UUID.fromString(record.path("member").path("id").asText());
+            MemberEntity partial = new MemberEntity();
+            partial.setId(memberId);
+            partial.setImportBatchId(batchId);
+            partialMembers.put(memberId, partial);
+        });
+
+        when(members.importBatchExists(batchId)).thenReturn(true);
+        when(batches.findById(batchId)).thenReturn(Optional.of(new MemberInformationImportBatchEntity(
+                batchId, 2026, checksum, 74, 74, java.time.Instant.parse("2026-01-01T00:00:00Z"),
+                "Synthetic original reason")));
+        when(members.findById(any(UUID.class))).thenAnswer(invocation ->
+                Optional.ofNullable(partialMembers.get(invocation.getArgument(0))));
+        when(responses.findById(any(UUID.class))).thenReturn(Optional.empty());
+        when(responses.existsById(any(UUID.class))).thenReturn(true);
+        when(members.findAll()).thenReturn(List.copyOf(partialMembers.values()));
+        when(responses.findAll()).thenReturn(List.of());
+        when(members.countImportActivities(batchId)).thenReturn(0L);
+
+        assertThatThrownBy(() -> new MemberInformationImportJob(
+                mapper, batches, members, responses, activities, context)
+                .run(new DefaultApplicationArguments(
+                        "--maintenance.action=validate", "--maintenance.file=" + input
+                )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("member-info-import PARTIAL_OR_CORRUPTED_BATCH recordIndex=-1 field=batch.id");
+
+        verify(batches, never()).save(any());
+        verify(members, never()).save(any());
+        verify(members, never()).flush();
+        verify(responses, never()).save(any());
+        verify(responses, never()).flush();
+        verifyNoInteractions(activities);
     }
 
     @Test
@@ -364,6 +718,7 @@ class MemberInformationImportJobTest {
         ObjectNode annual = (ObjectNode) document.path("records").path(0).path("annualResponse");
         annual.put("formationAndMeetingInterests", "\u00a0Forma\u0063\u0327\u00e3o sint\u00e9tica\u00a0");
         annual.put("additionalComments", "\u00a0\u2003\u00a0");
+        annual.put("instagramPostSuggestions", "\u0085");
         annual.put("oratorioActivitySuggestions", "\ud83c\udf06".repeat(2_000));
         String checksum = checksum(mapper, document);
         ((ObjectNode) document.path("batch")).put("datasetChecksum", checksum);
@@ -385,6 +740,7 @@ class MemberInformationImportJobTest {
         AnnualMemberInformationResponseEntity first = captured.getAllValues().getFirst();
         assertThat(first.getFormationAndMeetingInterests()).isEqualTo("Formação sintética");
         assertThat(first.getAdditionalComments()).isNull();
+        assertThat(first.getInstagramPostSuggestions()).isNull();
         assertThat(first.getOratorioActivitySuggestions()).hasSize(4_000);
         assertThat(first.getOratorioActivitySuggestions().codePointCount(0, 4_000)).isEqualTo(2_000);
     }
@@ -428,6 +784,10 @@ class MemberInformationImportJobTest {
         Path input = directory.resolve("synthetic-first-apply.json");
         Files.writeString(input, mapper.writeValueAsString(document));
         when(context.getBeansOfType(ExitCodeGenerator.class)).thenReturn(Map.of());
+        doAnswer(invocation -> {
+            assertThat(DeveloperActorReference.resolveRequired()).isEqualTo("synthetic-test-operator");
+            return null;
+        }).when(activities).developerMaintenance(any(), any(), any(), any(), any(), any());
 
         runWithSyntheticTransactionCompletion(() ->
                 new MemberInformationImportJob(mapper, batches, members, responses, activities, context)
@@ -610,6 +970,16 @@ class MemberInformationImportJobTest {
             record.put("sourceReference", "CSV_ROW_" + (index + 1));
             records.add(record);
         }
+        ObjectNode preparation = document.putObject("preparation");
+        preparation.putObject("reviewSummary")
+                .put("csvCandidateCount", 76)
+                .put("additionalCandidateCount", 2)
+                .put("excludedDuplicateCount", 4)
+                .put("approvedRecordCount", 74)
+                .put("unresolvedIssueCount", 0);
+        preparation.putArray("sourceHeaders")
+                .add("Synthetic source header 1")
+                .add("Synthetic source header 2");
         return document;
     }
 
@@ -637,12 +1007,77 @@ class MemberInformationImportJobTest {
         );
     }
 
+    private static Stream<Arguments> missingSourceReferenceCases() {
+        return Stream.of(
+                Arguments.of("omitted", (Consumer<ObjectNode>) document ->
+                        ((ObjectNode) document.path("records").path(0)).remove("sourceReference")),
+                Arguments.of("explicit-null", (Consumer<ObjectNode>) document ->
+                        ((ObjectNode) document.path("records").path(0)).putNull("sourceReference"))
+        );
+    }
+
     private static Stream<Arguments> nonTextualFieldCases() {
         return Stream.of("number", "boolean", "object", "array")
                 .flatMap(nodeType -> Stream.of(
                         Arguments.of("required", nodeType),
                         Arguments.of("optional", nodeType)
                 ));
+    }
+
+    private static Stream<Arguments> invalidSurveyCycleJsonNodeCases() {
+        return Stream.of("batch", "annual")
+                .flatMap(location -> Stream.of("string", "decimal", "boolean", "object", "array", "null")
+                        .map(nodeType -> Arguments.of(location, nodeType)));
+    }
+
+    private static Stream<Arguments> invalidPreparationCases() {
+        return Stream.of(
+                Arguments.of("missing", (Consumer<ObjectNode>) document -> document.remove("preparation")),
+                Arguments.of("null", (Consumer<ObjectNode>) document -> document.putNull("preparation")),
+                Arguments.of("non-object-preparation", (Consumer<ObjectNode>) document ->
+                        document.put("preparation", "synthetic")),
+                Arguments.of("unknown-preparation-property", (Consumer<ObjectNode>) document ->
+                        ((ObjectNode) document.path("preparation")).put("syntheticUnknown", "value")),
+                Arguments.of("missing-review-summary", (Consumer<ObjectNode>) document ->
+                        ((ObjectNode) document.path("preparation")).remove("reviewSummary")),
+                Arguments.of("null-review-summary", (Consumer<ObjectNode>) document ->
+                        ((ObjectNode) document.path("preparation")).putNull("reviewSummary")),
+                Arguments.of("unknown-review-summary-property", (Consumer<ObjectNode>) document ->
+                        ((ObjectNode) document.path("preparation").path("reviewSummary"))
+                                .put("syntheticUnknown", 1)),
+                Arguments.of("non-integer-review-summary-value", (Consumer<ObjectNode>) document ->
+                        ((ObjectNode) document.path("preparation").path("reviewSummary"))
+                                .put("approvedRecordCount", "74")),
+                Arguments.of("inconsistent-review-summary", (Consumer<ObjectNode>) document ->
+                        ((ObjectNode) document.path("preparation").path("reviewSummary"))
+                                .put("approvedRecordCount", 73)),
+                Arguments.of("null-source-headers", (Consumer<ObjectNode>) document ->
+                        ((ObjectNode) document.path("preparation")).putNull("sourceHeaders")),
+                Arguments.of("blank-source-header", (Consumer<ObjectNode>) document -> {
+                    ArrayNode headers = (ArrayNode) document.path("preparation").path("sourceHeaders");
+                    headers.set(0, "\u0085");
+                }),
+                Arguments.of("non-string-source-header", (Consumer<ObjectNode>) document -> {
+                    ArrayNode headers = (ArrayNode) document.path("preparation").path("sourceHeaders");
+                    headers.set(0, 1);
+                }),
+                Arguments.of("duplicate-source-header", (Consumer<ObjectNode>) document -> {
+                    ArrayNode headers = (ArrayNode) document.path("preparation").path("sourceHeaders");
+                    headers.set(1, headers.path(0));
+                })
+        );
+    }
+
+    private static void putSurveyCycleNode(ObjectNode parent, String nodeType) {
+        switch (nodeType) {
+            case "string" -> parent.put("surveyCycle", "2026");
+            case "decimal" -> parent.put("surveyCycle", 2026.5D);
+            case "boolean" -> parent.put("surveyCycle", true);
+            case "object" -> parent.putObject("surveyCycle").put("synthetic", "value");
+            case "array" -> parent.putArray("surveyCycle").add("synthetic");
+            case "null" -> parent.putNull("surveyCycle");
+            default -> throw new IllegalArgumentException("Unsupported synthetic surveyCycle node " + nodeType);
+        }
     }
 
     private static void putNonTextNode(ObjectNode parent, String field, String nodeType) {

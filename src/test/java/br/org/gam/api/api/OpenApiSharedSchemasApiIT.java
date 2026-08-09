@@ -528,6 +528,8 @@ class OpenApiSharedSchemasApiIT extends AbstractOpenApiDocumentationApiIT {
                 "RemoveGamLocationDTO",
                 "DeactivateMemberDTO",
                 "ReviewMembershipSolicitationDTO",
+                "LinkMemberAccountDTO",
+                "CoordinatorTransitionDTO",
                 "RegisterMemberDTO"
         )) {
             Map<String, Object> schema = object(schemas, schemaName);
@@ -540,8 +542,22 @@ class OpenApiSharedSchemasApiIT extends AbstractOpenApiDocumentationApiIT {
             softly.assertThat(reason)
                     .as("%s reason schema", schemaName)
                     .containsEntry("type", "string")
-                    .containsEntry("minLength", 1)
-                    .doesNotContainKey("maxLength");
+                    .containsEntry("minLength", 1);
+            if (Set.of(
+                    "DeactivateMemberDTO",
+                    "ReviewMembershipSolicitationDTO",
+                    "LinkMemberAccountDTO",
+                    "CoordinatorTransitionDTO",
+                    "RegisterMemberDTO"
+            ).contains(schemaName)) {
+                softly.assertThat(reason)
+                        .as("%s reason maximum", schemaName)
+                        .containsEntry("maxLength", 2000);
+            } else {
+                softly.assertThat(reason)
+                        .as("%s reason schema without raw maximum", schemaName)
+                        .doesNotContainKey("maxLength");
+            }
             softly.assertThat(description)
                     .as("%s reason description", schemaName)
                     .containsIgnoringCase("normalized")

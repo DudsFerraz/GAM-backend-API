@@ -168,6 +168,28 @@ abstract class MemberApiTestSupport extends BaseApiIntegrationTest {
         return payload;
     }
 
+    protected static void assertStructuredValidationError(
+            ExtractableResponse<Response> response,
+            String field,
+            String violationCode
+    ) {
+        assertThat(response.statusCode()).as(response.asString()).isEqualTo(400);
+        assertThat(response.<String>path("code")).isEqualTo("VALIDATION_ERROR");
+        assertThat(response.<Map<String, Object>>path("details")).containsOnlyKeys("violations");
+        assertThat(response.<List<Map<String, Object>>>path("details.violations"))
+                .singleElement()
+                .satisfies(violation -> {
+                    assertThat(violation)
+                            .containsOnlyKeys("location", "field", "code", "message")
+                            .containsEntry("location", "body")
+                            .containsEntry("field", field)
+                            .containsEntry("code", violationCode);
+                    assertThat(violation.get("message")).isInstanceOf(String.class);
+                    assertThat(String.valueOf(violation.get("message"))).isNotBlank();
+                });
+        assertThat(response.asString()).doesNotContain("InvalidCommandException", "INVALID_COMMAND");
+    }
+
     protected static Map<String, Object> searchPayload() {
         return Map.of("filters", List.of());
     }

@@ -184,6 +184,30 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
     }
 
     @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidJustifications")
+    @DisplayName("REQ-MEMBER-SOL-002 and REQ-API-ERROR-002/003/004 - invalid applicant justification -> structured validation without mutation")
+    void invalidApplicantJustificationShouldReturnValidationError(
+            String label,
+            String justification,
+            String expectedViolationCode
+    ) {
+        AuthSession applicant = newSession("VISITOR");
+        clearActivities();
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(applicant)
+                .body(solicitationPayload(LocalDate.now().minusYears(20), justification))
+                .post("/membership-solicitations")
+                .then()
+                .extract();
+
+        assertStructuredValidationError(response, "/justification", expectedViolationCode);
+        assertThat(solicitationCount(applicant.accountId())).isZero();
+        assertThat(memberCount(applicant.accountId())).isZero();
+        assertThat(activeRoleNames(applicant.accountId())).contains("VISITOR").doesNotContain("MEMBER");
+        assertThat(allLifecycleActivityCount()).isZero();
+    }
+
+    @ParameterizedTest(name = "{0}")
     @MethodSource("acceptedJustificationBoundaries")
     @DisplayName("REQ-MEMBER-SOL-002 - justification boundaries after trimming -> HTTP 201 with normalized snapshot")
     void validJustificationBoundariesShouldBeAccepted(
@@ -716,19 +740,21 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
             String decision,
             String label,
             String route,
-            String reason
+            String reason,
+            String expectedViolationCode
     ) {
         AuthSession coordinator = newSession("COORD");
         AuthSession applicant = newSession("VISITOR");
         UUID solicitationId = submitSolicitation(applicant);
         clearActivities();
 
-        authenticatedJsonRequest(coordinator)
+        ExtractableResponse<Response> response = authenticatedJsonRequest(coordinator)
                 .body(reasonPayload(reason))
                 .patch(route, solicitationId)
                 .then()
-                .statusCode(400)
-                .body("status", equalTo(400));
+                .extract();
+
+        assertStructuredValidationError(response, "/reason", expectedViolationCode);
 
         assertThat(solicitationStatus(solicitationId)).isEqualTo("PENDING");
         assertThat(memberCount(applicant.accountId())).isZero();
@@ -1228,6 +1254,20 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
         );
     }
 
+    private static Stream<Arguments> invalidJustifications() {
+        return Stream.of(
+                Arguments.of("EP - null", null, "REQUIRED"),
+                Arguments.of("EP - empty", "", "NOT_BLANK"),
+                Arguments.of("EP - Unicode whitespace only", "\u00A0\u2003\u3000", "NOT_BLANK"),
+                Arguments.of("EP - NEXT LINE Unicode whitespace only", "\u0085", "NOT_BLANK"),
+                Arguments.of(
+                        "BVA - normalized justification over 2,000 code points",
+                        "\u00A0" + "j".repeat(2_001) + "\u3000",
+                        "SIZE"
+                )
+        );
+    }
+
     private static Stream<Arguments> nonBreakingWhitespaceNameCases() {
         return Stream.of(
                 Arguments.of("NO-BREAK SPACE U+00A0", "\u00A0"),
@@ -1245,10 +1285,16 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
 
     private static Stream<Arguments> invalidReviewReasons() {
         List<Arguments> invalid = List.of(
-                Arguments.of("EP - null", null),
-                Arguments.of("EP - empty", ""),
-                Arguments.of("EP - whitespace", " \n\t "),
-                Arguments.of("BVA - 2,001 characters", "r".repeat(2_001))
+                Arguments.of("EP - null", null, "REQUIRED"),
+                Arguments.of("EP - empty", "", "NOT_BLANK"),
+                Arguments.of("EP - whitespace", " \n\t ", "NOT_BLANK"),
+                Arguments.of("EP - NEXT LINE Unicode whitespace only", "\u0085", "NOT_BLANK"),
+                Arguments.of(
+                        "BVA - normalized reason over 2,000 code points",
+                        "\u00A0" + "r".repeat(2_001) + "\u3000",
+                        "SIZE"
+                ),
+                Arguments.of("BVA - 2,001 characters", "r".repeat(2_001), "SIZE")
         );
         List<Arguments> decisions = new ArrayList<>();
 
@@ -1258,13 +1304,15 @@ class MembershipSolicitationsApiIT extends MemberApiTestSupport {
                     "approve",
                     values[0],
                     "/membership-solicitations/{id}/approve",
-                    values[1]
+                    values[1],
+                    values[2]
             ));
             decisions.add(Arguments.of(
                     "reject",
                     values[0],
                     "/membership-solicitations/{id}/reject",
-                    values[1]
+                    values[1],
+                    values[2]
             ));
         }
         return decisions.stream();
