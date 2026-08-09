@@ -76,7 +76,7 @@
       - default
       - allow
       - outgoing
-  when: "firewall_status.stdout is not search('(?m)^Default:\\s+allow \\(outgoing\\)\\s*$')"
+  when: "firewall_status.stdout is not search('(?m)^Default:[^\\r\\n]*allow \\(outgoing\\)[^\\r\\n]*$')"
   changed_when: true
 
 - name: Allow public proxy traffic on port 80
@@ -121,7 +121,7 @@
       - default
       - deny
       - incoming
-  when: "firewall_status.stdout is not search('(?m)^Default:\\s+deny \\(incoming\\)\\s*$')"
+  when: "firewall_status.stdout is not search('(?m)^Default:[^\\r\\n]*deny \\(incoming\\)[^\\r\\n]*$')"
   changed_when: true
 
 - name: Enable the deny-by-default host firewall
@@ -182,7 +182,7 @@
   ansible.builtin.assert:
     that:
       - "firewall_final_status.stdout is search('(?m)^Status:\\s+active\\s*$')"
-      - "firewall_final_status.stdout is search('(?m)^Default:\\s+deny \\(incoming\\)\\s*$')"
+      - "firewall_final_status.stdout is search('(?m)^Default:\\s+deny \\(incoming\\),\\s+allow \\(outgoing\\)[^\\r\\n]*$')"
       - "firewall_final_rules.stdout is search('(?m)^\\s*\\[\\s*[0-9]+\\]\\s+80/tcp(?: \\(v6\\))?\\s+ALLOW IN\\s+Anywhere(?: \\(v6\\))?\\s*$')"
       - "firewall_final_rules.stdout is search('(?m)^\\s*\\[\\s*[0-9]+\\]\\s+443/tcp(?: \\(v6\\))?\\s+ALLOW IN\\s+Anywhere(?: \\(v6\\))?\\s*$')"
       - "firewall_final_rules.stdout is not search('(?m)^\\s*\\[\\s*[0-9]+\\]\\s+5432/tcp(?: \\(v6\\))?\\s+ALLOW IN\\s+')"

@@ -104,6 +104,66 @@ class ProductionHostBaselineStructuralTest {
     }
 
     @Test
+    @DisplayName("REQ-OPS-002 - SSH hardening -> GAM settings precede Ubuntu vendor drop-ins")
+    void sshHardeningShouldPrecedeUbuntuVendorDropIns() throws IOException {
+        String defaults = read(ROLE_DIRECTORY.resolve("ssh-hardening").resolve("defaults").resolve("main.yml"));
+
+        assertThat(defaults)
+                .as("the GAM drop-in must precede Ubuntu vendor drop-ins because sshd uses the first value obtained")
+                .containsPattern("(?im)sshd_config\\.d/0[0-9][-_][^\\r\\n]*\\.conf\\s*$");
+    }
+
+    @Test
+    @DisplayName("REQ-OPS-002 - SSH hardening -> evaluates a concrete gamops connection context")
+    void sshHardeningShouldEvaluateAConcreteGamopsConnectionContext() throws IOException {
+        String tasks = read(ROLE_DIRECTORY.resolve("ssh-hardening").resolve("tasks").resolve("main.yml"));
+
+        assertThat(tasks)
+                .containsPattern("(?is)/usr/sbin/sshd\\s+-T.*?(?:\\s-C\\s|connection_spec)")
+                .containsPattern("(?is)(?:user=|user:)[^\\r\\n]*(?:gamops|operations_user_name)")
+                .containsPattern("(?is)(?:host=|host:)[^\\r\\n]+")
+                .containsPattern("(?is)(?:addr=|addr:)[^\\r\\n]+");
+    }
+
+    @Test
+    @DisplayName("REQ-OPS-002 - SSH hardening -> validates every effective authentication restriction")
+    void sshHardeningShouldValidateTheEffectiveMergedConfiguration() throws IOException {
+        String tasks = read(ROLE_DIRECTORY.resolve("ssh-hardening").resolve("tasks").resolve("main.yml"));
+
+        assertThat(tasks)
+                .as("validation must inspect the configuration merged by the system sshd entrypoint")
+                .containsPattern("(?m)/usr/sbin/sshd\\s+-T(?:\\s|$)")
+                .containsPattern(
+                        "(?im)ssh_hardening_effective_configuration\\.stdout[^\\r\\n]*permitrootlogin no"
+                )
+                .containsPattern(
+                        "(?im)ssh_hardening_effective_configuration\\.stdout[^\\r\\n]*passwordauthentication no"
+                )
+                .containsPattern(
+                        "(?im)ssh_hardening_effective_configuration\\.stdout[^\\r\\n]*kbdinteractiveauthentication no"
+                )
+                .containsPattern(
+                        "(?im)ssh_hardening_effective_configuration\\.stdout[^\\r\\n]*pubkeyauthentication yes"
+                );
+    }
+
+    @Test
+    @DisplayName("REQ-OPS-002 - SSH hardening -> effective AllowUsers contains only gamops")
+    void sshHardeningShouldRequireAnExactEffectiveAllowUsersResult() throws IOException {
+        String tasks = read(ROLE_DIRECTORY.resolve("ssh-hardening").resolve("tasks").resolve("main.yml"));
+        String allowUsersAssertion = tasks.lines()
+                .filter(line -> line.contains("ssh_hardening_effective_configuration.stdout"))
+                .filter(line -> line.toLowerCase(java.util.Locale.ROOT).contains("allowusers"))
+                .findFirst()
+                .orElse("");
+
+        assertThat(allowUsersAssertion)
+                .contains("operations_user_name", "regex_escape")
+                .doesNotContain("(?:\\\\s|$)")
+                .containsPattern("(?s)operations_user_name.*?\\$.*?\\)\\s*$");
+    }
+
+    @Test
     @DisplayName("REQ-OPS-002 - firewall integration -> public proxy only, SSH separately restricted")
     void firewallShouldExposeOnlyTheProxyAndRestrictedOperationsChannel() throws IOException {
         String role = readRole("firewall");
@@ -311,7 +371,7 @@ class ProductionHostBaselineStructuralTest {
     }
 
     @Test
-    @DisplayName("REQ-OPS-010 - idempotency check -> baseline can be replayed in check mode")
+    @DisplayName("REQ-OPS-010 and ADR-0024 - idempotency -> baseline receives two real executions")
     void baselineShouldProvideARepeatableIdempotencyCheck() throws IOException {
         Path check = requiredSingleFile(
                 ANSIBLE_ROOT,
@@ -321,21 +381,29 @@ class ProductionHostBaselineStructuralTest {
 
         assertThat(content)
                 .containsPattern("(?is)ansible-playbook")
-                .containsPattern("(?is)--check")
                 .containsPattern("(?is)--diff");
         assertThat(count(content, "(?is)ansible-playbook")).isGreaterThanOrEqualTo(2);
     }
 
     @Test
-    @DisplayName("ADR-0024 - idempotency check -> replay reports zero changes")
-    void idempotencyCheckShouldAssertAZeroChangeReplay() throws IOException {
+    @DisplayName("ADR-0024 - idempotency -> final production-host recap proves convergence")
+    void idempotencyCheckShouldRequireTheFinalProductionHostRecap() throws IOException {
         Path check = requiredSingleFile(
                 ANSIBLE_ROOT,
                 path -> path.getFileName().toString().matches("(?i).*idempot.*")
         );
+        String content = read(check);
 
-        assertThat(read(check))
-                .containsPattern("(?im)changed\\s*=\\s*0");
+        assertThat(content)
+                .as("an incidental changed=0 marker must not override a conflicting production recap")
+                .doesNotContainPattern("(?im)grep[^\\r\\n]*['\"]changed=0['\"]")
+                .containsPattern("(?is)PLAY RECAP.*?(?:production|inventory_hostname|ansible_host)")
+                .containsPattern(
+                        "(?im)(?:production|inventory_hostname|ansible_host)[^\\r\\n]*"
+                                + "changed\\s*=\\s*0[^\\r\\n]*"
+                                + "unreachable\\s*=\\s*0[^\\r\\n]*"
+                                + "failed\\s*=\\s*0"
+                );
     }
 
     @Test
@@ -349,7 +417,9 @@ class ProductionHostBaselineStructuralTest {
 
         assertThat(invocations).hasSizeGreaterThanOrEqualTo(2);
         assertThat(invocations.get(0)).doesNotContain("--check");
-        assertThat(invocations.get(1)).contains("--check");
+        assertThat(invocations.get(1))
+                .as("the replay must be a real convergent execution, not Ansible check mode")
+                .doesNotContain("--check");
     }
 
     @Test
@@ -395,6 +465,30 @@ class ProductionHostBaselineStructuralTest {
                 .containsPattern("(?is)443/tcp")
                 .containsPattern("(?is)(?:ssh_allowed_cidrs|firewall_ssh_allowed_cidrs|GAM_SSH_ALLOWED_CIDR)")
                 .containsPattern("(?is)(?:grep|test|assert|verify).*?(?:0\\.0\\.0\\.0/0|::/0)");
+    }
+
+    @Test
+    @DisplayName("REQ-OPS-002 - firewall convergence -> accepts Ubuntu combined verbose Default line")
+    void firewallRoleShouldMatchTheCombinedVerboseDefaultLine() throws IOException {
+        String firewallRole = readRole("firewall");
+
+        assertThat(firewallRole)
+                .containsPattern("(?i)Default:[^\\r\\n]*incoming[^\\r\\n]*outgoing")
+                .doesNotContain("^Default:\\\\s+deny \\\\(incoming\\\\)\\\\s*$");
+    }
+
+    @Test
+    @DisplayName("REQ-OPS-002 - firewall evidence -> accepts Ubuntu combined verbose Default line")
+    void idempotencyFirewallProbeShouldMatchTheCombinedVerboseDefaultLine() throws IOException {
+        Path check = requiredSingleFile(
+                ANSIBLE_ROOT,
+                path -> path.getFileName().toString().matches("(?i).*idempot.*")
+        );
+        String idempotencyCheck = read(check);
+
+        assertThat(idempotencyCheck)
+                .containsPattern("(?i)Default:[^\\r\\n]*incoming[^\\r\\n]*outgoing")
+                .doesNotContain("^Default:[[:space:]]+deny[[:space:]]+\\(incoming\\)[[:space:]]*$");
     }
 
     @Test
