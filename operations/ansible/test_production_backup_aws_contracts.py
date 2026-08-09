@@ -1748,6 +1748,271 @@ exit 0
         filesystem_values = {body.get("value") for body in filesystem_alerts}
         self.assertTrue({80, 90}.issubset(filesystem_values), "provider-side filesystem alerts must retain 80% and 90% thresholds")
 
+    def test_restore_total_recovery_budget_covers_glacier_and_post_download_steps(self):
+        """Protect the 24-hour RTO across the documented restore flow."""
+
+        restore = read("operations/recovery/restore/restore.sh")
+        total_budget = re.search(
+            r"(?m)^\s*(?P<name>(?!GLACIER_)[A-Z][A-Z0-9_]*(?:TOTAL|RTO|RECOVERY)[A-Z0-9_]*(?:DEADLINE|BUDGET|TIMEOUT)[A-Z0-9_]*)\s*=\s*['\"]?\$\{[^:}]+:-(?P<default>[1-9][0-9]*)",
+            restore,
+        )
+        self.assertIsNotNone(
+            total_budget,
+            "restore must expose a parameterized total recovery deadline or budget distinct from the Glacier polling timeout",
+        )
+        budget_name = total_budget.group("name")
+        budget_default = int(total_budget.group("default"))
+        self.assertLess(
+            budget_default,
+            86400,
+            "the default total recovery budget must leave time for download, decryption, restore, and validation within the 24-hour RTO",
+        )
+
+        first_head_object = restore.index("aws s3api head-object")
+        self.assertIn(
+            budget_name,
+            restore[:first_head_object],
+            "the total recovery deadline must start before any Glacier polling or object inspection",
+        )
+
+        restore_object = restore.index("aws s3api restore-object")
+        archive_copy = restore.index("aws s3 cp")
+        self.assertIn(
+            budget_name,
+            restore[restore_object:archive_copy],
+            "Glacier polling must consume the shared total recovery budget rather than an independent 24-hour allowance",
+        )
+
+        verification = restore.index("/usr/local/libexec/gam-verify-restoration")
+        post_download_flow = restore[archive_copy:verification]
+        self.assertRegex(
+            post_download_flow,
+            rf"(?is)(?:if|while|test|deadline|budget).{{0,300}}{re.escape(budget_name)}|{re.escape(budget_name)}.{{0,300}}(?:date \+%s|RESTORATION_STARTED|deadline|budget)",
+            "the total recovery deadline must be enforced after download and before restoration validation completes",
+        )
+
+        representative_access = restore.index('bash -Eeuo pipefail -c "$REPRESENTATIVE_ACCESS_CHECK_COMMAND"')
+        self.assertIn(
+            budget_name,
+            restore[representative_access:],
+            "the total recovery deadline must remain enforced through representative application access and final validation",
+        )
+
+    def test_better_stack_collector_target_requests_serialize_integer_ports_and_postgres_ssl_mode(self):
+        """Protect Better Stack's documented integer port and PostgreSQL fields."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        target_tasks = [
+            task
+            for task in tasks
+            if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
+            and "/api/v1/collectors/" in str(module_payload(task, "ansible.builtin.uri", "uri").get("url", ""))
+            and "/targets" in str(module_payload(task, "ansible.builtin.uri", "uri").get("url", ""))
+            and str(module_payload(task, "ansible.builtin.uri", "uri").get("method", "")).upper() in {"POST", "PATCH"}
+        ]
+        self.assertTrue(target_tasks, "Better Stack collector target requests must exist")
+
+        group_vars = read("operations/ansible/group_vars/production.yml")
+        port_variables = (
+            "better_stack_proxy_target_port",
+            "better_stack_backend_target_port",
+            "better_stack_postgresql_target_port",
+        )
+        violations = []
+        for variable in port_variables:
+            declaration = re.search(rf"(?m)^\s*{re.escape(variable)}:\s*(.+)$", group_vars)
+            if declaration is None or "| int" not in declaration.group(1):
+                violations.append(f"{variable} must coerce the environment input to an integer")
+
+        target_bodies = [
+            module_payload(task, "ansible.builtin.uri", "uri").get("body", {})
+            for task in target_tasks
+        ]
+        for body in target_bodies:
+            if not isinstance(body, dict) or body.get("kind") not in {"prometheus", "postgres"}:
+                continue
+            port = body.get("port")
+            if not isinstance(port, int) or isinstance(port, bool):
+                violations.append(
+                    f"{body.get('kind')} target port must serialize as an integer, observed {port!r}"
+                )
+            if body.get("kind") == "postgres" and body.get("ssl_mode") != "require":
+                violations.append("PostgreSQL target must send the provider-supported ssl_mode=require field")
+
+        self.assertEqual([], violations, "Better Stack collector target schema violations: " + "; ".join(violations))
+
+    def test_better_stack_collector_targets_reconcile_provider_drift_with_official_patch_endpoint(self):
+        """Require readback-driven PATCH reconciliation for target connection drift."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        target_uri_tasks = [
+            task
+            for task in tasks
+            if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
+            and "/api/v1/collectors/" in str(module_payload(task, "ansible.builtin.uri", "uri").get("url", ""))
+            and "/targets" in str(module_payload(task, "ansible.builtin.uri", "uri").get("url", ""))
+        ]
+        existing_readback = [
+            task
+            for task in target_uri_tasks
+            if str(module_payload(task, "ansible.builtin.uri", "uri").get("method", "")).upper() == "GET"
+            and "better_stack_existing_collector_targets" in str(task)
+        ]
+        self.assertTrue(existing_readback, "target reconciliation must read the provider's existing targets first")
+
+        patch_tasks = [
+            task
+            for task in target_uri_tasks
+            if str(module_payload(task, "ansible.builtin.uri", "uri").get("method", "")).upper() == "PATCH"
+        ]
+        violations = []
+        if not patch_tasks:
+            violations.append(
+                "existing collector targets with wrong port, endpoint, or ssl_mode must be updated through the official PATCH endpoint"
+            )
+        else:
+            patch_text = "\n".join(task_text(task) for task in patch_tasks)
+            patch_urls = [
+                str(module_payload(task, "ansible.builtin.uri", "uri").get("url", ""))
+                for task in patch_tasks
+            ]
+            if not any("/targets/" in url and "item.id" in url for url in patch_urls):
+                violations.append("target PATCH URLs must address the provider response's item.id")
+            for field in ("port", "endpoint", "ssl_mode"):
+                if field not in patch_text:
+                    violations.append(f"target PATCH reconciliation must carry the declared {field} drift")
+                if f"attributes.{field}" not in patch_text:
+                    violations.append(f"target PATCH reconciliation must compare provider attributes.{field}")
+            if not any(
+                "better_stack_existing_collector_targets.json.data" in task_text(task)
+                or "better_stack_collector_targets_readback.json.data" in task_text(task)
+                for task in patch_tasks
+            ):
+                violations.append("target PATCH reconciliation must iterate provider readback targets")
+
+        self.assertEqual([], violations, "Better Stack target reconciliation violations: " + "; ".join(violations))
+
+    def test_better_stack_dashboard_alerts_read_back_declared_values_and_patch_provider_drift(self):
+        """Require provider-side alert field verification and official PATCH drift repair."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        alert_uri_tasks = [
+            task
+            for task in tasks
+            if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
+            and "/api/v2/dashboards/" in str(module_payload(task, "ansible.builtin.uri", "uri").get("url", ""))
+            and "/charts/" in str(module_payload(task, "ansible.builtin.uri", "uri").get("url", ""))
+            and "/alerts" in str(module_payload(task, "ansible.builtin.uri", "uri").get("url", ""))
+        ]
+        self.assertTrue(alert_uri_tasks, "Better Stack dashboard alert requests must exist")
+
+        readback_index = next(
+            (
+                index
+                for index, task in enumerate(tasks)
+                if task.get("register") == "better_stack_dashboard_alerts_readback"
+            ),
+            None,
+        )
+        self.assertIsNotNone(readback_index, "dashboard alerts must be read back from Better Stack after reconciliation")
+        monitor_index = next(
+            (
+                index
+                for index, task in enumerate(tasks)
+                if task.get("name") == "Read existing Better Stack monitors before reconciliation"
+            ),
+            len(tasks),
+        )
+        verification_text = "\n".join(
+            task_text(task)
+            for task in tasks[readback_index + 1 : monitor_index]
+            if isinstance(module_payload(task, "ansible.builtin.assert", "assert"), dict)
+        )
+        violations = []
+        for field in (
+            "alert_type",
+            "operator",
+            "value",
+            "check_period",
+            "confirmation_period",
+            "recovery_period",
+            "email",
+            "push",
+            "incident_cause",
+            "metadata",
+        ):
+            if f"attributes.{field}" not in verification_text:
+                violations.append(f"dashboard alert readback must verify attributes.{field}")
+
+        patch_tasks = [
+            task
+            for task in alert_uri_tasks
+            if str(module_payload(task, "ansible.builtin.uri", "uri").get("method", "")).upper() == "PATCH"
+        ]
+        if not patch_tasks:
+            violations.append("existing dashboard alerts with declared-value drift must be updated through the official PATCH endpoint")
+        else:
+            patch_text = "\n".join(task_text(task) for task in patch_tasks)
+            patch_urls = [
+                str(module_payload(task, "ansible.builtin.uri", "uri").get("url", ""))
+                for task in patch_tasks
+            ]
+            if not any("/alerts/" in url and "item.id" in url for url in patch_urls):
+                violations.append("dashboard alert PATCH URLs must address the provider response's item.id")
+            for field in (
+                "value",
+                "operator",
+                "check_period",
+                "confirmation_period",
+                "recovery_period",
+                "email",
+                "push",
+                "metadata",
+            ):
+                if field not in patch_text:
+                    violations.append(f"dashboard alert PATCH reconciliation must send {field}")
+                if f"attributes.{field}" not in patch_text:
+                    violations.append(f"dashboard alert PATCH reconciliation must compare attributes.{field}")
+            patch_conditions = "\n".join(str(task.get("when", "")) for task in patch_tasks)
+            for identity_field in ("attributes.name", "attributes.dashboard_id", "attributes.chart_id"):
+                if identity_field not in patch_conditions:
+                    violations.append(f"dashboard alert PATCH reconciliation must preserve identity using {identity_field}")
+
+        self.assertEqual([], violations, "Better Stack dashboard alert reconciliation violations: " + "; ".join(violations))
+
+    def test_better_stack_collector_replay_does_not_report_success_as_changed(self):
+        """A successful replay of the official collector installer must be idempotent."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        install_index, install_task = next(
+            (
+                (index, task)
+                for index, task in enumerate(tasks)
+                if task.get("name") == "Run the official Better Stack collector Docker Compose deployment"
+            ),
+            (None, None),
+        )
+        self.assertIsNotNone(install_task, "the official Better Stack collector installer task must exist")
+
+        changed_when = str(install_task.get("changed_when", "")).strip()
+        violations = []
+        if changed_when.casefold() == "better_stack_collector_install.rc == 0":
+            violations.append("collector installation must not mark every successful replay changed solely because rc is zero")
+
+        pre_install_state = any(
+            "docker compose" in " ".join(command_argv(task)).casefold()
+            and any(token in " ".join(command_argv(task)).casefold() for token in ("ps", "inspect", "config"))
+            for task in tasks[:install_index]
+        )
+        output_sensitive_change = bool(
+            re.search(r"(?i)(stdout|changed|created|updated|installed)", changed_when)
+        )
+        state_guard = bool(install_task.get("when")) and pre_install_state
+        if not (state_guard or output_sensitive_change):
+            violations.append("collector installation needs a replay guard or an output/state-aware changed_when")
+
+        self.assertEqual([], violations, "Better Stack collector idempotency violations: " + "; ".join(violations))
+
     def test_backup_writer_policy_matches_s3_metadata_apis_used_by_the_backup_job(self):
         source = read("operations/recovery/backup/backup.sh")
         actions = {
