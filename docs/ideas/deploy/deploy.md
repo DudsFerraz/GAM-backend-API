@@ -2,7 +2,7 @@
 
 This file is a non-normative collection of ideas for later deployment requirements and runbooks. Accepted Requirement Specifications remain the source of truth.
 
-Current accepted deployment decisions are documented in [ADR-0024](../../decisions/0024-deploy-production-directly-to-hostinger-kvm-2.md), [ADR-0025](../../decisions/0025-use-aws-sao-paulo-for-immutable-encrypted-production-backups.md), [ADR-0028](../../decisions/0028-complete-initial-production-commissioning-and-release-contracts.md), and the accepted platform Requirement Specifications. Where older ideas in this file conflict with those artifacts, the accepted artifacts win.
+Current accepted deployment decisions are documented in [ADR-0024](../../decisions/0024-deploy-production-directly-to-hostinger-kvm-2.md), [ADR-0025](../../decisions/0025-use-aws-sao-paulo-for-immutable-encrypted-production-backups.md), [ADR-0028](../../decisions/0028-complete-initial-production-commissioning-and-release-contracts.md), [ADR-0029](../../decisions/0029-align-better-stack-monitoring-with-provider-supported-contracts.md), and the accepted platform Requirement Specifications. Where older ideas in this file conflict with those artifacts, the accepted artifacts win.
 
 The priority should be **reproducibility, recovery and security**, not high availability.
 
@@ -292,14 +292,14 @@ Although the accepted RTO is 24 hours, the operational procedure should target r
 
 Monitor:
 
-* `https://<domain>/api/health`, requiring `200` and `{"status":"UP"}` every five minutes
+* `https://<domain>/api/health` every five minutes through a standard keyword monitor using `{"status":"UP"}` as the required keyword
 * TLS certificate validity and expiry, warning at 30 days remaining
 * Domain expiry
 * Optional deployment heartbeat
 
-Better Stack is the selected provider for public availability, host, TLS, and domain monitoring. It alerts after three consecutive health failures through hosted email and mobile push. The selected backup-specific monitor remains AWS EventBridge Scheduler plus Lambda and SNS. It checks at 04:30 São Paulo time, alerts the developer immediately, and escalates an unresolved failure to the client custodians at 12:00.
+Better Stack is the selected provider for public availability, host, TLS, and domain monitoring. It alerts through hosted email and mobile push when the keyword monitor remains failed throughout a 600-second confirmation period. This is a ten-minute continuously failing window, not a provider guarantee that exactly three checks failed. The selected backup-specific monitor remains AWS EventBridge Scheduler plus Lambda and SNS. It checks at 04:30 São Paulo time, alerts the developer immediately, and escalates an unresolved failure to the client custodians at 12:00.
 
-Better Stack’s HTTP monitoring checks expected HTTP responses and creates incidents on failure. It also supports SSL certificate and domain-expiration monitoring. ([Better Stack][12])
+Better Stack's standard keyword monitor performs case-insensitive containment rather than exact raw-body matching. Deployment verification separately enforces the exact status, content type, raw body, and cache policy from `REQ-OPS-011`. Better Stack also supports SSL certificate and domain-expiration monitoring. ([Better Stack keyword monitoring](https://betterstack.com/docs/uptime/keyword-monitor/), [confirmation periods](https://betterstack.com/docs/uptime/confirmation-and-recovery-period/))
 
 Alerts must go through a channel independent of the VPS:
 
@@ -326,7 +326,7 @@ Monitor:
 * Certificate expiry
 * System reboot requirement
 
-Use a metrics-only Better Stack collector for host and service signals. Broad application-log, request-body, and distributed-trace export remains disabled initially. ([Better Stack][13])
+Use Better Stack's official Docker Compose collector with its dedicated `COLLECTOR_SECRET` for host and service signals. Configure and verify the source as metrics-only; broad application-log, request-body, and distributed-trace export remains disabled initially. The Uptime API token is a separate controller-side credential and must not be used as the collector secret. ([Better Stack collector](https://betterstack.com/docs/logs/collector/))
 
 Initially, prefer metrics over broad external log or trace export. Authentication systems can accidentally place sensitive information in headers, spans or structured logs.
 

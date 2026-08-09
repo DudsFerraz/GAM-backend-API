@@ -114,28 +114,19 @@ This historical quarterly rule shall not govern current production readiness.
 
 ---
 
-### REQ-OPS-006: External availability monitoring
-Better Stack shall check the production public HTTPS entry point from outside the VPS every five minutes by sending `GET /api/health`.
+### REQ-OPS-006: External availability monitoring (superseded)
+`REQ-OPS-006` is superseded by `REQ-OPS-014`.
 
-The check shall require HTTP `200 OK` and the exact healthy response defined by `REQ-OPS-011`. An alert shall be sent through Better Stack-hosted email and mobile push after three consecutive failed checks. The notification channel shall remain available when the VPS is unavailable.
+The historical rule required Better Stack to validate the exact raw healthy response and to alert after a counted sequence of three failed checks. Better Stack's supported standard monitor instead validates case-insensitive keyword presence and delays incident creation by an elapsed confirmation period.
 
-The accepted AWS EventBridge, Lambda, and SNS monitor shall remain separate and authoritative for backup-object validation.
-
-Rationale:
-External checks detect total host, network, proxy, TLS, and application-entry-point failure without depending on the failed system to report itself.
-
-Valid examples:
-- Three failed five-minute checks notify an external alert channel.
-- Better Stack detects that the public proxy can no longer reach a ready backend.
-
-Invalid examples:
-- Monitoring runs only as a container on the VPS it monitors.
-- A Better Stack success is treated as evidence that the daily AWS recovery object is valid.
+This historical exact-body and count-based monitoring rule shall not govern current production readiness. The exact public response remains required by `REQ-OPS-011` and independently verified during deployment under `REQ-OPS-008`.
 
 ---
 
 ### REQ-OPS-007: Host and service alerting
 Production shall use a metrics-only Better Stack collector on KVM 2 to monitor proxy, backend, database, CPU, memory, swap, filesystem, inode, network, container-health, and container-restart conditions. Broad application-log, request-body, and distributed-trace export shall remain disabled initially.
+
+The collector shall use Better Stack's supported Docker Compose deployment and its dedicated `COLLECTOR_SECRET`. The secret shall come from approved external secret custody, shall not be committed, and shall not be replaced with a Better Stack Uptime API token or an invented agent credential. Collector acceptance shall verify in Better Stack that broad log and distributed-trace ingestion remain disabled.
 
 Filesystem usage shall generate a warning at 80 percent and a critical alert at 90 percent.
 
@@ -164,7 +155,7 @@ Artifact publication shall not deploy automatically. Every production deployment
 
 After approval, the backend-owned automated workflow shall acquire an exclusive deployment lock, verify backup freshness when required, verify the selected artifacts, enable the maintenance response, apply the compatible migration and release sequence, execute health verification, record the result, and release the lock.
 
-The deployment shall verify proxy routing, backend health, database connectivity, and `GET /api/health` before reporting success. When verification fails and the database remains compatible, automation shall restore the previous compatible application pair. When a migration makes that rollback unsafe, automation shall retain the maintenance response and stop for a Developer-selected forward fix or backup-based recovery.
+The deployment shall verify proxy routing, backend health, database connectivity, and `GET /api/health` before reporting success. Health verification shall independently require the exact status, content type, raw response body, and cache policy defined by `REQ-OPS-011`; it shall not delegate exact-body validation to the external keyword monitor. When verification fails and the database remains compatible, automation shall restore the previous compatible application pair. When a migration makes that rollback unsafe, automation shall retain the maintenance response and stop for a Developer-selected forward fix or backup-based recovery.
 
 A database-changing deployment shall confirm a recent successful backup before applying migrations.
 
@@ -301,6 +292,31 @@ Invalid examples:
 - Root SSH is disabled or the firewall is enabled before a new `gamops` connection and privilege escalation succeed.
 - A locked-password `gamops` account is placed only in the `sudo` group but has no usable privilege-escalation method.
 
+---
+
+### REQ-OPS-014: Provider-supported external availability monitoring
+Better Stack shall check the production public HTTPS entry point from outside the VPS every five minutes by sending `GET /api/health` through a standard keyword monitor.
+
+The monitor shall use `{"status":"UP"}` as its required keyword and shall apply Better Stack's supported case-insensitive containment semantics. The monitor shall not be represented as an exact raw-body validator. The exact `200 OK`, content type, raw body, and cache policy remain governed by `REQ-OPS-011` and shall be verified independently during deployment under `REQ-OPS-008`.
+
+After first observing a failed check, Better Stack shall use a 600-second confirmation period. An incident and Better Stack-hosted email and mobile-push alerts shall be created only when the monitor remains failed throughout that period. Documentation and automation shall describe this as a ten-minute continuously failing confirmation window and shall not claim that Better Stack provides a count-based three-consecutive-failure guarantee.
+
+The notification channel shall remain available when the VPS is unavailable. The accepted AWS EventBridge, Lambda, and SNS monitor shall remain separate and authoritative for backup-object validation. A metered Playwright monitor or another custom external probe shall not be required for the initial availability check.
+
+Rationale:
+Provider-supported keyword and confirmation-period semantics preserve independent outage detection without adding a metered browser probe or a second custom monitoring system. Exact health-contract verification remains a release responsibility rather than an unsupported claim about the external provider.
+
+Valid examples:
+- A failed check that remains failed for the complete 600-second confirmation period creates an incident and notifies the external alert channels.
+- A release check rejects extra response bytes even when the canonical keyword is present.
+- Better Stack detects that the public proxy can no longer reach a ready backend.
+
+Invalid examples:
+- Automation sends an undocumented `expected_body` field to the Better Stack monitor API.
+- A 600-second confirmation period is described as a provider guarantee that exactly three checks failed.
+- Monitoring runs only as a container on the VPS it monitors.
+- A Better Stack success is treated as evidence that the daily AWS recovery object is valid.
+
 ## Acceptance scenarios
 
 ```gherkin
@@ -314,8 +330,21 @@ Scenario: Production readiness requires off-host recovery
 
 Scenario: Detect a public outage independently
   Given the VPS public HTTPS entry point is unavailable
-  When three consecutive external checks fail
+  When the Better Stack keyword monitor remains failed throughout its 600-second confirmation period
   Then an alert is delivered through infrastructure outside the VPS
+
+Scenario: Preserve exact health verification outside the keyword monitor
+  Given the health response contains the configured Better Stack keyword
+  But the raw response differs from the exact contract in REQ-OPS-011
+  When deployment verification evaluates the public health operation
+  Then deployment verification fails
+
+Scenario: Collect metrics through the supported provider contract
+  Given the Better Stack collector source is configured for metrics-only ingestion
+  And its dedicated COLLECTOR_SECRET is available from approved secret custody
+  When Ansible provisions the collector through Better Stack's supported Docker Compose deployment
+  Then host and service metrics reach Better Stack
+  And broad log and distributed-trace ingestion remain disabled
 
 Scenario: Expose only minimal public readiness
   Given the commissioning gate is disabled
@@ -383,6 +412,7 @@ Scenario: Roll back a failed application pair
 * [ADR-0024: Deploy production directly to Hostinger KVM 2](../../decisions/0024-deploy-production-directly-to-hostinger-kvm-2.md)
 * [ADR-0025: Use AWS São Paulo for immutable encrypted production backups](../../decisions/0025-use-aws-sao-paulo-for-immutable-encrypted-production-backups.md)
 * [ADR-0028: Complete the initial production commissioning and release contracts](../../decisions/0028-complete-initial-production-commissioning-and-release-contracts.md)
+* [ADR-0029: Align Better Stack monitoring with provider-supported contracts](../../decisions/0029-align-better-stack-monitoring-with-provider-supported-contracts.md)
 
 ## Related requirements
 

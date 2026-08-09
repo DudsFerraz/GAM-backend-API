@@ -3,6 +3,8 @@
 ## Status
 Accepted
 
+The external-monitoring subsection is superseded by [ADR-0029](0029-align-better-stack-monitoring-with-provider-supported-contracts.md). All other decisions in this ADR remain accepted.
+
 ## Context
 ADR-0005 assigns cross-repository deployment ownership to the backend repository. ADR-0006 establishes the single-VPS same-origin topology, ADR-0024 selects Hostinger KVM 2, Ubuntu 24.04, containerized Caddy, private GHCR, and Ansible, and ADR-0025 defines the independent AWS backup system.
 
@@ -23,6 +25,8 @@ Provision Caddy with an Ansible-controlled commissioning gate enabled by default
 Do not use HTTP Basic authentication for commissioning. Explicit Developer approval after the readiness checklist is required to disable the gate. Record that transition, verify the health operation externally, and re-enable the gate when first-launch verification fails.
 
 ### External monitoring
+This subsection is retained as historical context and is superseded by ADR-0029.
+
 Use Better Stack for external availability, TLS, and host monitoring. Check `GET /api/health` every five minutes and alert through Better Stack-hosted email and mobile push after three consecutive failures.
 
 Run a metrics-only Better Stack collector on KVM 2 for host, filesystem, network, container, proxy, backend, and PostgreSQL signals. Do not enable broad log, request-body, or distributed-trace export initially. Keep the AWS EventBridge, Lambda, and SNS path separate and authoritative for backup-object monitoring.
@@ -129,6 +133,7 @@ Negative consequences:
 - `REQ-WEB-011`
 - `REQ-WEB-013`
 - `REQ-OPS-006`
+- `REQ-OPS-014`
 - `REQ-OPS-007`
 - `REQ-OPS-008`
 - `REQ-OPS-009`
@@ -141,6 +146,7 @@ Negative consequences:
 - [ADR-0006: Use a single-VPS same-origin proxy topology](0006-use-a-single-vps-same-origin-proxy-topology.md)
 - [ADR-0024: Deploy production directly to Hostinger KVM 2](0024-deploy-production-directly-to-hostinger-kvm-2.md)
 - [ADR-0025: Use AWS São Paulo for immutable encrypted production backups](0025-use-aws-sao-paulo-for-immutable-encrypted-production-backups.md)
+- [ADR-0029: Align Better Stack monitoring with provider-supported contracts](0029-align-better-stack-monitoring-with-provider-supported-contracts.md)
 
 ## Related diagrams
 - [`docs/diagrams/initial-production-topology.md`](../diagrams/initial-production-topology.md)

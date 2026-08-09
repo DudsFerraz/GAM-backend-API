@@ -20,8 +20,8 @@ versioned automation first.
 
 ## Recommended implementation order
 
-Focused planning is complete. Before implementation, validate `REQ-OPS-006`
-through `REQ-OPS-013`, `REQ-WEB-013`, and ADR-0028 as the authoritative
+Focused planning is complete. Before implementation, validate `REQ-OPS-007`
+through `REQ-OPS-014`, `REQ-WEB-013`, ADR-0028, and ADR-0029 as the authoritative
 planning baseline. Return to Agent P only if implementation exposes a missing
 or contradictory contract.
 
@@ -304,7 +304,7 @@ manager or offline vault, not in this repository.
 | Client custodian 2 | Named person with an individual recovery identity and MFA |
 | Client alert emails | Receive the 12:00 unresolved-backup escalation |
 | Password manager or vault | Holds recoverable operational secrets |
-| External monitoring provider | Better Stack; five-minute `GET /api/health`; alert after three consecutive failures |
+| External monitoring provider | Better Stack keyword monitor; five-minute `GET /api/health`; alert after a continuous 600-second failure confirmation period |
 | Maintenance window | Friday 08:30–10:30 `America/Sao_Paulo`; at least 72 hours notice; human-approved and automation-executed |
 | Rollback window | At least 14 days and through two subsequently verified production releases, whichever is longer |
 
@@ -409,7 +409,9 @@ example:
 ```
 
 It may supply Ansible with the database password, JWT signing secret, GHCR pull
-credential, AWS writer credential, and Better Stack monitoring token. The
+credential, AWS writer credential, Better Stack Uptime API token, and Better
+Stack `COLLECTOR_SECRET`. The Uptime API token remains on the automation
+controller; only the dedicated collector secret is installed on KVM 2. The
 commissioning operator CIDR allowlist belongs in versioned inventory rather than
 in this secret file. The file must not contain either `age` recovery private key.
 
@@ -529,7 +531,9 @@ and a passing readiness checklist. The launch procedure shall then verify
 `GET /api/health` from outside the VPS; if verification fails, automation shall
 re-enable the gate before remediation.
 
-## 6. Secure the existing AWS account
+## 6. Secure external service accounts
+
+### 6.1 Secure the existing AWS account
 
 Perform these manual account steps before running AWS automation:
 
@@ -543,6 +547,37 @@ Perform these manual account steps before running AWS automation:
 8. Confirm the developer and client alert email addresses.
 
 Never place root or developer-administrator credentials on the VPS.
+
+### 6.2 Prepare Better Stack
+
+1. Enable MFA on the Better Stack account and confirm the developer-controlled
+   recovery path.
+2. Confirm the email and mobile-push recipients by sending test notifications.
+3. Create a Uptime API token for monitor automation and keep it only in the
+   controller-side secret input.
+4. Create or reconcile a Docker collector source and store its returned
+   `COLLECTOR_SECRET` in the approved external vault. Do not substitute the
+   Uptime API token or an invented metrics token.
+5. Configure the source to retain the required host and service metrics while
+   disabling broad Docker/application logs and both basic and full distributed
+   tracing. Verify the effective source configuration in the Better Stack UI.
+6. Use a standard keyword monitor for public health. Do not purchase or enable a
+   Playwright transaction monitor solely for health-response exactness.
+
+The public-health monitor automation must use the provider-supported fields:
+
+```yaml
+monitor_type: keyword
+required_keyword: '{"status":"UP"}'
+check_frequency: 300
+confirmation_period: 600
+email: true
+push: true
+```
+
+Better Stack performs case-insensitive keyword containment and time-based
+confirmation. The deployment verification command, not this monitor, remains
+responsible for exact status, content type, raw-body, and cache-policy checks.
 
 ## 7. Provision AWS backup resources
 
@@ -667,7 +702,8 @@ The playbook must configure and verify:
 - the AWS writer credential in a root-owned mode-`0600` file;
 - backup, restore, deployment, rollback, maintenance, and verification commands;
 - the persistent 03:15 backup timer;
-- the metrics-only Better Stack collector for host and service monitoring; and
+- the official Better Stack Docker Compose collector, authenticated with its
+  dedicated `COLLECTOR_SECRET` and verified as metrics-only; and
 - an exclusive deployment lock.
 
 Run the versioned idempotency command. It must perform a successful real apply
@@ -827,8 +863,9 @@ During the burn-in, demonstrate all of the following:
 - application rollback restores the previous compatible release pair;
 - resource use remains safe under representative load;
 - filesystem warnings trigger at 80 percent and critical alerts at 90 percent;
-- Better Stack sends `GET /api/health` every five minutes, requires `200 OK` and
-  exactly `{"status":"UP"}`, and alerts after three consecutive failures;
+- Better Stack sends `GET /api/health` every five minutes, applies its standard
+  keyword check for `{"status":"UP"}`, and alerts when failure remains
+  continuous through the 600-second confirmation period;
 - backup upload runs at 03:15 São Paulo time;
 - AWS validates the backup at 04:30 and escalates an unresolved failure at 12:00;
 - recovery notification follows a successful retry;
@@ -1004,7 +1041,7 @@ After rollback:
 
 | Frequency | Operation |
 | --- | --- |
-| Every 5 minutes | Better Stack sends `GET /api/health`, requires `200 OK` and exactly `{"status":"UP"}`, and alerts after three consecutive failures |
+| Every 5 minutes | Better Stack sends `GET /api/health`, applies its standard keyword check for `{"status":"UP"}`, and alerts after a continuous 600-second failure confirmation period |
 | Daily 03:15 São Paulo | Online PostgreSQL recovery artifact, encryption, upload, validation, and Compliance retention |
 | Daily 04:30 São Paulo | Independent AWS backup-object validation and developer alert |
 | Daily 12:00 São Paulo | Escalate unresolved backup failure to both client custodians |

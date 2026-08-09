@@ -142,7 +142,7 @@ Negative consequences:
 - `REQ-OPS-001`
 - `REQ-OPS-002`
 - `REQ-OPS-003`
-- `REQ-OPS-006`
+- `REQ-OPS-014`
 - `REQ-OPS-007`
 - `REQ-OPS-008`
 - `REQ-OPS-009`
