@@ -1,0 +1,40 @@
+---
+- name: Create the host configuration directory
+  ansible.builtin.file:
+    path: "{{ host_configuration_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create the host state directory
+  ansible.builtin.file:
+    path: "{{ host_state_directory }}"
+    state: directory
+    owner: "{{ operations_user_name }}"
+    group: "{{ operations_user_name }}"
+    mode: '0750'
+
+- name: Create the host log directory
+  ansible.builtin.file:
+    path: "{{ host_log_directory }}"
+    state: directory
+    owner: "{{ operations_user_name }}"
+    group: "{{ operations_user_name }}"
+    mode: '0750'
+
+- name: Create the host operations directory
+  ansible.builtin.file:
+    path: "{{ host_operations_directory }}"
+    state: directory
+    owner: "{{ operations_user_name }}"
+    group: "{{ operations_user_name }}"
+    mode: '0750'
+
+- name: Create the restricted secret directory
+  ansible.builtin.file:
+    path: "{{ host_secret_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'

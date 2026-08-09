@@ -1,0 +1,6 @@
+---
+host_configuration_directory: /etc/gam
+host_state_directory: /var/lib/gam
+host_log_directory: /var/log/gam
+host_operations_directory: /opt/gam
+host_secret_directory: /etc/gam/secrets

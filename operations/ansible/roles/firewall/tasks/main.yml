@@ -1,0 +1,193 @@
+---
+- name: Require a non-public SSH source allowlist
+  ansible.builtin.assert:
+    that:
+      - firewall_ssh_allowed_cidrs | length > 0
+      - "'0.0.0.0/0' not in firewall_ssh_allowed_cidrs"
+      - "'::/0' not in firewall_ssh_allowed_cidrs"
+    fail_msg: Set ssh_allowed_cidrs to one or more restricted operator networks.
+
+- name: Install the host firewall
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Read the current host firewall state
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - status
+      - verbose
+  register: firewall_status
+  changed_when: false
+
+- name: Read the current numbered host firewall rules
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - status
+      - numbered
+  register: firewall_rules
+  changed_when: false
+
+- name: Define the exact allowed SSH source pattern
+  ansible.builtin.set_fact:
+    firewall_allowed_ssh_sources_pattern: "{{ firewall_ssh_allowed_cidrs | map('regex_escape') | join('|') }}"
+
+- name: Normalize current incoming firewall rules
+  ansible.builtin.set_fact:
+    firewall_rule_lines: >-
+      {{ firewall_rules.stdout_lines
+         | select('match', '^\\s*\\[\\s*[0-9]+\\]\\s+')
+         | map('regex_replace', '^\\s*\\[\\s*[0-9]+\\]\\s+', '')
+         | map('regex_replace', '\\s+', ' ')
+         | map('trim')
+         | list }}
+
+- name: Reject unexpected pre-existing incoming firewall rules
+  ansible.builtin.assert:
+    that:
+      - "item is match('^(?:80/tcp(?: \\(v6\\))? ALLOW IN Anywhere(?: \\(v6\\))?|443/tcp(?: \\(v6\\))? ALLOW IN Anywhere(?: \\(v6\\))?|' ~ firewall_ssh_port ~ '/tcp(?: \\(v6\\))? ALLOW IN (?:' ~ firewall_allowed_ssh_sources_pattern ~ '))$')"
+    fail_msg: Every pre-existing incoming rule must belong to the exact production baseline allowlist.
+  loop: "{{ firewall_rule_lines }}"
+
+- name: Reject duplicate pre-existing incoming firewall rules
+  ansible.builtin.set_fact:
+    firewall_unique_rule_lines: "{{ firewall_rule_lines | unique | list }}"
+
+- name: Fail closed when pre-existing incoming rules are duplicated
+  ansible.builtin.assert:
+    that:
+      - firewall_rule_lines | length == firewall_unique_rule_lines | length
+    fail_msg: Duplicate incoming firewall rules are not part of the exact production baseline.
+
+- name: Reject broad pre-existing SSH rules before convergence
+  ansible.builtin.assert:
+    that:
+      - "firewall_rules.stdout is not search('(?m)^\\s*\\[\\s*[0-9]+\\]\\s+' ~ firewall_ssh_port ~ '/tcp(?: \\(v6\\))?\\s+ALLOW(?: IN)?\\s+(?:Anywhere|0\\.0\\.0\\.0/0|::/0)(?: \\(v6\\))?\\s*$')"
+    fail_msg: A broad pre-existing SSH rule would violate the restricted host boundary.
+
+- name: Set the default outgoing policy to allow
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - default
+      - allow
+      - outgoing
+  when: "firewall_status.stdout is not search('(?m)^Default:\\s+allow \\(outgoing\\)\\s*$')"
+  changed_when: true
+
+- name: Allow public proxy traffic on port 80
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - allow
+      - 80/tcp
+  when: "firewall_rules.stdout is not search('(?m)^\\s*\\[\\s*[0-9]+\\]\\s+80/tcp(?: \\(v6\\))?\\s+ALLOW IN\\s+Anywhere(?: \\(v6\\))?\\s*$')"
+  changed_when: true
+
+- name: Allow public proxy traffic on port 443
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - allow
+      - 443/tcp
+  when: "firewall_rules.stdout is not search('(?m)^\\s*\\[\\s*[0-9]+\\]\\s+443/tcp(?: \\(v6\\))?\\s+ALLOW IN\\s+Anywhere(?: \\(v6\\))?\\s*$')"
+  changed_when: true
+
+- name: Allow SSH only from approved operator CIDRs
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - allow
+      - from
+      - "{{ item }}"
+      - to
+      - any
+      - port
+      - "{{ firewall_ssh_port }}"
+      - proto
+      - tcp
+  loop: "{{ firewall_ssh_allowed_cidrs }}"
+  when: "firewall_rules.stdout is not search('(?m)^\\s*\\[\\s*[0-9]+\\]\\s+' ~ firewall_ssh_port ~ '/tcp(?: \\(v6\\))?\\s+ALLOW IN\\s+' ~ (item | regex_escape) ~ '\\s*$')"
+  changed_when: true
+
+- name: Set the default incoming policy to deny
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - default
+      - deny
+      - incoming
+  when: "firewall_status.stdout is not search('(?m)^Default:\\s+deny \\(incoming\\)\\s*$')"
+  changed_when: true
+
+- name: Enable the deny-by-default host firewall
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - --force
+      - enable
+  when: "firewall_status.stdout is not search('(?m)^Status:\\s+active\\s*$')"
+  changed_when: true
+
+- name: Read the active firewall state after configuration
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - status
+      - verbose
+  register: firewall_final_status
+  changed_when: false
+
+- name: Read the final numbered host firewall rules
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - status
+      - numbered
+  register: firewall_final_rules
+  changed_when: false
+
+- name: Normalize final incoming firewall rules
+  ansible.builtin.set_fact:
+    firewall_final_rule_lines: >-
+      {{ firewall_final_rules.stdout_lines
+         | select('match', '^\\s*\\[\\s*[0-9]+\\]\\s+')
+         | map('regex_replace', '^\\s*\\[\\s*[0-9]+\\]\\s+', '')
+         | map('regex_replace', '\\s+', ' ')
+         | map('trim')
+         | list }}
+
+- name: Reject unexpected final incoming firewall rules
+  ansible.builtin.assert:
+    that:
+      - "item is match('^(?:80/tcp(?: \\(v6\\))? ALLOW IN Anywhere(?: \\(v6\\))?|443/tcp(?: \\(v6\\))? ALLOW IN Anywhere(?: \\(v6\\))?|' ~ firewall_ssh_port ~ '/tcp(?: \\(v6\\))? ALLOW IN (?:' ~ firewall_allowed_ssh_sources_pattern ~ '))$')"
+    fail_msg: The final incoming firewall rules must equal the exact production baseline allowlist.
+  loop: "{{ firewall_final_rule_lines }}"
+
+- name: Reject duplicate final incoming firewall rules
+  ansible.builtin.set_fact:
+    firewall_final_unique_rule_lines: "{{ firewall_final_rule_lines | unique | list }}"
+
+- name: Fail closed when final incoming rules are duplicated
+  ansible.builtin.assert:
+    that:
+      - firewall_final_rule_lines | length == firewall_final_unique_rule_lines | length
+    fail_msg: Duplicate final incoming firewall rules are not part of the exact production baseline.
+
+- name: Verify the exact active firewall state
+  ansible.builtin.assert:
+    that:
+      - "firewall_final_status.stdout is search('(?m)^Status:\\s+active\\s*$')"
+      - "firewall_final_status.stdout is search('(?m)^Default:\\s+deny \\(incoming\\)\\s*$')"
+      - "firewall_final_rules.stdout is search('(?m)^\\s*\\[\\s*[0-9]+\\]\\s+80/tcp(?: \\(v6\\))?\\s+ALLOW IN\\s+Anywhere(?: \\(v6\\))?\\s*$')"
+      - "firewall_final_rules.stdout is search('(?m)^\\s*\\[\\s*[0-9]+\\]\\s+443/tcp(?: \\(v6\\))?\\s+ALLOW IN\\s+Anywhere(?: \\(v6\\))?\\s*$')"
+      - "firewall_final_rules.stdout is not search('(?m)^\\s*\\[\\s*[0-9]+\\]\\s+5432/tcp(?: \\(v6\\))?\\s+ALLOW IN\\s+')"
+      - "firewall_final_rules.stdout is not search('(?m)^\\s*\\[\\s*[0-9]+\\]\\s+8080/tcp(?: \\(v6\\))?\\s+ALLOW IN\\s+')"
+      - "firewall_final_rules.stdout is not search('(?m)^\\s*\\[\\s*[0-9]+\\]\\s+' ~ firewall_ssh_port ~ '/tcp(?: \\(v6\\))?\\s+ALLOW(?: IN)?\\s+(?:Anywhere|0\\.0\\.0\\.0/0|::/0)(?: \\(v6\\))?\\s*$')"
+      - "firewall_final_rules.stdout is search('(?m)^\\s*\\[\\s*[0-9]+\\]\\s+' ~ firewall_ssh_port ~ '/tcp(?: \\(v6\\))?\\s+ALLOW IN\\s+' ~ (item | regex_escape) ~ '\\s*$')"
+    fail_msg: The active firewall state did not match the restricted production baseline.
+  loop: "{{ firewall_ssh_allowed_cidrs }}"

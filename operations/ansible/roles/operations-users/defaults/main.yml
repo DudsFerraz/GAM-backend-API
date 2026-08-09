@@ -1,0 +1,7 @@
+---
+operations_user_name: gamops
+operations_user_shell: /bin/bash
+operations_user_groups:
+  - sudo
+operations_public_key_file: ""
+operations_user_sudoers_path: /etc/sudoers.d/90-gamops

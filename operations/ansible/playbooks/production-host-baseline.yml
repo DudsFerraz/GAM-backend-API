@@ -1,0 +1,77 @@
+---
+- name: Bootstrap operations access from the root connection
+  hosts: production
+  remote_user: root
+  become: false
+  gather_facts: false
+  serial: 1
+  tags:
+    - bootstrap
+  pre_tasks:
+    - name: Require real bootstrap host, network, and key inputs
+      ansible.builtin.assert:
+        that:
+          - ansible_host | default('') | trim | length > 0
+          - (ansible_host | default('') | lower) is not search('example')
+          - (ansible_host | default('') | lower) is not search('invalid')
+          - ssh_allowed_cidrs | default([]) | length > 0
+          - operations_public_key_file | default('') | trim | length > 0
+        fail_msg: Supply a real host, restricted operator CIDR, and public-key file before bootstrap.
+
+    - name: Reject public or documentation-only operator networks
+      ansible.builtin.assert:
+        that:
+          - item not in ['0.0.0.0/0', '::/0', '192.0.2.0/24', '198.51.100.0/24', '203.0.113.0/24']
+          - item | trim | length > 0
+          - (item | trim | lower | regex_search('^(192\\.0\\.2\\.|198\\.51\\.100\\.|203\\.0\\.113\\.|2001:db8:)')) is none
+          - (ansible_host | default('') | lower | regex_search('^(192\\.0\\.2\\.|198\\.51\\.100\\.|203\\.0\\.113\\.|2001:db8:)')) is none
+        fail_msg: The operator CIDR must be a real restricted network.
+      loop: "{{ ssh_allowed_cidrs }}"
+  roles:
+    - role: operations-users
+
+- name: Verify operations access and configure the Ubuntu 24.04 host baseline
+  hosts: production
+  remote_user: gamops
+  become: true
+  gather_facts: true
+  serial: 1
+  tags:
+    - steady-state
+  pre_tasks:
+    - name: Verify a new gamops SSH connection
+      ansible.builtin.wait_for_connection:
+        timeout: 30
+      become: false
+
+    - name: Verify gamops passwordless privilege escalation
+      ansible.builtin.command:
+        argv:
+          - id
+          - --user
+      register: gamops_privilege_check
+      changed_when: false
+      become: true
+      become_method: sudo
+      become_flags: '-n'
+
+    - name: Prove gamops privileged execution
+      ansible.builtin.assert:
+        that:
+          - gamops_privilege_check.stdout | trim == '0'
+        fail_msg: gamops could not prove passwordless privileged execution.
+
+    - name: Require the accepted Ubuntu 24.04 host
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == 'Ubuntu'
+          - ansible_facts.distribution_major_version | int == 24
+          - ansible_facts.distribution_version == '24.04'
+        fail_msg: This baseline is restricted to Ubuntu Server 24.04.
+  roles:
+    - role: operations-users
+    - role: ssh-hardening
+    - role: docker
+    - role: firewall
+    - role: directories
+    - role: secret-inputs

@@ -1,0 +1,62 @@
+---
+- name: Ensure sudo is installed for the bootstrap privilege policy
+  ansible.builtin.apt:
+    name: sudo
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Require a non-empty controller-supplied operations public key
+  ansible.builtin.assert:
+    that:
+      - operations_public_key_file | default('') | trim | length > 0
+    fail_msg: A non-empty operations public key file is required.
+
+- name: Read the controller-supplied operations public key
+  ansible.builtin.set_fact:
+    operations_public_key_content: "{{ lookup('ansible.builtin.file', operations_public_key_file, errors='strict') }}"
+  no_log: true
+
+- name: Validate the operations public key content
+  ansible.builtin.assert:
+    that:
+      - operations_public_key_content | trim | length > 0
+    fail_msg: The controller-supplied operations public key must be non-empty.
+  no_log: true
+
+- name: Create the dedicated operations user
+  ansible.builtin.user:
+    name: "{{ operations_user_name }}"
+    shell: "{{ operations_user_shell }}"
+    groups: "{{ operations_user_groups }}"
+    append: true
+    create_home: true
+    password_lock: true
+    state: present
+
+- name: Create the operations user's SSH directory
+  ansible.builtin.file:
+    path: "/home/{{ operations_user_name }}/.ssh"
+    state: directory
+    owner: "{{ operations_user_name }}"
+    group: "{{ operations_user_name }}"
+    mode: '0700'
+
+- name: Install externally supplied operations public keys
+  ansible.builtin.copy:
+    content: "{{ operations_public_key_content }}"
+    dest: "/home/{{ operations_user_name }}/.ssh/authorized_keys"
+    owner: "{{ operations_user_name }}"
+    group: "{{ operations_user_name }}"
+    mode: '0600'
+  no_log: true
+
+- name: Install validated passwordless sudo policy for gamops
+  ansible.builtin.copy:
+    dest: "{{ operations_user_sudoers_path }}"
+    owner: root
+    group: root
+    mode: '0440'
+    content: |
+      {{ operations_user_name }} ALL=(ALL:ALL) NOPASSWD:ALL
+    validate: /usr/sbin/visudo -cf %s

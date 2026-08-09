@@ -1,0 +1,40 @@
+---
+- name: Require an external recoverable secret input for an apply
+  ansible.builtin.assert:
+    that:
+      - secret_input_source_file | length > 0
+      - secret_input_target_file | length > 0
+    fail_msg: Supply secret_input_source_file from approved external custody.
+  no_log: true
+
+- name: Read the external secret input from the controller
+  ansible.builtin.set_fact:
+    secret_input_content: "{{ lookup('ansible.builtin.file', secret_input_source_file, errors='strict') }}"
+  no_log: true
+
+- name: Install the recoverable secret input with restricted permissions
+  ansible.builtin.copy:
+    content: "{{ secret_input_content }}"
+    dest: "{{ secret_input_target_file }}"
+    owner: "{{ secret_input_owner }}"
+    group: "{{ secret_input_group }}"
+    mode: "{{ secret_input_mode }}"
+  no_log: true
+
+- name: Verify the recoverable secret input converged securely
+  ansible.builtin.stat:
+    path: "{{ secret_input_target_file }}"
+  register: secret_input_state
+  no_log: true
+
+- name: Assert the recoverable secret input has the required mode
+  ansible.builtin.assert:
+    that:
+      - secret_input_state.stat.exists
+      - secret_input_state.stat.mode == secret_input_mode
+    fail_msg: The recoverable secret input was not installed with the required mode.
+  no_log: true
+
+- name: Report secret input convergence without exposing its value
+  ansible.builtin.debug:
+    msg: "Secret input convergence verified at {{ secret_input_target_file }}"

@@ -1,0 +1,18 @@
+---
+all:
+  children:
+    production:
+      hosts:
+        hostinger_kvm2:
+          # Supply the real KVM 2 address before starting the root bootstrap.
+          ansible_host: "{{ lookup('ansible.builtin.env', 'GAM_PRODUCTION_HOST') }}"
+          # The playbook selects root for bootstrap and gamops for steady state.
+      vars:
+        ansible_python_interpreter: /usr/bin/python3
+        bootstrap_user: root
+        steady_state_user: gamops
+        operations_user_name: gamops
+        ssh_allowed_cidrs:
+          - "{{ lookup('ansible.builtin.env', 'GAM_SSH_ALLOWED_CIDR') }}"
+        operations_public_key_file: "{{ lookup('ansible.builtin.env', 'GAM_OPERATIONS_PUBLIC_KEY_FILE') }}"
+        secret_input_source_file: "{{ lookup('ansible.builtin.env', 'GAM_SECRET_INPUT_FILE', default='') }}"

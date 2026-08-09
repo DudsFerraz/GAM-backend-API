@@ -1,0 +1,6 @@
+---
+secret_input_source_file: "{{ lookup('ansible.builtin.env', 'GAM_SECRET_INPUT_FILE', default='') }}"
+secret_input_target_file: /etc/gam/secrets/production.env
+secret_input_owner: root
+secret_input_group: root
+secret_input_mode: '0600'

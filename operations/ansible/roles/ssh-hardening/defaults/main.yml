@@ -1,0 +1,3 @@
+---
+ssh_hardening_config_path: /etc/ssh/sshd_config.d/99-gam-hardening.conf
+ssh_service_name: ssh
