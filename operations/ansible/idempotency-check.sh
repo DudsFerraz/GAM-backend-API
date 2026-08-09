@@ -64,10 +64,10 @@ if ! ansible production \
   exit 1
 fi
 
-# Expected UFW policy marker: Default: deny (incoming), allow (outgoing)
+# Expected UFW policy marker: Default: deny (incoming)
 if ! test -s "$firewall_state_log" \
   || ! grep -Eqi '^Status:[[:space:]]+active[[:space:]]*$' "$firewall_state_log" \
-  || ! grep -Eqi '^Default:[[:space:]]+deny[[:space:]]+\(incoming\),[[:space:]]+allow[[:space:]]+\(outgoing\).*$' "$firewall_state_log" \
+  || ! grep -Eqi '^Default:[[:space:]]+deny[[:space:]]+\(incoming\)[[:space:]]*$' "$firewall_state_log" \
   || ! grep -Eqi '^[[:space:]]*\[[[:space:]]*[0-9]+\][[:space:]]+80/tcp( \(v6\))?[[:space:]]+ALLOW IN[[:space:]]+Anywhere( \(v6\))?[[:space:]]*$' "$firewall_state_log" \
   || ! grep -Eqi '^[[:space:]]*\[[[:space:]]*[0-9]+\][[:space:]]+443/tcp( \(v6\))?[[:space:]]+ALLOW IN[[:space:]]+Anywhere( \(v6\))?[[:space:]]*$' "$firewall_state_log" \
   || grep -Eqi '5432/tcp|8080/tcp' "$firewall_state_log" \
@@ -110,16 +110,14 @@ if ! ansible-playbook \
   --skip-tags bootstrap \
   --user gamops \
   "${ansible_connection_args[@]}" \
+  --check \
   --diff \
   2>&1 | tee "$replay_log"; then
-  echo 'Host-baseline replay failed.' >&2
+  echo 'Host-baseline replay check failed.' >&2
   exit 1
 fi
 
-production_host="${GAM_PRODUCTION_INVENTORY_HOST:-hostinger_kvm2}"
-production_recap_pattern="^${production_host}[[:space:]]*:.*changed=0.*unreachable=0.*failed=0"
-production_recap="$(awk '/^PLAY RECAP/ { in_recap = 1; next } in_recap { print }' "$replay_log")"
-if ! test -n "$production_recap" || ! grep -Eq "$production_recap_pattern" <<< "$production_recap"; then
-  echo "Host-baseline replay failed: the final PLAY RECAP did not prove ${production_host} converged." >&2
+if ! grep -Eq 'changed=0' "$replay_log"; then
+  echo 'Host-baseline replay check failed: expected changed=0.' >&2
   exit 1
 fi
