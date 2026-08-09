@@ -44,9 +44,7 @@ public class SubmitMembershipSolicitation {
 
     @Transactional
     public MembershipSolicitationRDTO submit(SubmitMembershipSolicitationDTO dto) {
-        String justification = RequiredReason.normalize(
-                dto.justification(), "Membership solicitation justification is required."
-        );
+        String justification = RequiredReason.normalizeForRequest(dto.justification(), "/justification");
         validateEligibility(dto.birthDate());
         if (dto.gamEntryDate().isAfter(LocalDate.now())) {
             throw new RequestValidationException("body", "/gamEntryDate", "RANGE");
@@ -74,9 +72,11 @@ public class SubmitMembershipSolicitation {
         solicitation.setBirthDate(dto.birthDate());
         solicitation.setGamEntryDate(dto.gamEntryDate());
         String residentialCity = br.org.gam.api.member.domain.MemberInformationText.collapsed(dto.residentialCity());
+        if (residentialCity == null || residentialCity.isEmpty()) {
+            throw new RequestValidationException("body", "/residentialCity", "NOT_BLANK");
+        }
         if (residentialCity.codePointCount(0, residentialCity.length()) > 100) {
-            throw new br.org.gam.api.shared.exception.RequestValidationException(
-                    "body", "/residentialCity", "SIZE");
+            throw new RequestValidationException("body", "/residentialCity", "SIZE");
         }
         solicitation.setResidentialCity(residentialCity);
         solicitation.setPhoneNumber(dto.phoneNumber());

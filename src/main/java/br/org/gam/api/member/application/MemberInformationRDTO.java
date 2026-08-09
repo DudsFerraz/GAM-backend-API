@@ -7,12 +7,14 @@ import br.org.gam.api.member.domain.MemberSacramentType;
 import java.util.List;
 import java.util.Map;
 import io.swagger.v3.oas.annotations.StringToClassMapItem;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 public final class MemberInformationRDTO {
     private MemberInformationRDTO() {}
 
-    @Schema(requiredProperties = {"experiences", "sacraments"})
+    @Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE,
+            requiredProperties = {"experiences", "sacraments"})
     public record ExperiencesAndSacraments(
             @Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE,
                     requiredProperties = {"JORNADA_MISSIONARIA", "CURSO_DE_LIDERANCA", "PASCOA_JUVENIL", "ACAMPABOSCO"},
@@ -33,11 +35,19 @@ public final class MemberInformationRDTO {
             Map<MemberSacramentType, InformationStatus> sacraments
     ) {}
 
-    @Schema(name = "MemberContributionProfileRead", requiredProperties = {
-            "contributionAreas", "otherContributionAreas"})
-    public record ContributionProfileRead(List<MemberContributionArea> contributionAreas,
-                                          List<String> otherContributionAreas) {}
+    @Schema(name = "MemberContributionProfileRead",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE,
+            requiredProperties = {"contributionAreas", "otherContributionAreas"})
+    public record ContributionProfileRead(
+            @ArraySchema(maxItems = 18, uniqueItems = true)
+            List<MemberContributionArea> contributionAreas,
+            @ArraySchema(maxItems = 10, uniqueItems = true,
+                    schema = @Schema(implementation = String.class, minLength = 1, maxLength = 100,
+                            description = "Each normalized value contains from 1 through 100 Unicode code points."))
+            List<String> otherContributionAreas
+    ) {}
 
-    @Schema(requiredProperties = {"contributionProfile"})
+    @Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE,
+            requiredProperties = {"contributionProfile"})
     public record ContributionProfileResponse(ContributionProfileRead contributionProfile) {}
 }

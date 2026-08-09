@@ -14,10 +14,19 @@ public record SubmitMembershipSolicitationDTO(
         @NotBlank String surname,
         @NotNull LocalDate birthDate,
         @NotNull LocalDate gamEntryDate,
-        @NotBlank String residentialCity,
+        @NotBlank
+        @Schema(minLength = 1, maxLength = 100,
+                description = "Leading and trailing Unicode White_Space code points are removed and internal "
+                        + "whitespace sequences are collapsed before validation; the normalized city must contain "
+                        + "from 1 through 100 Unicode code points.")
+        String residentialCity,
         @NotNull GamPhoneNumber phoneNumber,
         @NotNull GamEmail contactEmail,
-        @NotBlank String justification,
+        @NotBlank
+        @Schema(minLength = 1, maxLength = 2000,
+                description = "Trim leading and trailing whitespace before validation; the normalized "
+                        + "justification must contain from 1 through 2,000 characters.")
+        String justification,
         @Null(message = "accountId must not be supplied")
         @Schema(hidden = true)
         JsonNode accountId

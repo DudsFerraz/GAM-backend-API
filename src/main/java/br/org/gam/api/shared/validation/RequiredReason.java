@@ -15,6 +15,14 @@ public final class RequiredReason {
         }
     }
 
+    public static String normalizeForRequest(String reason, String field) {
+        try {
+            return ActivityReasonNormalizer.normalizeRequired(reason);
+        } catch (IllegalArgumentException exception) {
+            throw InvalidCommandException.validation("body", field, validationCode(reason));
+        }
+    }
+
     public static String validationCode(String reason) {
         if (reason == null) {
             return "REQUIRED";

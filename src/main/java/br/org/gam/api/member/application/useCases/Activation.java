@@ -49,7 +49,7 @@ public class Activation {
 
     @Transactional
     public void linkAccount(UUID memberId, LinkMemberAccountDTO command) {
-        String reason = RequiredReason.normalize(command.reason(), "Member Account linking requires an audit reason.");
+        String reason = RequiredReason.normalizeForRequest(command.reason(), "/reason");
         MemberEntity member = memberEntityLoader.requiredByIdForUpdate(memberId);
         if (member.getAccount() != null) {
             throw ConflictException.resource("Member", memberId, "This Member already has a linked Account.");
@@ -79,7 +79,7 @@ public class Activation {
 
     @Transactional
     public void activate(UUID memberId, String reason) {
-        String auditReason = RequiredReason.normalize(reason, "Member activation requires an audit reason.");
+        String auditReason = RequiredReason.normalizeForRequest(reason, "/reason");
         LockedMember locked = lockedMember(memberId, MemberStatus.INACTIVE);
         Member member = locked.domain();
         UUID accountId = accountId(member);
@@ -98,7 +98,7 @@ public class Activation {
 
     @Transactional
     public void deactivate(UUID memberId, String reason) {
-        String auditReason = RequiredReason.normalize(reason, "Member deactivation requires an audit reason.");
+        String auditReason = RequiredReason.normalizeForRequest(reason, "/reason");
         LockedMember locked = lockedMember(memberId, MemberStatus.ACTIVE);
         Member member = locked.domain();
         UUID accountId = accountId(member);
@@ -135,7 +135,7 @@ public class Activation {
 
     @Transactional
     public void grantCoordinator(UUID memberId, String reason) {
-        String auditReason = RequiredReason.normalize(reason, "Coordinator transition requires an audit reason.");
+        String auditReason = RequiredReason.normalizeForRequest(reason, "/reason");
         MemberEntity member = lockedActiveMemberEntity(memberId);
         UUID accountId = requiredLinkedAccountId(member, memberId);
         roleProjection.assertActiveNonCoordinator(accountId);
@@ -145,7 +145,7 @@ public class Activation {
 
     @Transactional
     public void revokeCoordinator(UUID memberId, String reason) {
-        String auditReason = RequiredReason.normalize(reason, "Coordinator transition requires an audit reason.");
+        String auditReason = RequiredReason.normalizeForRequest(reason, "/reason");
         MemberEntity member = lockedActiveMemberEntity(memberId);
         UUID accountId = member.getAccount().getId();
         roleProjection.assertActiveCoordinator(accountId);
@@ -156,10 +156,7 @@ public class Activation {
 
     @Transactional
     public void grantOratorioCoordinator(UUID memberId, String reason) {
-        String auditReason = RequiredReason.normalize(
-                reason,
-                "Oratorio Coordinator transition requires an audit reason."
-        );
+        String auditReason = RequiredReason.normalizeForRequest(reason, "/reason");
         MemberEntity member = lockedActiveMemberEntity(memberId);
         UUID accountId = requiredLinkedAccountId(member, memberId);
         roleProjection.assertActiveWithoutOratorioCoordinator(accountId);
@@ -169,10 +166,7 @@ public class Activation {
 
     @Transactional
     public void revokeOratorioCoordinator(UUID memberId, String reason) {
-        String auditReason = RequiredReason.normalize(
-                reason,
-                "Oratorio Coordinator transition requires an audit reason."
-        );
+        String auditReason = RequiredReason.normalizeForRequest(reason, "/reason");
         MemberEntity member = lockedActiveMemberEntity(memberId);
         UUID accountId = member.getAccount().getId();
         roleProjection.assertActiveOratorioCoordinator(accountId);

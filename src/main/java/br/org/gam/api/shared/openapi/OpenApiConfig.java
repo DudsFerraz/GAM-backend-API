@@ -208,6 +208,7 @@ public class OpenApiConfig {
             requireCsrfBootstrapResponseFields(components);
             requireCurrentAccountContextResponseFields(components);
             configureSharedSearchSchemas(components);
+            configureMemberInformationSchemas(components);
             configureNullableFormDraftObjectSchemas(components);
             configureNullableFormLifecycleSchemas(components);
             components.getSchemas().remove("Pageable");
@@ -386,6 +387,41 @@ public class OpenApiConfig {
                 "value",
                 new ComposedSchema().oneOf(List.of(scalar, inValues))
         );
+    }
+
+    private void configureMemberInformationSchemas(Components components) {
+        configureMemberInformationArray(components, "ContributionProfile", "contributionAreas", 18, false);
+        configureMemberInformationArray(components, "ContributionProfile", "otherContributionAreas", 10, true);
+        configureMemberInformationArray(
+                components, "MemberContributionProfileRead", "contributionAreas", 18, false);
+        configureMemberInformationArray(
+                components, "MemberContributionProfileRead", "otherContributionAreas", 10, true);
+        configureMemberInformationArray(components, "Occupations", "values", 4, false);
+    }
+
+    private void configureMemberInformationArray(
+            Components components,
+            String schemaName,
+            String propertyName,
+            int maximum,
+            boolean removeItemArrayKeywords
+    ) {
+        Schema<?> schema = components.getSchemas().get(schemaName);
+        if (schema == null || schema.getProperties() == null) {
+            return;
+        }
+
+        Schema<?> property = schema.getProperties().get(propertyName);
+        if (property == null) {
+            return;
+        }
+
+        property.setMaxItems(maximum);
+        property.setUniqueItems(true);
+        if (removeItemArrayKeywords && property.getItems() != null) {
+            property.getItems().setMaxItems(null);
+            property.getItems().setUniqueItems(null);
+        }
     }
 
     private void addOperationMetadata(String path, io.swagger.v3.oas.models.Operation operation) {

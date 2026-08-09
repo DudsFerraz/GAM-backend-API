@@ -113,6 +113,6 @@ public class ReviewMembershipSolicitation {
     }
 
     private String normalizeReason(String reason) {
-        return RequiredReason.normalize(reason, "Membership solicitation review requires an audit reason.");
+        return RequiredReason.normalizeForRequest(reason, "/reason");
     }
 }

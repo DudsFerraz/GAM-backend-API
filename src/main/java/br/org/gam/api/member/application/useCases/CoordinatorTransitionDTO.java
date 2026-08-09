@@ -8,6 +8,7 @@ public record CoordinatorTransitionDTO(
         @Schema(
                 requiredMode = Schema.RequiredMode.REQUIRED,
                 minLength = 1,
+                maxLength = 2000,
                 description = "Trimmed by removing only leading and trailing Unicode White_Space code points "
                         + "before validation; the normalized reason must not be blank and must contain from 1 "
                         + "through 2,000 Unicode code points."

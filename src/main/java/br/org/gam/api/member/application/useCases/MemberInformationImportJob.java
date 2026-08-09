@@ -37,6 +37,12 @@ import org.springframework.stereotype.Component;
 public class MemberInformationImportJob implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(MemberInformationImportJob.class);
     private static final String SCHEMA = "gam-member-information-import/v1";
+    private static final Map<String, Integer> PREPARATION_REVIEW_SUMMARY = Map.of(
+            "csvCandidateCount", 76,
+            "additionalCandidateCount", 2,
+            "excludedDuplicateCount", 4,
+            "approvedRecordCount", 74,
+            "unresolvedIssueCount", 0);
 
     private final ObjectMapper objectMapper;
     private final MemberInformationImportBatchRepository batches;
@@ -82,13 +88,21 @@ public class MemberInformationImportJob implements ApplicationRunner {
     public void run(ApplicationArguments args) throws Exception {
         String action = option(args, "maintenance.action");
         if (!Set.of("validate", "apply").contains(action)) throw safe("UNSUPPORTED_ACTION", -1, null);
-        Path path = Path.of(option(args, "maintenance.file"));
+        String file = option(args, "maintenance.file");
+        Path path;
+        try {
+            path = Path.of(file);
+        } catch (RuntimeException exception) {
+            throw safe("INPUT_READ_FAILED", -1, null);
+        }
         JsonNode document;
         try (var input = Files.newInputStream(path)) {
             document = objectMapper.readTree(input);
         } catch (Exception exception) {
             throw safe("INPUT_READ_FAILED", -1, null);
         }
+        if (document == null || document.isNull() || document.isMissingNode())
+            throw safe("INPUT_READ_FAILED", -1, null);
         ValidatedDocument validated = validate(document);
         if ("apply".equals(action)) apply(validated, option(args, "maintenance.actor-reference"),
                 ActivityReasonNormalizer.normalizeRequired(option(args, "maintenance.reason")));
@@ -98,17 +112,21 @@ public class MemberInformationImportJob implements ApplicationRunner {
     }
 
     private ValidatedDocument validate(JsonNode document) throws Exception {
+        JsonNode preparationReason = document == null ? null : document.get("maintenanceReason");
+        if (preparationReason != null && !preparationReason.isNull()) {
+            throw safe("FORBIDDEN_FIELD", -1, "maintenanceReason");
+        }
         if (!SCHEMA.equals(text(document, "schemaVersion"))) throw safe("UNSUPPORTED_SCHEMA", -1, "schemaVersion");
         if (!"APPROVED".equals(text(document, "documentStatus"))) throw safe("DOCUMENT_NOT_APPROVED", -1, "documentStatus");
         JsonNode batch = required(document, "batch", -1);
         UUID batchId = uuid(text(batch, "id", -1, "batch.id"), -1, "batch.id");
         requireV7(batchId, -1, "batch.id");
-        int cycle = batch.path("surveyCycle").asInt(-1);
-        if (cycle != 2026) throw safe("INVALID_SURVEY_CYCLE", -1, "batch.surveyCycle");
+        int cycle = surveyCycle(batch, -1, "batch.surveyCycle");
         String checksum = text(batch, "datasetChecksum", -1, "batch.datasetChecksum");
         if (!checksum.matches("sha256:[0-9a-f]{64}")) throw safe("INVALID_CHECKSUM", -1, "batch.datasetChecksum");
         JsonNode recordsNode = required(document, "records", -1);
         if (!recordsNode.isArray() || recordsNode.size() != 74) throw safe("INVALID_RECORDS", -1, "records");
+        validatePreparation(document, recordsNode.size());
 
         List<ImportRecord> records = new ArrayList<>();
         Set<UUID> ids = new HashSet<>();
@@ -119,14 +137,15 @@ public class MemberInformationImportJob implements ApplicationRunner {
             if (!"APPROVED".equals(text(record, "reviewStatus", index, "reviewStatus"))
                     || !required(record, "reviewIssues", index).isArray()
                     || !record.path("reviewIssues").isEmpty()) throw safe("RECORD_NOT_APPROVED", index, "reviewStatus");
-            String source = safeSource(text(record, "sourceReference", index, "sourceReference"));
+            String source = safeSource(nullableText(record, "sourceReference", index, "sourceReference"));
             JsonNode member = required(record, "member", index);
             JsonNode annual = required(record, "annualResponse", index);
             UUID memberId = uuid(text(member, "id", index, "member.id"), index, "member.id");
             UUID responseId = uuid(text(annual, "id", index, "annualResponse.id"), index, "annualResponse.id");
             requireV7(memberId, index, "member.id"); requireV7(responseId, index, "annualResponse.id");
             if (!ids.add(memberId) || !ids.add(responseId)) throw safe("DUPLICATE_UUID", index, "id");
-            if (annual.path("surveyCycle").asInt(-1) != cycle
+            int annualCycle = surveyCycle(annual, index, "annualResponse.surveyCycle");
+            if (annualCycle != cycle
                     || !memberId.toString().equals(text(annual, "memberId", index, "annualResponse.memberId")))
                 throw safe("RELATION_MISMATCH", index, "annualResponse.memberId");
             try {
@@ -148,60 +167,83 @@ public class MemberInformationImportJob implements ApplicationRunner {
         }
         String computed = checksum(document, records);
         if (!checksum.equals(computed)) throw safe("CHECKSUM_MISMATCH", -1, "batch.datasetChecksum");
-        if (members.findById(batchId).isPresent() || responses.findById(batchId).isPresent()) {
+        Optional<MemberInformationImportBatchEntity> existingBatch = members.importBatchExists(batchId)
+                ? batches.findById(batchId) : Optional.empty();
+        if (existingBatch.isPresent()
+                && !checksum.equals(existingBatch.get().getDatasetChecksum())) {
             throw safe("BATCH_IDENTIFIER_COLLISION", -1, "batch.id");
         }
-        Optional<MemberInformationImportBatchEntity> existingBatch = Optional.empty();
-        boolean existingBatchLoaded = false;
+        if (members.identifierExistsIncludingSoftDeleted(batchId) || responses.findById(batchId).isPresent()) {
+            throw safe("BATCH_IDENTIFIER_COLLISION", -1, "batch.id");
+        }
         for (ImportRecord record : records) {
-            if (members.findById(record.member().getId()).isPresent()
+            if (members.identifierExistsIncludingSoftDeleted(record.member().getId())
                     || responses.findById(record.response().getId()).isPresent()) {
-                if (!existingBatchLoaded) {
-                    existingBatch = batches.findById(batchId);
-                    existingBatchLoaded = true;
-                    if (existingBatch.isPresent()
-                            && !checksum.equals(existingBatch.get().getDatasetChecksum())) {
-                        throw safe("BATCH_IDENTIFIER_COLLISION", -1, "batch.id");
-                    }
+                if (existingBatch.isEmpty()) existingBatch = batches.findById(batchId);
+                if (existingBatch.isPresent()
+                        && !checksum.equals(existingBatch.get().getDatasetChecksum())) {
+                    throw safe("BATCH_IDENTIFIER_COLLISION", -1, "batch.id");
                 }
                 if (existingBatch.isEmpty()) throw safe("IDENTIFIER_COLLISION", record.index(), "id");
             }
         }
-        return new ValidatedDocument(batchId, cycle, checksum, List.copyOf(records));
+        ValidatedDocument validated = new ValidatedDocument(batchId, cycle, checksum, List.copyOf(records));
+        if (existingBatch.isEmpty() || existingBatchIsCompatible(validated, existingBatch.get())) return validated;
+        throw safe("PARTIAL_OR_CORRUPTED_BATCH", -1, "batch.id");
+    }
+
+    private void validatePreparation(JsonNode document, int recordCount) {
+        JsonNode preparation = document.get("preparation");
+        if (preparation == null || preparation.isNull() || !preparation.isObject()
+                || preparation.size() != 2
+                || !preparation.has("reviewSummary") || !preparation.has("sourceHeaders")) {
+            throw safe("INVALID_PREPARATION", -1, "preparation");
+        }
+
+        JsonNode reviewSummary = preparation.get("reviewSummary");
+        if (reviewSummary == null || reviewSummary.isNull() || !reviewSummary.isObject()
+                || reviewSummary.size() != PREPARATION_REVIEW_SUMMARY.size()) {
+            throw safe("INVALID_PREPARATION", -1, "preparation");
+        }
+        Set<String> summaryFields = new HashSet<>();
+        reviewSummary.fieldNames().forEachRemaining(summaryFields::add);
+        if (!summaryFields.equals(PREPARATION_REVIEW_SUMMARY.keySet())) {
+            throw safe("INVALID_PREPARATION", -1, "preparation");
+        }
+        PREPARATION_REVIEW_SUMMARY.forEach((field, expected) -> {
+            JsonNode value = reviewSummary.get(field);
+            if (value == null || !value.isIntegralNumber() || !value.canConvertToInt()
+                    || value.intValue() != expected) {
+                throw safe("INVALID_PREPARATION", -1, "preparation");
+            }
+        });
+        int csvCandidateCount = reviewSummary.path("csvCandidateCount").intValue();
+        int additionalCandidateCount = reviewSummary.path("additionalCandidateCount").intValue();
+        int excludedDuplicateCount = reviewSummary.path("excludedDuplicateCount").intValue();
+        int approvedRecordCount = reviewSummary.path("approvedRecordCount").intValue();
+        if (csvCandidateCount + additionalCandidateCount - excludedDuplicateCount != approvedRecordCount
+                || approvedRecordCount != recordCount) {
+            throw safe("INVALID_PREPARATION", -1, "preparation");
+        }
+
+        JsonNode sourceHeaders = preparation.get("sourceHeaders");
+        if (sourceHeaders == null || !sourceHeaders.isArray() || sourceHeaders.isEmpty()) {
+            throw safe("INVALID_PREPARATION", -1, "preparation");
+        }
+        Set<String> uniqueHeaders = new HashSet<>();
+        for (JsonNode header : sourceHeaders) {
+            if (!header.isTextual() || stripUnicodeWhitespace(header.textValue()).isEmpty()
+                    || !uniqueHeaders.add(header.textValue())) {
+                throw safe("INVALID_PREPARATION", -1, "preparation");
+            }
+        }
     }
 
     private void apply(ValidatedDocument document, String actorReference, String reason) {
         Optional<MemberInformationImportBatchEntity> existing = batches.findById(document.batchId());
         if (existing.isPresent()) {
-            MemberInformationImportBatchEntity batch = existing.get();
-            Set<UUID> expectedMemberIds = document.records().stream()
-                    .map(record -> record.member().getId()).collect(java.util.stream.Collectors.toSet());
-            Set<UUID> expectedResponseIds = document.records().stream()
-                    .map(record -> record.response().getId()).collect(java.util.stream.Collectors.toSet());
-            List<MemberEntity> importedMembers = members.findAll().stream()
-                    .filter(member -> document.batchId().equals(member.getImportBatchId())).toList();
-            List<AnnualMemberInformationResponseEntity> importedResponses = responses.findAll().stream()
-                    .filter(response -> document.batchId().equals(response.getImportBatchId())).toList();
-            boolean batchProjectionMatches = batch.getDatasetChecksum().equals(document.checksum())
-                    && batch.getSurveyCycle() == document.surveyCycle()
-                    && batch.getImportedMemberCount() == document.records().size()
-                    && batch.getImportedResponseCount() == document.records().size();
-            boolean memberProjectionsMatch = document.records().stream().allMatch(record ->
-                    members.findById(record.member().getId())
-                            .map(member -> sameMemberProjection(record.member(), member)).orElse(false));
-            boolean responseIdentifiersExist = document.records().stream()
-                    .allMatch(record -> responses.existsById(record.response().getId()));
-            boolean responseProjectionsMatch = document.records().stream().allMatch(record ->
-                    responses.findById(record.response().getId())
-                            .map(response -> sameAnnualProjection(record.response(), response)).orElse(false));
-            boolean memberRowsMatch = importedMembers.stream().map(MemberEntity::getId)
-                    .collect(java.util.stream.Collectors.toSet()).equals(expectedMemberIds);
-            boolean responseRowsMatch = importedResponses.stream().map(AnnualMemberInformationResponseEntity::getId)
-                    .collect(java.util.stream.Collectors.toSet()).equals(expectedResponseIds);
-            boolean activityMatches = members.countImportActivities(document.batchId()) == 1;
-            boolean complete = batchProjectionMatches && memberProjectionsMatch && responseIdentifiersExist
-                    && responseProjectionsMatch && memberRowsMatch && responseRowsMatch && activityMatches;
-            if (!complete) throw safe("PARTIAL_OR_CORRUPTED_BATCH", -1, "batch.id");
+            if (!existingBatchIsCompatible(document, existing.get()))
+                throw safe("PARTIAL_OR_CORRUPTED_BATCH", -1, "batch.id");
             return;
         }
         DeveloperActorReference.useForCurrentTransaction(actorReference);
@@ -215,6 +257,36 @@ public class MemberInformationImportJob implements ApplicationRunner {
                 "member_information_import_batches", reason, null,
                 Map.of("surveyCycle", document.surveyCycle(), "memberCount", document.records().size(),
                         "responseCount", document.records().size()));
+    }
+
+    private boolean existingBatchIsCompatible(ValidatedDocument document, MemberInformationImportBatchEntity batch) {
+        Set<UUID> expectedMemberIds = document.records().stream()
+                .map(record -> record.member().getId()).collect(java.util.stream.Collectors.toSet());
+        Set<UUID> expectedResponseIds = document.records().stream()
+                .map(record -> record.response().getId()).collect(java.util.stream.Collectors.toSet());
+        List<MemberEntity> importedMembers = members.findAll().stream()
+                .filter(member -> document.batchId().equals(member.getImportBatchId())).toList();
+        List<AnnualMemberInformationResponseEntity> importedResponses = responses.findAll().stream()
+                .filter(response -> document.batchId().equals(response.getImportBatchId())).toList();
+        boolean batchProjectionMatches = batch.getDatasetChecksum().equals(document.checksum())
+                && batch.getSurveyCycle() == document.surveyCycle()
+                && batch.getImportedMemberCount() == document.records().size()
+                && batch.getImportedResponseCount() == document.records().size();
+        boolean memberProjectionsMatch = document.records().stream().allMatch(record ->
+                members.findById(record.member().getId())
+                        .map(member -> sameMemberProjection(record.member(), member)).orElse(false));
+        boolean responseIdentifiersExist = document.records().stream()
+                .allMatch(record -> responses.existsById(record.response().getId()));
+        boolean responseProjectionsMatch = document.records().stream().allMatch(record ->
+                responses.findById(record.response().getId())
+                        .map(response -> sameAnnualProjection(record.response(), response)).orElse(false));
+        boolean memberRowsMatch = importedMembers.stream().map(MemberEntity::getId)
+                .collect(java.util.stream.Collectors.toSet()).equals(expectedMemberIds);
+        boolean responseRowsMatch = importedResponses.stream().map(AnnualMemberInformationResponseEntity::getId)
+                .collect(java.util.stream.Collectors.toSet()).equals(expectedResponseIds);
+        boolean activityMatches = members.countImportActivities(document.batchId()) == 1;
+        return batchProjectionMatches && memberProjectionsMatch && responseIdentifiersExist
+                && responseProjectionsMatch && memberRowsMatch && responseRowsMatch && activityMatches;
     }
 
     private MemberEntity member(JsonNode node, UUID batchId, int index) {
@@ -255,7 +327,8 @@ public class MemberInformationImportJob implements ApplicationRunner {
     private AnnualMemberInformationResponseEntity annual(JsonNode node, MemberEntity member, UUID batchId, int index) {
         AnnualMemberInformationResponseEntity response = new AnnualMemberInformationResponseEntity();
         response.setId(uuid(text(node, "id", index, "annualResponse.id"), index, "annualResponse.id"));
-        response.setMember(member); response.setSurveyCycle(node.path("surveyCycle").asInt());
+        response.setMember(member);
+        response.setSurveyCycle(surveyCycle(node, index, "annualResponse.surveyCycle"));
         String submittedAt = nullableText(node, "submittedAt", index, "annualResponse.submittedAt");
         response.setSubmittedAt(submittedAt == null ? null : Instant.parse(submittedAt));
         JsonNode occupations = required(node, "occupations", index);
@@ -332,7 +405,7 @@ public class MemberInformationImportJob implements ApplicationRunner {
         canonical.put("schemaVersion", SCHEMA);
         ObjectNode batch = canonical.putObject("batch");
         batch.put("id", text(document.path("batch"), "id"));
-        batch.put("surveyCycle", document.path("batch").path("surveyCycle").asInt());
+        batch.put("surveyCycle", document.path("batch").path("surveyCycle").intValue());
         ArrayNode payloads = canonical.putArray("records");
         records.stream().sorted(Comparator.comparing(record -> record.member().getId())).forEach(record -> {
             JsonNode source = document.path("records").path(record.index());
@@ -361,6 +434,15 @@ public class MemberInformationImportJob implements ApplicationRunner {
         JsonNode value = node.get(field);
         if (value == null || value.isNull()) throw safe("REQUIRED_FIELD", index, field);
         return value;
+    }
+
+    private int surveyCycle(JsonNode node, int index, String field) {
+        JsonNode value = node == null ? null : node.get("surveyCycle");
+        if (value == null || !value.isIntegralNumber() || !value.canConvertToInt()
+                || value.intValue() != 2026) {
+            throw safe("INVALID_SURVEY_CYCLE", index, field);
+        }
+        return value.intValue();
     }
     private String text(JsonNode node, String field) { return text(node, field, -1, field); }
     private String text(JsonNode node, String field, int index, String diagnosticField) {
@@ -418,13 +500,22 @@ public class MemberInformationImportJob implements ApplicationRunner {
         return value.substring(start, end);
     }
     private boolean isUnicodeWhitespace(int codePoint) {
-        return Character.isWhitespace(codePoint) || Character.isSpaceChar(codePoint);
+        return (codePoint >= 0x0009 && codePoint <= 0x000D)
+                || codePoint == 0x0020
+                || codePoint == 0x0085
+                || codePoint == 0x00A0
+                || codePoint == 0x1680
+                || (codePoint >= 0x2000 && codePoint <= 0x200A)
+                || codePoint == 0x2028
+                || codePoint == 0x2029
+                || codePoint == 0x202F
+                || codePoint == 0x205F
+                || codePoint == 0x3000;
     }
 
     private boolean sameMemberProjection(MemberEntity expected, MemberEntity actual) {
         if (!expected.getImportBatchId().equals(actual.getImportBatchId())) return false;
         return java.util.Objects.equals(expected.getName(), actual.getName())
-                && expected.getVersion() == actual.getVersion()
                 && java.util.Objects.equals(expected.getBirthDate(), actual.getBirthDate())
                 && java.util.Objects.equals(expected.getGamEntryDate(), actual.getGamEntryDate())
                 && java.util.Objects.equals(expected.getResidentialCity(), actual.getResidentialCity())
@@ -439,6 +530,7 @@ public class MemberInformationImportJob implements ApplicationRunner {
                 && java.util.Objects.equals(expected.getContributionAreas(), actual.getContributionAreas())
                 && java.util.Objects.equals(expected.getOtherContributionAreas(), actual.getOtherContributionAreas());
     }
+
 
     private boolean sameAnnualProjection(AnnualMemberInformationResponseEntity expected,
                                          AnnualMemberInformationResponseEntity actual) {

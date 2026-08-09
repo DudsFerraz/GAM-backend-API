@@ -13,6 +13,7 @@ public record LinkMemberAccountDTO(
         @Schema(
                 requiredMode = Schema.RequiredMode.REQUIRED,
                 minLength = 1,
+                maxLength = 2000,
                 description = "Leading and trailing Unicode White_Space code points are removed before validation; "
                         + "the normalized reason must contain from 1 through 2,000 Unicode code points."
         )

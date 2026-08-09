@@ -59,7 +59,8 @@ public class RegisterMember {
         if (value == null) throw new RequestValidationException("body", "/residentialCity", "REQUIRED");
         String normalized = MemberInformationText.collapsed(value);
         int size = normalized.codePointCount(0, normalized.length());
-        if (size < 1 || size > 100) throw new RequestValidationException("body", "/residentialCity", "SIZE");
+        if (size < 1) throw new RequestValidationException("body", "/residentialCity", "NOT_BLANK");
+        if (size > 100) throw new RequestValidationException("body", "/residentialCity", "SIZE");
         return normalized;
     }
 

@@ -9,6 +9,7 @@ import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.member.solicitation.domain.MembershipSolicitationStatus;
 import br.org.gam.api.member.solicitation.persistence.MembershipSolicitationRepository;
 import br.org.gam.api.shared.activitylog.ActivityEvents;
+import br.org.gam.api.shared.activitylog.ActivityReasonNormalizer;
 import br.org.gam.api.shared.exception.ConflictException;
 import br.org.gam.api.shared.exception.RequestValidationException;
 import jakarta.transaction.Transactional;
@@ -64,14 +65,13 @@ public class RegisterMemberWorkflow {
         if (rawReason == null) {
             throw new RequestValidationException("body", "/reason", "REQUIRED");
         }
-        String reason = rawReason.strip();
-        if (reason.isEmpty()) {
-            throw new RequestValidationException("body", "/reason", "NOT_BLANK");
+        try {
+            return ActivityReasonNormalizer.normalizeRequired(rawReason);
+        } catch (IllegalArgumentException exception) {
+            String code = ActivityReasonNormalizer.normalizedCodePointCount(rawReason) == 0
+                    ? "NOT_BLANK" : "SIZE";
+            throw new RequestValidationException("body", "/reason", code);
         }
-        if (reason.codePointCount(0, reason.length()) > 2_000) {
-            throw new RequestValidationException("body", "/reason", "SIZE");
-        }
-        return reason;
     }
 
     private boolean hasPendingSolicitation(UUID accountId) {

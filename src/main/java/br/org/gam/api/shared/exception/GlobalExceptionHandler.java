@@ -11,6 +11,7 @@ import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
+import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import br.org.gam.api.shared.phonenumber.InvalidPhoneNumberException;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import jakarta.servlet.http.Cookie;
@@ -76,10 +77,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         );
 
         ex.getBindingResult().getFieldErrors().forEach(fieldError -> {
+            String field = bodyField(fieldError.getField());
             String violationCode = validationCode(fieldError.getCode(), fieldError.getRejectedValue());
+            if (isContributionCollectionField(field) && "REQUIRED".equals(violationCode)) {
+                violationCode = "RELATION";
+            }
             addViolation(
                     violations,
-                    new ViolationKey("body", bodyField(fieldError.getField()), violationCode)
+                    new ViolationKey("body", field, violationCode)
             );
         });
         ex.getBindingResult().getGlobalErrors().forEach(error -> {
@@ -233,6 +238,19 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                             field == null ? "$" : field,
                             "FORMAT"
                     ).getBody());
+        }
+        if (cause instanceof InvalidFormatException invalidFormat
+                && invalidFormat.getTargetType() != null
+                && invalidFormat.getTargetType().isEnum()) {
+            String field = jsonPointer(invalidFormat.getPath());
+            String contributionField = contributionCollectionField(field);
+            if (contributionField != null) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .cacheControl(CacheControl.noStore())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(singleValidationViolationResponse(
+                                "body", contributionField, "ALLOWED_VALUE").getBody());
+            }
         }
         String reason = "SYNTAX_ERROR";
         Map<String, Object> details = new LinkedHashMap<>();
@@ -424,6 +442,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(InvalidCommandException.class)
     public ResponseEntity<ApiErrorDTO> invalidCommandHandler(InvalidCommandException e) {
+        if (e.hasValidationViolation()) {
+            return singleValidationViolationResponse(
+                    e.getValidationLocation(),
+                    e.getValidationField(),
+                    e.getValidationCode()
+            );
+        }
         return buildApplicationErrorResponse(HttpStatus.BAD_REQUEST, e);
     }
 
@@ -581,6 +606,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             case "RELATION" -> "is inconsistent with another value";
             default -> "is invalid";
         };
+    }
+
+    private boolean isContributionCollectionField(String field) {
+        return "/contributionAreas".equals(field) || "/otherContributionAreas".equals(field);
+    }
+
+    private String contributionCollectionField(String field) {
+        if (field == null) return null;
+        if (field.equals("/contributionAreas") || field.startsWith("/contributionAreas/")) {
+            return "/contributionAreas";
+        }
+        if (field.equals("/otherContributionAreas") || field.startsWith("/otherContributionAreas/")) {
+            return "/otherContributionAreas";
+        }
+        return null;
     }
 
     private String parameterLocation(

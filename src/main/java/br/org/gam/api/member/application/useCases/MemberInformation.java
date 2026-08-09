@@ -20,6 +20,7 @@ import br.org.gam.api.shared.activitylog.ActivityTargetType;
 import br.org.gam.api.shared.domain.GamName;
 import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.shared.exception.RequestValidationException;
+import br.org.gam.api.shared.validation.RequiredReason;
 import jakarta.transaction.Transactional;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -161,8 +162,12 @@ public class MemberInformation {
 
     @Transactional
     public String updateContributionProfile(UUID id, String ifMatch, MemberInformationDTO.ContributionProfile dto) {
+        if (dto.contributionAreas() == null) invalid("/contributionAreas", "RELATION");
+        if (dto.contributionAreas().stream().anyMatch(java.util.Objects::isNull)) {
+            invalid("/contributionAreas", "ALLOWED_VALUE");
+        }
         Set<MemberContributionArea> fixed = new LinkedHashSet<>(dto.contributionAreas());
-        if (fixed.size() != dto.contributionAreas().size()) invalid("/contributionAreas", "DUPLICATE");
+        if (fixed.size() != dto.contributionAreas().size()) invalid("/contributionAreas", "RELATION");
         Set<String> custom = normalizeCustom(dto.otherContributionAreas());
         return update(id, ifMatch, dto.reason(), ActivityAction.MEMBER_CONTRIBUTION_PROFILE_UPDATED,
                 member -> member.replaceContributionProfile(fixed, custom));
@@ -175,7 +180,12 @@ public class MemberInformation {
 
     private String update(UUID id, String suppliedEtag, String suppliedReason, ActivityAction action,
                           Consumer<Member> mutation) {
-        String reason = ActivityReasonNormalizer.normalizeRequired(suppliedReason);
+        String reason;
+        try {
+            reason = ActivityReasonNormalizer.normalizeRequired(suppliedReason);
+        } catch (IllegalArgumentException exception) {
+            throw new RequestValidationException("body", "/reason", RequiredReason.validationCode(suppliedReason));
+        }
         MemberEntity member = members.findByIdForUpdate(id)
                 .orElseThrow(() -> NotFoundException.resource("Member", id));
         requireCurrent(suppliedEtag, member.getVersion());
@@ -228,18 +238,21 @@ public class MemberInformation {
     private String normalizeCity(String value) {
         String normalized = value == null ? "" : MemberInformationText.collapsed(value);
         int count = normalized.codePointCount(0, normalized.length());
-        if (count < 1 || count > 100) invalid("/residentialCity", "SIZE");
+        if (count < 1) invalid("/residentialCity", "NOT_BLANK");
+        if (count > 100) invalid("/residentialCity", "SIZE");
         return normalized;
     }
 
     private Set<String> normalizeCustom(List<String> values) {
+        if (values == null) invalid("/otherContributionAreas", "RELATION");
         if (values.size() > 10) invalid("/otherContributionAreas", "SIZE");
         Set<String> result = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
         for (String value : values) {
             String normalized = value == null ? "" : MemberInformationText.collapsed(value);
             int count = normalized.codePointCount(0, normalized.length());
-            if (count < 1 || count > 100 || FIXED_CONTRIBUTION_LABELS.stream().anyMatch(normalized::equalsIgnoreCase)
-                    || !result.add(normalized)) invalid("/otherContributionAreas", "DUPLICATE");
+            if (count < 1 || count > 100) invalid("/otherContributionAreas", "SIZE");
+            if (FIXED_CONTRIBUTION_LABELS.stream().anyMatch(normalized::equalsIgnoreCase)
+                    || !result.add(normalized)) invalid("/otherContributionAreas", "RELATION");
         }
         return new LinkedHashSet<>(result);
     }

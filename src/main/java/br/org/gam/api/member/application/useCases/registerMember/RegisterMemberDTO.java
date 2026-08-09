@@ -14,12 +14,18 @@ public record RegisterMemberDTO(
         @NotNull @NotBlank String surname,
         @NotNull LocalDate birthDate,
         @NotNull LocalDate gamEntryDate,
-        @NotBlank String residentialCity,
+        @NotBlank
+        @Schema(minLength = 1, maxLength = 100,
+                description = "Leading and trailing Unicode White_Space code points are removed and internal "
+                        + "whitespace sequences are collapsed before validation; the normalized city must contain "
+                        + "from 1 through 100 Unicode code points.")
+        String residentialCity,
         @NotNull GamPhoneNumber phoneNumber,
         @NotNull GamEmail contactEmail,
         @NotNull
         @Schema(
                 minLength = 1,
+                maxLength = 2000,
                 description = "Leading and trailing Unicode White_Space code points are removed before validation; "
                         + "the normalized reason must contain from 1 through 2,000 Unicode code points."
         )
