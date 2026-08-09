@@ -218,6 +218,7 @@ public class OpenApiConfig {
                 if (isPublicOperation(path, method)) {
                     operation.setSecurity(List.of());
                 }
+                documentHealthResponseSchemas(operation);
                 documentSuccessStatus(operation);
                 documentModuleMediaTypes(operation);
                 documentPagination(operation);
@@ -564,7 +565,7 @@ public class OpenApiConfig {
     }
 
     private String consumerTag(String path) {
-        if ("/health".equals(path)) {
+        if ("/api/health".equals(path)) {
             return "Health";
         }
         if (path.startsWith("/oratorianos/") && path.contains("/forms")) {
@@ -610,8 +611,38 @@ public class OpenApiConfig {
                 || "/auth/refresh".equals(path)
                 || "/auth/logout".equals(path)
                 || "/auth/csrf".equals(path)
-                || "/health".equals(path) && method == PathItem.HttpMethod.GET
+                || "/api/health".equals(path) && method == PathItem.HttpMethod.GET
                 || "/events/{id}".equals(path) && method == PathItem.HttpMethod.GET;
+    }
+
+    private void documentHealthResponseSchemas(io.swagger.v3.oas.models.Operation operation) {
+        if (!"getProductionHealth".equals(operation.getOperationId()) || operation.getResponses() == null) {
+            return;
+        }
+
+        Map<String, Map<String, String>> expectedBodies = Map.of(
+                "200", Map.of("status", "UP"),
+                "503", Map.of("status", "DOWN")
+        );
+        expectedBodies.forEach((responseCode, expectedBody) -> {
+            ApiResponse response = operation.getResponses().get(responseCode);
+            if (response == null || response.getContent() == null) {
+                return;
+            }
+            MediaType json = response.getContent().get("application/json");
+            if (json == null || json.getSchema() == null) {
+                return;
+            }
+            Schema<?> schema = json.getSchema();
+            schema.setType("object");
+            schema.setRequired(List.of("status"));
+            StringSchema status = new StringSchema();
+            status.setEnum(List.of("200".equals(responseCode) ? "UP" : "DOWN"));
+            schema.setProperties(Map.of("status", status));
+            schema.setAdditionalProperties(false);
+            schema.setExample(expectedBody);
+            json.setExample(expectedBody);
+        });
     }
 
     private void configureApiErrorSchemas(Components components) {

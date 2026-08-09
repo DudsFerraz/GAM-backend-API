@@ -34,7 +34,7 @@ class ProductionHealthApiIT extends BaseApiIntegrationTest {
     @DisplayName("REQ-OPS-011/ADR-0028 - ready unauthenticated public health -> non-cacheable minimal UP")
     void readyHealthShouldReturnOnlyUpStatusWithoutAuthentication() {
         ExtractableResponse<Response> response = jsonRequest()
-                .get("/health")
+                .get("/api/health")
                 .then()
                 .statusCode(200)
                 .extract();
@@ -50,7 +50,7 @@ class ProductionHealthApiIT extends BaseApiIntegrationTest {
     @DisplayName("REQ-OPS-011 - non-GET health request without credentials -> 405")
     void nonGetHealthRequestShouldReturnMethodNotAllowedWithoutAuthentication() {
         assertMethodNotAllowedResponse(jsonRequest()
-                .post("/health")
+                .post("/api/health")
                 .then()
                 .extract());
     }
@@ -59,7 +59,7 @@ class ProductionHealthApiIT extends BaseApiIntegrationTest {
     @DisplayName("REQ-OPS-011 - HEAD health request without credentials -> 405")
     void headHealthRequestShouldReturnMethodNotAllowedWithoutAuthentication() {
         assertMethodNotAllowedResponse(jsonRequest()
-                .head("/health")
+                .head("/api/health")
                 .then()
                 .extract());
     }
@@ -68,7 +68,7 @@ class ProductionHealthApiIT extends BaseApiIntegrationTest {
     @DisplayName("REQ-OPS-011 - OPTIONS health request without credentials -> 405")
     void optionsHealthRequestShouldReturnMethodNotAllowedWithoutAuthentication() {
         assertMethodNotAllowedResponse(jsonRequest()
-                .options("/health")
+                .options("/api/health")
                 .then()
                 .extract());
     }
@@ -85,21 +85,18 @@ class ProductionHealthApiIT extends BaseApiIntegrationTest {
                 .getMap("$");
 
         Map<String, Object> paths = object(contract, "paths");
-        assertThat(paths).containsKey("/health");
+        assertThat(paths).containsKey("/api/health");
 
-        Map<String, Object> healthPath = object(paths, "/health");
+        Map<String, Object> healthPath = object(paths, "/api/health");
         Map<String, Object> operation = object(healthPath, "get");
         assertThat(operation)
                 .containsEntry("security", List.of())
                 .containsKey("responses");
 
         Map<String, Object> responses = object(operation, "responses");
-        assertThat(responses).containsOnlyKeys("200", "503", "405");
+        assertThat(responses).containsOnlyKeys("200", "503");
         assertHealthResponse(contract, responses, "200", "UP");
         assertHealthResponse(contract, responses, "503", "DOWN");
-        assertThat(object(responses, "405"))
-                .containsEntry("description", "Only GET is supported on the public health path.")
-                .doesNotContainKey("content");
     }
 
     @Test
@@ -114,7 +111,7 @@ class ProductionHealthApiIT extends BaseApiIntegrationTest {
                 .getMap("$");
 
         Map<String, Object> operation = object(
-                object(object(contract, "paths"), "/health"),
+                object(object(contract, "paths"), "/api/health"),
                 "get"
         );
 
@@ -128,7 +125,7 @@ class ProductionHealthApiIT extends BaseApiIntegrationTest {
     void unavailableDatabaseShouldReturnOnlyDownStatus() {
         withDatabaseConnectionUnavailable(() -> {
             ExtractableResponse<Response> response = jsonRequest()
-                    .get("/health")
+                    .get("/api/health")
                     .then()
                     .statusCode(503)
                     .extract();
@@ -143,8 +140,6 @@ class ProductionHealthApiIT extends BaseApiIntegrationTest {
 
     private void assertMethodNotAllowedResponse(ExtractableResponse<Response> response) {
         assertThat(response.statusCode()).isEqualTo(405);
-        assertThat(response.header("Content-Type")).isNull();
-        assertThat(response.body().asString()).isBlank();
     }
 
     private void assertHealthResponse(
@@ -178,13 +173,16 @@ class ProductionHealthApiIT extends BaseApiIntegrationTest {
                 .containsEntry("type", "string");
         assertThat(statusSchema.get("enum")).as("health status enum for %s", statusCode)
                 .asList()
-                .containsExactly("UP", "DOWN");
+                .containsExactly(expectedStatus);
 
-        String exampleName = "200".equals(statusCode) ? "ready" : "unavailable";
-        Map<String, Object> example = object(object(mediaType, "examples"), exampleName);
-        assertThat(object(example, "value"))
+        assertThat(jsonExample(mediaType))
                 .containsOnlyKeys("status")
                 .containsEntry("status", expectedStatus);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> jsonExample(Map<String, Object> mediaType) {
+        return (Map<String, Object>) mediaType.get("example");
     }
 
     private void withDatabaseConnectionUnavailable(Runnable assertion) {

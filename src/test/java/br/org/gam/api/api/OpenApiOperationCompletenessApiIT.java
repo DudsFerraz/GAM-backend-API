@@ -26,7 +26,7 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
     private static final Set<String> HTTP_METHODS = Set.of("get", "post", "put", "patch", "delete");
     private static final Set<String> CONSUMER_TAGS = Set.of(
             "Authentication", "Accounts", "Members", "Membership Solicitations", "Events", "GamLocations",
-            "Presences", "RBAC", "Oratorios", "Oratorianos", "Oratoriano Forms"
+            "Presences", "RBAC", "Oratorios", "Oratorianos", "Oratoriano Forms", "Health"
     );
     private static final List<String> NULLABLE_OBJECT_DRAFT_FIELDS = List.of(
             "address", "responsible", "father", "mother", "health", "declarations"
@@ -166,7 +166,7 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
 
             Map<String, Object> responses = object(operation, "responses");
             assertions.assertThat(responses).as("%s responses", operationId).isNotEmpty();
-            if (!"getCsrfProof".equals(operationId)) {
+            if (!"getCsrfProof".equals(operationId) && !"getProductionHealth".equals(operationId)) {
                 assertions.assertThat(responses.keySet())
                         .as("%s error responses", operationId)
                         .anySatisfy(status -> assertions.assertThat(status).startsWith("4"));

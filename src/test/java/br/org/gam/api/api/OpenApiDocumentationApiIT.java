@@ -826,6 +826,48 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
     }
 
     @Test
+    @DisplayName("REQ-OPS-011 - generated public health contract -> exact security, status schemas, responses, and cache header")
+    void generatedContractShouldExposeThePublicHealthReadinessContract() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> operation = object(object(contract, "paths"), "/api/health").get("get") instanceof Map<?, ?> value
+                ? (Map<String, Object>) value
+                : Map.of();
+
+        assertThat(operation)
+                .containsEntry("operationId", "getProductionHealth")
+                .containsEntry("security", List.of());
+        Map<String, Object> responses = object(operation, "responses");
+        assertThat(responses).containsOnlyKeys("200", "503");
+
+        Map<String, Map<String, String>> expectedBodies = Map.of(
+                "200", Map.of("status", "UP"),
+                "503", Map.of("status", "DOWN")
+        );
+        for (Map.Entry<String, Map<String, String>> expected : expectedBodies.entrySet()) {
+            Map<String, Object> response = object(responses, expected.getKey());
+            Map<String, Object> content = object(response, "content");
+            Map<String, Object> json = object(content, "application/json");
+            Map<String, Object> schema = resolveSchema(contract, object(json, "schema"));
+
+            assertThat(schema.get("type")).as("%s health schema type", expected.getKey()).isEqualTo("object");
+            assertThat(schema.get("required")).as("%s required health properties", expected.getKey())
+                    .asList()
+                    .containsExactly("status");
+            assertThat(object(schema, "properties")).as("%s health properties", expected.getKey())
+                    .containsOnlyKeys("status");
+            assertThat(object(object(schema, "properties"), "status"))
+                    .as("%s health status enum", expected.getKey())
+                    .containsEntry("type", "string")
+                    .containsEntry("enum", List.of(expected.getValue().get("status")));
+            assertThat(json.get("example")).as("%s object health example", expected.getKey())
+                    .isEqualTo(expected.getValue());
+            assertThat(object(response, "headers"))
+                    .as("%s Cache-Control response header", expected.getKey())
+                    .containsKey("Cache-Control");
+        }
+    }
+
+    @Test
     @DisplayName("REQ-OPENAPI-005 and REQ-BROWSER-AUTH-003/004 - authentication contract -> CSRF bootstrap and browser proof inputs are documented")
     @SuppressWarnings("unchecked")
     void authenticationContractShouldDocumentCsrfBootstrapAndBrowserProof() {
@@ -1017,7 +1059,7 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
             assertThat(reasonProperty)
                     .containsEntry("type", "string")
                     .containsEntry("minLength", 1)
-                    .doesNotContainKey("maxLength");
+                    .containsEntry("maxLength", 2000);
             assertThat(reasonProperty.get("description")).asString()
                     .containsIgnoringCase("trim")
                     .containsIgnoringCase("normalized")

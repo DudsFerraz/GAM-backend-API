@@ -18,6 +18,8 @@ import br.org.gam.api.gamLocation.application.useCases.GetGamLocations;
 import br.org.gam.api.gamLocation.application.useCases.RemoveGamLocation;
 import br.org.gam.api.gamLocation.application.useCases.UpdateGamLocation;
 import br.org.gam.api.gamLocation.web.GamLocationController;
+import br.org.gam.api.health.application.HealthReadiness;
+import br.org.gam.api.health.web.HealthController;
 import br.org.gam.api.member.application.useCases.Activation;
 import br.org.gam.api.member.application.useCases.GetMember;
 import br.org.gam.api.member.application.useCases.SearchMembers;
@@ -102,7 +104,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 AccountRoleController.class,
                 PermissionController.class,
                 RoleController.class,
-                AuthController.class
+                AuthController.class,
+                HealthController.class
         },
         excludeAutoConfiguration = {
                 SecurityAutoConfiguration.class,
@@ -125,7 +128,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         AccountRoleController.class,
         PermissionController.class,
         RoleController.class,
-        AuthController.class
+        AuthController.class,
+        HealthController.class
 })
 @ImportAutoConfiguration({
         SpringDocConfiguration.class,
@@ -173,7 +177,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         RoleEntityLoader.class,
         RegisterAccount.class,
         LoginAccount.class,
-        RefreshTokenService.class
+        RefreshTokenService.class,
+        HealthReadiness.class
 })
 abstract class AbstractOpenApiDocumentationApiIT {
 
