@@ -543,11 +543,13 @@ class OpenApiSharedSchemasApiIT extends AbstractOpenApiDocumentationApiIT {
                     .as("%s reason schema", schemaName)
                     .containsEntry("type", "string")
                     .containsEntry("minLength", 1);
-            if (Set.of(
+            if (Set.of("LinkMemberAccountDTO", "CoordinatorTransitionDTO").contains(schemaName)) {
+                softly.assertThat(reason)
+                        .as("%s normalized reason schema without raw maximum", schemaName)
+                        .doesNotContainKey("maxLength");
+            } else if (Set.of(
                     "DeactivateMemberDTO",
                     "ReviewMembershipSolicitationDTO",
-                    "LinkMemberAccountDTO",
-                    "CoordinatorTransitionDTO",
                     "RegisterMemberDTO"
             ).contains(schemaName)) {
                 softly.assertThat(reason)

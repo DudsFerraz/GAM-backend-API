@@ -8,6 +8,7 @@ import br.org.gam.api.event.domain.EventStatus;
 import br.org.gam.api.gamLocation.application.useCases.RemoveGamLocationDTO;
 import br.org.gam.api.member.application.useCases.CoordinatorTransitionDTO;
 import br.org.gam.api.member.application.useCases.DeactivateMemberDTO;
+import br.org.gam.api.member.application.useCases.LinkMemberAccountDTO;
 import br.org.gam.api.member.solicitation.application.useCases.ReviewMembershipSolicitationDTO;
 import br.org.gam.api.oratoriano.application.OratorianoApiModels.ReplaceOratorianoDTO;
 import br.org.gam.api.presence.application.useCases.managePresence.RemovePresenceDTO;
@@ -94,6 +95,7 @@ class AuditedReasonDtoValidationTest {
                 reasonDto("Event reopening", reason -> new ReopenEventDTO(EventStatus.COMPLETED, reason)),
                 reasonDto("GamLocation removal", RemoveGamLocationDTO::new),
                 reasonDto("Coordinator transition", CoordinatorTransitionDTO::new),
+                reasonDto("Member account link", reason -> new LinkMemberAccountDTO(UUID.randomUUID(), reason)),
                 reasonDto("Member deactivation", DeactivateMemberDTO::new),
                 reasonDto("Membership-solicitation review", ReviewMembershipSolicitationDTO::new),
                 reasonDto("Presence removal", RemovePresenceDTO::new),

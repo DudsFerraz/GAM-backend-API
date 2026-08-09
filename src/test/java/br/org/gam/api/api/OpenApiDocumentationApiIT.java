@@ -1020,6 +1020,7 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
                     .doesNotContainKey("maxLength");
             assertThat(reasonProperty.get("description")).asString()
                     .containsIgnoringCase("trim")
+                    .containsIgnoringCase("normalized")
                     .containsIgnoringCase("2,000")
                     .containsIgnoringCase("code point");
         }
