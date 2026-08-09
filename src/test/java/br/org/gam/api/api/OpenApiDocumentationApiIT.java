@@ -1059,7 +1059,7 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
             assertThat(reasonProperty)
                     .containsEntry("type", "string")
                     .containsEntry("minLength", 1)
-                    .containsEntry("maxLength", 2000);
+                    .doesNotContainKey("maxLength");
             assertThat(reasonProperty.get("description")).asString()
                     .containsIgnoringCase("trim")
                     .containsIgnoringCase("normalized")
