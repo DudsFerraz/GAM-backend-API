@@ -46,6 +46,9 @@ better_stack_collector_id: "{{ lookup('env', 'BETTER_STACK_COLLECTOR_ID') }}"
 better_stack_collector_secret: "{{ lookup('env', 'BETTER_STACK_COLLECTOR_SECRET') }}"
 better_stack_collector_install_url: "{{ lookup('env', 'BETTER_STACK_COLLECTOR_INSTALL_URL') | default('https://raw.githubusercontent.com/BetterStackHQ/collector/main/install.sh', true) }}"
 better_stack_collector_install_checksum: "{{ lookup('env', 'BETTER_STACK_COLLECTOR_INSTALL_CHECKSUM') }}"
+better_stack_collector_required_services:
+  - collector
+  - ebpf
 
 # Better Stack Telemetry resources are created ahead of deployment and their
 # IDs remain external inputs.  Target hosts, ports, services, and metric
@@ -57,15 +60,13 @@ better_stack_backend_chart_id: "{{ lookup('env', 'BETTER_STACK_BACKEND_CHART_ID'
 better_stack_postgresql_chart_id: "{{ lookup('env', 'BETTER_STACK_POSTGRESQL_CHART_ID') }}"
 better_stack_filesystem_chart_id: "{{ lookup('env', 'BETTER_STACK_FILESYSTEM_CHART_ID') }}"
 better_stack_proxy_target_host: "{{ lookup('env', 'BETTER_STACK_PROXY_TARGET_HOST') }}"
-better_stack_proxy_target_port: "{{ lookup('env', 'BETTER_STACK_PROXY_TARGET_PORT') }}"
 better_stack_proxy_target_service: "{{ lookup('env', 'BETTER_STACK_PROXY_TARGET_SERVICE') }}"
 better_stack_proxy_target_endpoint: "{{ lookup('env', 'BETTER_STACK_PROXY_TARGET_ENDPOINT') }}"
 better_stack_backend_target_host: "{{ lookup('env', 'BETTER_STACK_BACKEND_TARGET_HOST') }}"
-better_stack_backend_target_port: "{{ lookup('env', 'BETTER_STACK_BACKEND_TARGET_PORT') }}"
 better_stack_backend_target_service: "{{ lookup('env', 'BETTER_STACK_BACKEND_TARGET_SERVICE') }}"
 better_stack_backend_target_endpoint: "{{ lookup('env', 'BETTER_STACK_BACKEND_TARGET_ENDPOINT') }}"
 better_stack_postgresql_target_host: "{{ lookup('env', 'BETTER_STACK_POSTGRESQL_TARGET_HOST') }}"
-better_stack_postgresql_target_port: "{{ lookup('env', 'BETTER_STACK_POSTGRESQL_TARGET_PORT') }}"
+better_stack_postgresql_target_port: "{{ lookup('env', 'BETTER_STACK_POSTGRESQL_TARGET_PORT') | int }}"
 
 backup_state_directory: /var/lib/gam/backup
 backup_runtime_directory: /var/lib/gam/backup/runtime
