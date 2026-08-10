@@ -13,6 +13,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -36,6 +37,24 @@ def read(relative_path: str) -> str:
 
 def load_yaml(relative_path: str):
     return yaml.safe_load(read(relative_path))
+
+
+def recovery_lifecycle_rule(classification: str, *, valid: bool = True) -> dict:
+    rule = {
+        "ID": f"{classification}-recovery-points",
+        "Status": "Enabled",
+        "Filter": {"Tag": {"Key": "classification", "Value": classification}},
+        "Expiration": {"Days": {"daily": 31, "weekly": 85, "monthly": 370}[classification]},
+    }
+    if classification in {"weekly", "monthly"}:
+        rule["Transitions"] = (
+            [{"Days": 30, "StorageClass": "STANDARD_IA"}]
+            if valid
+            else []
+        )
+    if classification == "monthly" and valid:
+        rule["Transitions"].append({"Days": 90, "StorageClass": "GLACIER"})
+    return rule
 
 
 def task_nodes(document):
@@ -83,6 +102,33 @@ def argv_value(argv: list[str], option: str) -> str:
         return ""
 
 
+def is_durable_better_stack_collector_probe(task: dict) -> bool:
+    """Recognize an installed-state probe that survives the official installer's temp directory."""
+
+    argv = command_argv(task)
+    lowered = [argument.casefold() for argument in argv]
+    if lowered[:2] == ["docker", "ps"]:
+        filters = [
+            argv[index + 1]
+            for index, argument in enumerate(argv[:-1])
+            if argument == "--filter"
+        ]
+        return "label=com.docker.compose.project=better-stack-collector" in filters
+
+    if lowered[:2] != ["docker", "compose"] or "ps" not in lowered:
+        return False
+    compose_file = argv_value(argv, "--file") or argv_value(argv, "-f")
+    if not compose_file or compose_file.casefold().startswith(("/tmp/", "${tmpdir", "{{ tmp")):
+        return False
+    file_option = "--file" if "--file" in lowered else "-f"
+    return lowered.index(file_option) < lowered.index("ps")
+
+
+def is_official_better_stack_installer_execution(task: dict) -> bool:
+    argv = command_argv(task)
+    return any("better-stack-collector-install.sh" in argument for argument in argv)
+
+
 def iam_simulation_actions(task: dict) -> set[str]:
     """Extract the action names from a structured IAM simulation command."""
 
@@ -117,7 +163,21 @@ def scheduler_key_values(raw_value: str) -> dict[str, str]:
 
 def scheduler_target(task: dict) -> dict:
     target = argv_value(command_argv(task), "--target")
-    prefix, separator, encoded_input = target.partition(",Input=")
+    try:
+        values = json.loads(target)
+        if isinstance(values, dict):
+            encoded_input = values.get("Input")
+            if isinstance(encoded_input, str):
+                try:
+                    values["Input"] = json.loads(encoded_input)
+                except json.JSONDecodeError:
+                    values["Input"] = None
+            return values
+    except json.JSONDecodeError:
+        pass
+
+    target_without_retry = re.sub(r",RetryPolicy=\{[^{}]+\}", "", target)
+    prefix, separator, encoded_input = target_without_retry.partition(",Input=")
     values = scheduler_key_values(prefix)
     if not separator:
         values["Input"] = None
@@ -127,6 +187,22 @@ def scheduler_target(task: dict) -> dict:
     except json.JSONDecodeError:
         values["Input"] = None
     return values
+
+
+def scheduler_target_retry_policy(task: dict) -> dict[str, str]:
+    """Extract EventBridge Scheduler's nested Target.RetryPolicy value."""
+
+    target = argv_value(command_argv(task), "--target")
+    try:
+        values = json.loads(target)
+        retry_policy = values.get("RetryPolicy", {}) if isinstance(values, dict) else {}
+        if isinstance(retry_policy, dict):
+            return {str(key): str(value) for key, value in retry_policy.items()}
+    except json.JSONDecodeError:
+        pass
+
+    match = re.search(r"(?:^|,)RetryPolicy=\{([^{}]+)\}(?:,|$)", target)
+    return scheduler_key_values(match.group(1)) if match else {}
 
 
 def aws_api_calls(source: str, service: str) -> set[str]:
@@ -267,20 +343,89 @@ class ProductionBackupAwsContractTest(unittest.TestCase):
             "caller-provided isolation flags are not sufficient; the procedure must enforce the boundary",
         )
 
-    def test_restore_isolation_fails_closed_for_ipv4_and_ipv6(self):
+    def test_restore_isolation_blocks_docker_published_web_traffic_without_blocking_host_access(self):
         restore = read("operations/recovery/restore/restore.sh")
+        compose = load_yaml("deploy/production/compose.yml")
+        caddy_ports = compose["services"]["caddy"]["ports"]
+        published_container_ports = {
+            int(str(port).rsplit(":", 1)[-1].split("/", 1)[0])
+            for port in caddy_ports
+        }
+        self.assertEqual({80, 443}, published_container_ports, "the topology seam must cover Caddy's public listeners")
 
-        for command in ("iptables", "ip6tables"):
-            self.assertRegex(
-                restore,
-                rf"(?im)^\s*{command}\s+-C\s+INPUT.*\n\s*\|\|\s*{command}\s+-I\s+INPUT",
-                f"{command} must enforce a host-boundary drop rule",
+        isolation_start = restore.index("export RESTORE_PUBLIC_INTERFACE")
+        isolation_end = restore.index("umask 077", isolation_start)
+        isolation_contract = restore[isolation_start:isolation_end]
+        git_bash = Path(r"C:\Program Files\Git\bin\bash.exe")
+        self.assertTrue(git_bash.is_file(), "Git Bash is required for executable firewall-contract validation")
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+
+            def bash_path(path: Path) -> str:
+                windows_posix = path.resolve().as_posix()
+                if len(windows_posix) >= 3 and windows_posix[1:3] == ":/":
+                    return f"/{windows_posix[0].lower()}{windows_posix[2:]}"
+                return windows_posix
+
+            fake_bin = temporary_root / "bin"
+            fake_bin.mkdir()
+            firewall_log = temporary_root / "firewall.log"
+            for command in ("iptables", "ip6tables"):
+                executable = fake_bin / command
+                executable.write_text(
+                    "#!/usr/bin/env bash\n"
+                    'printf \'%s %s\\n\' "$(basename "$0")" "$*" >> "$FIREWALL_LOG"\n'
+                    'if [[ "$1" == "-C" ]]; then exit 1; fi\n'
+                    "exit 0\n",
+                    encoding="utf-8",
+                    newline="\n",
+                )
+                os.chmod(executable, 0o755)
+
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "FIREWALL_LOG": bash_path(firewall_log),
+                    "PATH": f"{bash_path(fake_bin)}:{environment.get('PATH', '')}",
+                    "RESTORE_PUBLIC_INTERFACE": "restore-public0",
+                }
             )
-        self.assertNotRegex(
-            restore,
-            r"(?is)RESTORE_ENABLE_IPV6.*?ip6tables",
-            "IPv6 isolation must not be disabled by an optional default-off flag",
-        )
+            result = subprocess.run(
+                [str(git_bash), "-Eeuo", "pipefail", "-c", isolation_contract],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(0, result.returncode, f"isolation contract did not execute: {result.stderr}")
+
+            calls = [shlex.split(line) for line in firewall_log.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(
+                {"iptables", "ip6tables"},
+                {call[0] for call in calls},
+                "both IPv4 and IPv6 Docker forwarding paths must be isolated",
+            )
+            inserted_rules = [call for call in calls if len(call) > 2 and call[1] in {"-I", "-A"}]
+            self.assertEqual(2, len(inserted_rules), "each address family must install one missing isolation rule")
+            for call in inserted_rules:
+                with self.subTest(command=call[0]):
+                    arguments = call[1:]
+                    self.assertEqual(
+                        "DOCKER-USER",
+                        arguments[1],
+                        "Docker-published ports traverse forwarding; INPUT rules do not isolate the Caddy containers",
+                    )
+                    self.assertEqual("restore-public0", arguments[arguments.index("-i") + 1])
+                    self.assertEqual("tcp", arguments[arguments.index("-p") + 1])
+                    self.assertEqual(
+                        published_container_ports,
+                        {int(port) for port in arguments[arguments.index("--dports") + 1].split(",")},
+                    )
+                    self.assertEqual("DROP", arguments[arguments.index("-j") + 1])
+                    self.assertNotIn("OUTPUT", arguments, "AWS downloads and host-originated recovery traffic must remain available")
+                    self.assertNotIn("22", arguments, "operator SSH access must remain available during restoration")
 
     def test_restore_cleanup_continues_after_dropdb_failure_before_shredding(self):
         git_bash = Path(r"C:\Program Files\Git\bin\bash.exe")
@@ -407,6 +552,399 @@ exit 0
             self.assertFalse((temporary_root / "evidence.json").exists())
             self.assertNotIn("isolated restoration verified", result.stdout)
 
+    def test_restore_success_becomes_failure_when_exit_trap_cleanup_fails(self):
+        git_bash = Path(r"C:\Program Files\Git\bin\bash.exe")
+        self.assertTrue(git_bash.is_file(), "Git Bash is required for executable EXIT-trap validation")
+
+        restore = read("operations/recovery/restore/restore.sh")
+        cleanup_start = restore.index("cleanup()")
+        trap_line = "trap cleanup EXIT"
+        cleanup_end = restore.index(trap_line, cleanup_start) + len(trap_line)
+        cleanup_contract = restore[cleanup_start:cleanup_end]
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+
+            def bash_path(path: Path) -> str:
+                windows_posix = path.resolve().as_posix()
+                if len(windows_posix) >= 3 and windows_posix[1:3] == ":/":
+                    return f"/{windows_posix[0].lower()}{windows_posix[2:]}"
+                return windows_posix
+
+            fake_bin = temporary_root / "bin"
+            fake_state = temporary_root / "state"
+            staging = temporary_root / "staging"
+            fake_bin.mkdir()
+            fake_state.mkdir()
+            staging.mkdir()
+            encrypted_archive = staging / "recovery.dump.age"
+            encrypted_archive.write_text("encrypted", encoding="utf-8")
+            evidence_file = temporary_root / "restoration-evidence.json"
+            evidence_file.write_text(
+                json.dumps({"plaintext_retention": {"temporary_plaintext_destroyed": True}}),
+                encoding="utf-8",
+            )
+
+            dropdb = fake_bin / "dropdb"
+            dropdb.write_text(
+                "#!/usr/bin/env bash\n"
+                'touch "$FAKE_STATE_DIR/dropdb-cleanup-failed"\n'
+                "exit 42\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            os.chmod(dropdb, 0o755)
+            shred = fake_bin / "shred"
+            shred.write_text(
+                "#!/usr/bin/env bash\n"
+                'touch "$FAKE_STATE_DIR/shred-called"\n'
+                "exit 0\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            os.chmod(shred, 0o755)
+
+            harness = temporary_root / "cleanup-exit-harness.sh"
+            harness.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -Eeuo pipefail\n"
+                f'STAGING_DIR="{bash_path(staging)}"\n'
+                f'ENCRYPTED_ARCHIVE="{bash_path(encrypted_archive)}"\n'
+                "RESTORED_DATABASE_CREATED=true\n"
+                "CONTROLLED_PRODUCTION_RECOVERY=false\n"
+                "RESTORE_ADMIN_DATABASE_URL=postgresql://isolated/postgres\n"
+                "RESTORE_DATABASE_NAME=gam_restore\n"
+                f'RESTORATION_EVIDENCE_FILE="{bash_path(evidence_file)}"\n'
+                "export RESTORATION_EVIDENCE_FILE\n"
+                f'FAKE_STATE_DIR="{bash_path(fake_state)}"\n'
+                "export FAKE_STATE_DIR\n"
+                f'PATH="{bash_path(fake_bin)}:$PATH"\n'
+                "export PATH\n"
+                f"{cleanup_contract}\n"
+                "printf 'main-success\\n'\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+
+            result = subprocess.run(
+                [str(git_bash), str(harness)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            self.assertIn("main-success", result.stdout, "the main flow must complete successfully before cleanup")
+            self.assertTrue(
+                (fake_state / "dropdb-cleanup-failed").exists(),
+                f"cleanup did not execute the failing dropdb seam; stdout={result.stdout!r}, stderr={result.stderr!r}",
+            )
+            self.assertTrue((fake_state / "shred-called").exists(), "cleanup must continue after dropdb failure")
+            self.assertNotEqual(
+                0,
+                result.returncode,
+                "a cleanup failure from the EXIT trap must override the prior successful main-flow status",
+            )
+            self.assertNotIn(
+                "isolated restoration verified; universal sign-in is required",
+                result.stdout,
+                "cleanup failure must not emit the restoration success notice",
+            )
+            if evidence_file.exists():
+                retained_evidence = json.loads(evidence_file.read_text(encoding="utf-8"))
+                self.assertFalse(
+                    retained_evidence.get("plaintext_retention", {}).get("temporary_plaintext_destroyed", True),
+                    "failed EXIT cleanup must remove the evidence or record temporary_plaintext_destroyed=false",
+                )
+
+    def test_restore_cleanup_bounds_stalled_dropdb_then_destroys_plaintext_and_removes_isolation(self):
+        git_bash = Path(r"C:\Program Files\Git\bin\bash.exe")
+        self.assertTrue(git_bash.is_file(), "Git Bash is required for executable cleanup validation")
+
+        restore = read("operations/recovery/restore/restore.sh")
+        cleanup_start = restore.index("cleanup()")
+        trap_line = "trap cleanup EXIT"
+        cleanup_end = restore.index(trap_line, cleanup_start) + len(trap_line)
+        cleanup_contract = restore[cleanup_start:cleanup_end]
+        cleanup_dropdb = re.search(r"(?m)^.*\bdropdb\s+--if-exists\b.*$", cleanup_contract)
+        self.assertIsNotNone(cleanup_dropdb, "cleanup must remove the temporary restored database")
+
+        function_blocks = {
+            match.group("name"): match.group(0)
+            for match in re.finditer(
+                r"(?ms)^\s*(?P<name>[a-z_][a-z0-9_]*)\(\)\s*\{.*?^\}",
+                restore,
+            )
+        }
+        cleanup_timeout_wrappers = {
+            name
+            for name, body in function_blocks.items()
+            if name != "run_with_recovery_deadline"
+            and re.search(r"(?m)\btimeout\b", body)
+            and re.search(r'(?:"\$@"|\$@)', body)
+        }
+        dropdb_line = cleanup_dropdb.group(0)
+        dropdb_is_bounded = re.search(r"\btimeout\b", dropdb_line) or any(
+            re.search(rf"\b{re.escape(wrapper)}\b.*\bdropdb\b", dropdb_line)
+            for wrapper in cleanup_timeout_wrappers
+        )
+        self.assertTrue(
+            dropdb_is_bounded,
+            "cleanup dropdb must have its own interruptible timeout so stalled database cleanup cannot retain plaintext or isolation rules",
+        )
+
+        executable_contract = "\n".join(function_blocks.values()) + f"\n{trap_line}"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+
+            def bash_path(path: Path) -> str:
+                windows_posix = path.resolve().as_posix()
+                if len(windows_posix) >= 3 and windows_posix[1:3] == ":/":
+                    return f"/{windows_posix[0].lower()}{windows_posix[2:]}"
+                return windows_posix
+
+            fake_bin = temporary_root / "bin"
+            fake_state = temporary_root / "state"
+            staging = temporary_root / "staging"
+            fake_bin.mkdir()
+            fake_state.mkdir()
+            staging.mkdir()
+            encrypted_archive = staging / "recovery.dump.age"
+            encrypted_archive.write_text("encrypted", encoding="utf-8")
+            (staging / "database.dump").write_text("plaintext", encoding="utf-8")
+            evidence_file = temporary_root / "restoration-evidence.json"
+            evidence_file.write_text(
+                json.dumps({"plaintext_retention": {"temporary_plaintext_destroyed": True}}),
+                encoding="utf-8",
+            )
+
+            fake_commands = {
+                "timeout": (
+                    "#!/usr/bin/env bash\n"
+                    'touch "$FAKE_STATE_DIR/cleanup-timeout-called"\n'
+                    "exit 124\n"
+                ),
+                "dropdb": (
+                    "#!/usr/bin/env bash\n"
+                    'touch "$FAKE_STATE_DIR/unbounded-dropdb-called"\n'
+                    "exit 99\n"
+                ),
+                "shred": (
+                    "#!/usr/bin/env bash\n"
+                    'touch "$FAKE_STATE_DIR/shred-called"\n'
+                    "exit 0\n"
+                ),
+                "iptables": (
+                    "#!/usr/bin/env bash\n"
+                    'printf "%s\\n" "$*" >> "$FAKE_STATE_DIR/iptables-calls"\n'
+                    "exit 0\n"
+                ),
+                "ip6tables": (
+                    "#!/usr/bin/env bash\n"
+                    'printf "%s\\n" "$*" >> "$FAKE_STATE_DIR/ip6tables-calls"\n'
+                    "exit 0\n"
+                ),
+            }
+            for command, contents in fake_commands.items():
+                executable = fake_bin / command
+                executable.write_text(contents, encoding="utf-8", newline="\n")
+                os.chmod(executable, 0o755)
+
+            harness = temporary_root / "stalled-cleanup-harness.sh"
+            harness.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -Eeuo pipefail\n"
+                f'STAGING_DIR="{bash_path(staging)}"\n'
+                f'ENCRYPTED_ARCHIVE="{bash_path(encrypted_archive)}"\n'
+                "RESTORED_DATABASE_CREATED=true\n"
+                "CONTROLLED_PRODUCTION_RECOVERY=false\n"
+                "RESTORE_ADMIN_DATABASE_URL=postgresql://isolated/postgres\n"
+                "RESTORE_DATABASE_NAME=gam_restore\n"
+                "RESTORE_PUBLIC_INTERFACE=restore0\n"
+                "RESTORE_IPV4_ISOLATION_ADDED=true\n"
+                "RESTORE_IPV6_ISOLATION_ADDED=true\n"
+                "RESTORE_CLEANUP_TIMEOUT_SECONDS=1\n"
+                "CLEANUP_TIMEOUT_SECONDS=1\n"
+                f'RESTORATION_EVIDENCE_FILE="{bash_path(evidence_file)}"\n'
+                "export RESTORATION_EVIDENCE_FILE\n"
+                f'FAKE_STATE_DIR="{bash_path(fake_state)}"\n'
+                "export FAKE_STATE_DIR\n"
+                f'PATH="{bash_path(fake_bin)}:$PATH"\n'
+                "export PATH\n"
+                f"{executable_contract}\n"
+                "printf 'main-success\\n'\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+
+            result = subprocess.run(
+                [str(git_bash), str(harness)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            self.assertIn("main-success", result.stdout)
+            self.assertNotEqual(0, result.returncode, "a timed-out cleanup operation must fail the run")
+            self.assertTrue((fake_state / "cleanup-timeout-called").exists())
+            self.assertFalse(
+                (fake_state / "unbounded-dropdb-called").exists(),
+                "the potentially stalled dropdb command must never execute outside the cleanup timeout",
+            )
+            self.assertTrue(
+                (fake_state / "shred-called").exists(),
+                "plaintext destruction must continue after timed-out database cleanup",
+            )
+            self.assertFalse(staging.exists(), "the temporary plaintext staging directory must be removed")
+            for command in ("iptables", "ip6tables"):
+                calls = (fake_state / f"{command}-calls").read_text(encoding="utf-8")
+                self.assertIn("-D DOCKER-USER", calls, f"{command} isolation must be removed after cleanup timeout")
+            self.assertFalse(
+                evidence_file.exists(),
+                "success evidence must not survive a timed-out cleanup that invalidates plaintext-destruction claims",
+            )
+
+    def test_restore_finalizes_success_evidence_atomically_only_after_exit_cleanup_succeeds(self):
+        git_bash = Path(r"C:\Program Files\Git\bin\bash.exe")
+        self.assertTrue(git_bash.is_file(), "Git Bash is required for executable evidence-finalization validation")
+
+        restore = read("operations/recovery/restore/restore.sh")
+        verification = read("operations/recovery/verify-restoration/verify-restoration.sh")
+        pending_variable = "RESTORATION_EVIDENCE_PENDING_FILE"
+        violations = []
+        if pending_variable not in restore or pending_variable not in verification:
+            violations.append("restore and verifier must share an explicit pending-evidence path")
+        if not re.search(
+            rf'(?m)>\s*"\${re.escape(pending_variable)}"',
+            verification,
+        ):
+            violations.append("the verifier must write only the pending evidence artifact")
+        if re.search(r'(?m)>\s*"\$RESTORATION_EVIDENCE_FILE"', verification):
+            violations.append("the verifier must not publish final success evidence before EXIT cleanup")
+
+        cleanup_start = restore.index("cleanup()")
+        cleanup_end = restore.index("trap cleanup EXIT", cleanup_start)
+        cleanup = restore[cleanup_start:cleanup_end]
+        success_notice = "isolated restoration verified; universal sign-in is required"
+        finalization = re.search(
+            rf'(?is)\bmv\b.{{0,200}}"\${re.escape(pending_variable)}".{{0,200}}"\$RESTORATION_EVIDENCE_FILE"',
+            cleanup,
+        )
+        if finalization is None:
+            violations.append("successful cleanup must atomically rename pending evidence to the final evidence path")
+        else:
+            isolation_removal = cleanup.find("remove_restore_isolation")
+            if isolation_removal < 0 or finalization.start() < isolation_removal:
+                violations.append("evidence finalization must occur only after isolation removal")
+            success_guard = cleanup[: finalization.start()]
+            if not re.search(
+                r"(?is)(?:if|elif)\s+\(\(\s*cleanup_status\s*==\s*0\s*\)\).*?then",
+                success_guard[-500:],
+            ):
+                violations.append("evidence finalization must be guarded by complete cleanup success")
+            success_notice_index = cleanup.find(success_notice)
+            if success_notice_index < 0:
+                violations.append("the restoration success notice must be emitted by successful EXIT cleanup")
+            elif success_notice_index < finalization.end():
+                violations.append("the restoration success notice must follow atomic evidence finalization")
+        if not re.search(
+            rf'(?is)(?:cleanup_status\s*!=\s*0|\belse\b).{{0,500}}rm\s+-f\b.{{0,200}}\${re.escape(pending_variable)}',
+            cleanup,
+        ):
+            violations.append("failed cleanup must remove pending evidence rather than leave a success candidate")
+
+        self.assertEqual([], violations, "restoration evidence publication violations: " + "; ".join(violations))
+
+        function_blocks = "\n".join(
+            match.group(0)
+            for match in re.finditer(
+                r"(?ms)^\s*(?P<name>[a-z_][a-z0-9_]*)\(\)\s*\{.*?^\}",
+                restore,
+            )
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+
+            def bash_path(path: Path) -> str:
+                windows_posix = path.resolve().as_posix()
+                if len(windows_posix) >= 3 and windows_posix[1:3] == ":/":
+                    return f"/{windows_posix[0].lower()}{windows_posix[2:]}"
+                return windows_posix
+
+            fake_bin = temporary_root / "bin"
+            fake_state = temporary_root / "state"
+            staging = temporary_root / "staging"
+            fake_bin.mkdir()
+            fake_state.mkdir()
+            staging.mkdir()
+            encrypted_archive = staging / "recovery.dump.age"
+            encrypted_archive.write_text("encrypted", encoding="utf-8")
+            (staging / "database.dump").write_text("plaintext", encoding="utf-8")
+            pending_evidence = temporary_root / "evidence.pending.json"
+            final_evidence = temporary_root / "evidence.json"
+            pending_evidence.write_text(
+                json.dumps({"plaintext_retention": {"temporary_plaintext_destroyed": True}}),
+                encoding="utf-8",
+            )
+
+            fake_commands = {
+                "dropdb": "#!/usr/bin/env bash\nexit 0\n",
+                "shred": "#!/usr/bin/env bash\nexit 0\n",
+                "iptables": "#!/usr/bin/env bash\nexit 0\n",
+                "ip6tables": "#!/usr/bin/env bash\nexit 0\n",
+            }
+            for command, contents in fake_commands.items():
+                executable = fake_bin / command
+                executable.write_text(contents, encoding="utf-8", newline="\n")
+                os.chmod(executable, 0o755)
+
+            harness = temporary_root / "evidence-finalization-harness.sh"
+            harness.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -Eeuo pipefail\n"
+                f'STAGING_DIR="{bash_path(staging)}"\n'
+                f'ENCRYPTED_ARCHIVE="{bash_path(encrypted_archive)}"\n'
+                "RESTORED_DATABASE_CREATED=true\n"
+                "CONTROLLED_PRODUCTION_RECOVERY=false\n"
+                "RESTORE_ADMIN_DATABASE_URL=postgresql://isolated/postgres\n"
+                "RESTORE_DATABASE_NAME=gam_restore\n"
+                "RESTORE_PUBLIC_INTERFACE=restore0\n"
+                "RESTORE_IPV4_ISOLATION_ADDED=true\n"
+                "RESTORE_IPV6_ISOLATION_ADDED=true\n"
+                "RESTORE_CLEANUP_TIMEOUT_SECONDS=2\n"
+                f'{pending_variable}="{bash_path(pending_evidence)}"\n'
+                f'RESTORATION_EVIDENCE_FILE="{bash_path(final_evidence)}"\n'
+                f'PATH="{bash_path(fake_bin)}:$PATH"\n'
+                "export PATH\n"
+                f"{function_blocks}\n"
+                "trap cleanup EXIT\n"
+                f'test -f "${pending_variable}"\n'
+                'test ! -e "$RESTORATION_EVIDENCE_FILE"\n'
+                "printf 'main-complete-with-evidence-still-pending\\n'\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+
+            result = subprocess.run(
+                [str(git_bash), str(harness)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("main-complete-with-evidence-still-pending", result.stdout)
+            self.assertIn(
+                success_notice,
+                result.stdout,
+                "successful cleanup must emit the notice only after publishing final evidence",
+            )
+            self.assertFalse(pending_evidence.exists(), "successful EXIT cleanup must consume pending evidence")
+            self.assertTrue(final_evidence.is_file(), "successful EXIT cleanup must publish final evidence")
+            finalized = json.loads(final_evidence.read_text(encoding="utf-8"))
+            self.assertTrue(finalized["plaintext_retention"]["temporary_plaintext_destroyed"])
+
     def test_attachment_sampling_compares_attachment_bytes_and_records_real_correction(self):
         verification = read("operations/recovery/verify-restoration/verify-restoration.sh")
         sampling_start = verification.index("ATTACHMENT_SAMPLE_CHECKSUM")
@@ -453,6 +991,18 @@ exit 0
     def test_restoration_verification_fails_closed_when_flyway_history_is_empty(self):
         verification = read("operations/recovery/verify-restoration/verify-restoration.sh")
         before_evidence_write = verification[: verification.index("mkdir -p")]
+        self.assertRegex(
+            before_evidence_write,
+            r"(?is)FLYWAY_COUNT=.*?SELECT\s+count\(\*\)\s+FROM\s+(?:public\.)?flyway_schema_history",
+            "Flyway readiness must count applied migration rows, not merely the history table's existence",
+        )
+        flyway_query_start = before_evidence_write.index("FLYWAY_COUNT=")
+        flyway_query_end = before_evidence_write.index("STRUCTURAL_RESULT=", flyway_query_start)
+        self.assertNotIn(
+            "information_schema.tables",
+            before_evidence_write[flyway_query_start:flyway_query_end],
+            "the Flyway count must not report one merely because flyway_schema_history exists",
+        )
         flyway_guard_patterns = (
             r"(?m)^\s*test\s+[\"']?\$FLYWAY_COUNT[\"']?\s+-gt\s+0",
             r"(?m)^\s*\[\[\s*[\"']?\$FLYWAY_COUNT[\"']?\s+-gt\s+0",
@@ -462,6 +1012,249 @@ exit 0
             any(re.search(pattern, before_evidence_write) for pattern in flyway_guard_patterns),
             "restoration verification must reject an empty Flyway history before writing success evidence",
         )
+
+    def test_restore_validates_manifest_schema_provenance_and_package_integrity_before_pg_restore(self):
+        restore = read("operations/recovery/restore/restore.sh")
+        manifest_start = restore.index('test -s "$RESTORED_FILES/manifest.json"')
+        pg_restore_start = restore.index("pg_restore --list", manifest_start)
+        validation = restore[manifest_start:pg_restore_start]
+
+        self.assertIn(
+            "gam-recovery-manifest/v1",
+            validation,
+            "restore must reject recovery packages with an unknown manifest schema",
+        )
+        self.assertRegex(
+            validation,
+            r"(?m)\bjq\s+-e\b",
+            "manifest validation must fail closed when its schema or required fields are invalid",
+        )
+        for field in (
+            "schema_version",
+            "created_at",
+            "postgresql_version",
+            "classification",
+            "object_key",
+            "source_commit",
+            "backend_image_digest",
+            "frontend_release",
+            "frontend_archive",
+            "frontend_sha256",
+            "migration_state",
+            "dump_size_bytes",
+            "roles_size_bytes",
+            "archive_size_bytes",
+            "archive_sha256",
+            "roles_sha256",
+            "refresh_token_data",
+            "encryption_scheme",
+            "data_boundary",
+        ):
+            with self.subTest(manifest_field=field):
+                self.assertRegex(
+                    validation,
+                    rf"(?m)\.({re.escape(field)})\b",
+                    f"restore must validate manifest {field} before accepting the package",
+                )
+
+        for size_field in ("dump_size_bytes", "roles_size_bytes", "archive_size_bytes"):
+            with self.subTest(numeric_nonnegative_manifest_size=size_field):
+                self.assertRegex(
+                    validation,
+                    rf'(?is)(?:\.{size_field}.{{0,180}}type\s*==\s*["\']number["\']|'
+                    rf'type\s*==\s*["\']number["\'].{{0,180}}\.{size_field})',
+                    f"manifest {size_field} must be numeric",
+                )
+                self.assertRegex(
+                    validation,
+                    rf"(?is)\.{size_field}.{{0,180}}(?:>=\s*0|<\s*0|nonnegative|non-negative)",
+                    f"manifest {size_field} must be nonnegative",
+                )
+
+        self.assertRegex(
+            validation,
+            r"(?is)\.object_key.{0,180}RECOVERY_OBJECT_KEY|RECOVERY_OBJECT_KEY.{0,180}\.object_key",
+            "the selected S3 object key must agree with the manifest provenance",
+        )
+        for filename, manifest_field in (
+            ("database.dump", "archive_sha256"),
+            ("database-roles.sql", "roles_sha256"),
+        ):
+            with self.subTest(package_member=filename):
+                self.assertRegex(
+                    validation,
+                    rf"(?is)(?:sha256sum.{{0,160}}{re.escape(filename)}.{{0,240}}\.{manifest_field}|"
+                    rf"\.{manifest_field}.{{0,240}}sha256sum.{{0,160}}{re.escape(filename)})",
+                    f"restore must compare {filename} bytes with manifest {manifest_field}",
+                )
+
+        for filename, manifest_field in (
+            ("database.dump", "dump_size_bytes"),
+            ("database-roles.sql", "roles_size_bytes"),
+        ):
+            with self.subTest(package_member_size=filename):
+                self.assertRegex(
+                    validation,
+                    rf"(?is)(?:stat\b.{{0,160}}{re.escape(filename)}.{{0,300}}\.{manifest_field}|"
+                    rf"\.{manifest_field}.{{0,300}}stat\b.{{0,160}}{re.escape(filename)})",
+                    f"restore must compare {filename} byte length with manifest {manifest_field}",
+                )
+        self.assertRegex(
+            validation,
+            r"(?is)(?:dump_size_bytes.{0,300}\+.{0,300}roles_size_bytes.{0,300}archive_size_bytes|"
+            r"archive_size_bytes.{0,300}dump_size_bytes.{0,300}\+.{0,300}roles_size_bytes)",
+            "restore must reconcile archive_size_bytes with the dump-plus-roles size generated by backup.sh",
+        )
+
+        verification = read("operations/recovery/verify-restoration/verify-restoration.sh")
+        migration_validation = restore[manifest_start:] + "\n" + verification
+        self.assertRegex(
+            migration_validation,
+            r"(?is)(?:manifest[^\n]*migration_state|MANIFEST_MIGRATION_STATE|\.migration_state)"
+            r".{0,1200}flyway_schema_history|flyway_schema_history.{0,1200}"
+            r"(?:manifest[^\n]*migration_state|MANIFEST_MIGRATION_STATE|\.migration_state)",
+            "the restored Flyway history must be reconciled with the migration state declared by the manifest",
+        )
+
+    def test_restore_verifies_manifest_postgresql_major_and_records_only_verified_evidence(self):
+        restore = read("operations/recovery/restore/restore.sh")
+        verification = read("operations/recovery/verify-restoration/verify-restoration.sh")
+        manifest_start = restore.index('test -s "$RESTORED_FILES/manifest.json"')
+        first_restore = restore.index("pg_restore --list", manifest_start)
+        pre_restore_validation = restore[manifest_start:first_restore]
+
+        for variable in (
+            "MANIFEST_POSTGRESQL_VERSION",
+            "TARGET_POSTGRESQL_VERSION",
+            "MANIFEST_POSTGRESQL_MAJOR_VERSION",
+            "TARGET_POSTGRESQL_MAJOR_VERSION",
+        ):
+            with self.subTest(version_signal=variable):
+                self.assertIn(
+                    variable,
+                    pre_restore_validation,
+                    f"restore must derive {variable} before accepting the archive",
+                )
+        self.assertRegex(
+            pre_restore_validation,
+            r"(?is)MANIFEST_POSTGRESQL_VERSION=.*?\.postgresql_version",
+            "the manifest PostgreSQL version must come from the selected recovery package",
+        )
+        self.assertRegex(
+            pre_restore_validation,
+            r"(?is)TARGET_POSTGRESQL_VERSION=.*?psql\b.*?SHOW\s+server_version",
+            "the restoration target PostgreSQL version must be queried from the isolated target",
+        )
+        for major_variable in ("MANIFEST_POSTGRESQL_MAJOR_VERSION", "TARGET_POSTGRESQL_MAJOR_VERSION"):
+            with self.subTest(valid_numeric_major=major_variable):
+                self.assertRegex(
+                    pre_restore_validation,
+                    rf'(?is){major_variable}.{{0,240}}\^\[0-9\]\+\$|\^\[0-9\]\+\$.{{0,240}}{major_variable}',
+                    f"restore must reject an invalid {major_variable}",
+                )
+        self.assertRegex(
+            pre_restore_validation,
+            r"(?is)(?:test\s+.*\$MANIFEST_POSTGRESQL_MAJOR_VERSION.*=.*\$TARGET_POSTGRESQL_MAJOR_VERSION|"
+            r"\[\[.*\$MANIFEST_POSTGRESQL_MAJOR_VERSION.*(?:==|!=).*\$TARGET_POSTGRESQL_MAJOR_VERSION)",
+            "restore must reject a manifest whose PostgreSQL major version differs from the restoration target",
+        )
+
+        verifier_call = restore[restore.index("RESTORATION_DURATION_SECONDS=") :]
+        for variable in (
+            "MANIFEST_POSTGRESQL_VERSION",
+            "TARGET_POSTGRESQL_VERSION",
+            "POSTGRESQL_MAJOR_VERSION_CHECKED",
+        ):
+            with self.subTest(exported_verification_signal=variable):
+                self.assertRegex(
+                    verifier_call,
+                    rf"(?m)^\s*export\s+(?:[^\n]*\s)?{variable}(?:\s|$)",
+                    f"restore must pass {variable} to the evidence verifier",
+                )
+                self.assertRegex(
+                    verification,
+                    rf'(?m)^\s*:?\s*"?\$\{{{variable}:\?[^}}]+\}}"?',
+                    f"the evidence verifier must require {variable}",
+                )
+
+        before_evidence = verification[: verification.index("mkdir -p")]
+        self.assertRegex(
+            before_evidence,
+            r"(?is)(?:test\s+.*\$POSTGRESQL_MAJOR_VERSION_CHECKED.*=\s*(?:true|\"true\")|"
+            r"\[\[.*\$POSTGRESQL_MAJOR_VERSION_CHECKED.*(?:==|!=)\s*(?:true|\"true\"))",
+            "the evidence verifier must reject an unverified PostgreSQL major-version result",
+        )
+        self.assertNotRegex(
+            verification,
+            r"major_version_checked\s*:\s*true\b",
+            "evidence must not unconditionally claim that the PostgreSQL major version was checked",
+        )
+        evidence_program = verification[verification.index("jq -n") :]
+        self.assertRegex(
+            evidence_program,
+            r"(?is)major_version_checked\s*:\s*[^,}\n]*\$[a-z_]*major[a-z_]*checked",
+            "the recorded major-version result must be derived from the verified input",
+        )
+        self.assertRegex(
+            evidence_program,
+            r"(?is)postgresql\s*:\s*\{[^}]*manifest[^}]*version[^}]*\$[a-z_]*manifest[a-z_]*version",
+            "evidence must identify the manifest PostgreSQL version that was compared",
+        )
+        self.assertRegex(
+            evidence_program,
+            r"(?is)postgresql\s*:\s*\{[^}]*target[^}]*version[^}]*\$[a-z_]*target[a-z_]*version",
+            "evidence must identify the restoration target PostgreSQL version",
+        )
+
+    def test_preproduction_restoration_reason_is_explicit_and_recordable(self):
+        restore = read("operations/recovery/restore/restore.sh")
+        verification = read("operations/recovery/verify-restoration/verify-restoration.sh")
+
+        self.assertRegex(
+            verification,
+            r"(?s)case\s+\"\$RESTORATION_REASON\"\s+in.*\bpre-production\b",
+            "the mandatory pre-production restoration must be accepted as an evidence reason",
+        )
+        self.assertRegex(
+            restore,
+            r'(?m)^\s*:\s*"\$\{RESTORATION_REASON:\?[^}]+\}"',
+            "restore callers must identify the restoration trigger explicitly",
+        )
+        self.assertNotRegex(
+            restore,
+            r'RESTORATION_REASON="\$\{RESTORATION_REASON:-annual\}"',
+            "restore must not misrecord an unspecified pre-production run as annual",
+        )
+
+    def test_disaster_recovery_reason_passes_restoration_evidence_reason_gate(self):
+        verification = read("operations/recovery/verify-restoration/verify-restoration.sh")
+        reason_gate_start = verification.index('case "$RESTORATION_REASON" in')
+        reason_gate_end = verification.index("POSTGRESQL_VERSION=", reason_gate_start)
+        reason_gate = verification[reason_gate_start:reason_gate_end]
+        git_bash = Path(r"C:\Program Files\Git\bin\bash.exe")
+        self.assertTrue(git_bash.is_file(), "Git Bash is required for executable restoration-reason validation")
+
+        result = subprocess.run(
+            [
+                str(git_bash),
+                "-Eeuo",
+                "pipefail",
+                "-c",
+                "RESTORATION_REASON=disaster-recovery\n" + reason_gate + "\nprintf 'reason-accepted\\n'\n",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        self.assertEqual(
+            0,
+            result.returncode,
+            "controlled production disaster recovery must pass the evidence reason gate before database validation: "
+            + result.stderr,
+        )
+        self.assertIn("reason-accepted", result.stdout)
 
     def test_public_health_contract_is_unauthenticated_and_returns_exact_up_body(self):
         java_sources = [
@@ -714,6 +1507,7 @@ exit 0
     def test_monitor_accepts_weekly_recovery_point_after_missed_monday(self):
         monitor = MonitorHarness()
         failed_monday = datetime(2026, 6, 8, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_prior_monthly_evidence(failed_monday)
         monitor.module._current_local_date = lambda: failed_monday
         failure_result = monitor.module.lambda_handler({"phase": "daily"}, None)
         self.assertEqual("invalid", failure_result["status"])
@@ -728,25 +1522,55 @@ exit 0
         self.assertEqual("weekly", details["classification"])
 
     def test_classification_history_rejects_daily_then_monthly_without_required_catchup(self):
-        monitor = MonitorHarness()
-        prior_day = datetime(2026, 6, 2, 4, 30, tzinfo=SAO_PAULO)
-        monitor.add_object(prior_day, "daily", key_classification="daily")
-        monitor.module._current_local_date = lambda: prior_day
-        prior_valid, prior_reasons, _ = monitor.module._check_today()
-        self.assertTrue(prior_valid, f"the valid prior daily recovery point was rejected: {prior_reasons}")
+        boundary_monitor = MonitorHarness()
+        wrongly_daily_boundary = datetime(2026, 6, 2, 4, 30, tzinfo=SAO_PAULO)
+        boundary_monitor.add_object(wrongly_daily_boundary, "daily", key_classification="daily")
+        boundary_monitor.module._current_local_date = lambda: wrongly_daily_boundary
+        boundary_valid, boundary_reasons, _ = boundary_monitor.module._check_today()
+        self.assertFalse(
+            boundary_valid,
+            f"the first successful artifact of the month was accepted as daily: {boundary_reasons}",
+        )
+        self.assertIn("classification", " ".join(boundary_reasons).casefold())
 
-        next_day = datetime(2026, 6, 3, 4, 30, tzinfo=SAO_PAULO)
-        monitor.add_object(next_day, "monthly", key_classification="monthly")
-        monitor.module._current_local_date = lambda: next_day
-        valid, reasons, _ = monitor.module._check_today()
+        no_history_monitor = MonitorHarness()
+        prior_day = datetime(2026, 6, 10, 4, 30, tzinfo=SAO_PAULO)
+        no_history_monitor.add_object(prior_day, "daily", key_classification="daily")
+        no_history_monitor.module._current_local_date = lambda: prior_day
+        prior_valid, prior_reasons, _ = no_history_monitor.module._check_today()
+        self.assertFalse(
+            prior_valid,
+            f"a fresh daily artifact without monthly or weekly boundary evidence was accepted: {prior_reasons}",
+        )
+        self.assertIn("classification", " ".join(prior_reasons).casefold())
+
+        history_monitor = MonitorHarness()
+        monthly_boundary = datetime(2026, 6, 1, 4, 30, tzinfo=SAO_PAULO)
+        history_monitor.add_object(monthly_boundary, "monthly", key_classification="monthly")
+        weekly_boundary = datetime(2026, 6, 8, 4, 30, tzinfo=SAO_PAULO)
+        history_monitor.add_object(weekly_boundary, "weekly", key_classification="weekly")
+        history_monitor.add_object(prior_day, "daily", key_classification="daily")
+        history_monitor.module._current_local_date = lambda: prior_day
+        prior_valid, prior_reasons, _ = history_monitor.module._check_today()
+        self.assertTrue(
+            prior_valid,
+            f"the daily recovery point was rejected after immutable evidence satisfied both boundaries: {prior_reasons}",
+        )
+
+        next_day = datetime(2026, 6, 11, 4, 30, tzinfo=SAO_PAULO)
+        history_monitor.add_object(next_day, "monthly", key_classification="monthly")
+        history_monitor.module._current_local_date = lambda: next_day
+        valid, reasons, _ = history_monitor.module._check_today()
         self.assertFalse(
             valid,
             f"monthly classification after an already-successful daily was accepted without required classification history: {reasons}",
         )
+        self.assertIn("classification", " ".join(reasons).casefold())
 
     def test_monitor_accepts_normal_midmonth_monday_weekly_artifact(self):
         monitor = MonitorHarness()
         monday = datetime(2026, 6, 8, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_prior_monthly_evidence(monday)
         monitor.add_object(monday, "weekly", key_classification="weekly")
         monitor.module._current_local_date = lambda: monday
 
@@ -755,39 +1579,163 @@ exit 0
         self.assertTrue(valid, f"a normal Monday weekly artifact was rejected: {reasons}")
         self.assertEqual("weekly", details["classification"])
 
-    def test_expected_classifications_rejects_arbitrary_weekly_and_monthly_classes_during_ordinary_first_week(self):
-        monitor = MonitorHarness()
-        ordinary_first_week_day = datetime(2026, 6, 3, 4, 30, tzinfo=SAO_PAULO)
-
-        self.assertEqual({}, monitor.dynamo.table.items, "the ordinary first-week case must have no persisted outage")
-        self.assertEqual(
-            {"daily"},
-            monitor.module._expected_classifications(ordinary_first_week_day),
-            "without a persisted outage, an ordinary first-week day must not authorize arbitrary weekly or monthly classes",
+    def test_monitor_rejects_weekly_and_monthly_when_earlier_immutable_evidence_satisfied_the_boundary(self):
+        cases = (
+            (
+                "weekly boundary already satisfied",
+                datetime(2026, 6, 8, 4, 30, tzinfo=SAO_PAULO),
+                "weekly",
+                datetime(2026, 6, 10, 4, 30, tzinfo=SAO_PAULO),
+                "weekly",
+            ),
+            (
+                "monthly boundary already satisfied",
+                datetime(2026, 6, 1, 4, 30, tzinfo=SAO_PAULO),
+                "monthly",
+                datetime(2026, 6, 10, 4, 30, tzinfo=SAO_PAULO),
+                "monthly",
+            ),
         )
+        for label, earlier_date, earlier_classification, current_date, current_classification in cases:
+            with self.subTest(scenario=label):
+                monitor = MonitorHarness()
+                earlier_key = monitor.add_object(
+                    earlier_date,
+                    earlier_classification,
+                    key_classification=earlier_classification,
+                )
+                current_key = monitor.add_object(
+                    current_date,
+                    current_classification,
+                    key_classification=current_classification,
+                )
+                self.assertEqual(
+                    {},
+                    monitor.dynamo.table.items,
+                    "immutable object evidence, not monitor history, must prove the duplicate classification is invalid",
+                )
+                self.assertEqual(
+                    {earlier_key, current_key},
+                    set(monitor.s3.objects),
+                    "the fixture must contain exactly one earlier boundary point and the later duplicate",
+                )
 
-    def test_monitor_rejects_weekly_catchup_after_wednesday_failure(self):
+                monitor.module._current_local_date = lambda current_date=current_date: current_date
+                result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+                self.assertEqual(
+                    "invalid",
+                    result["status"],
+                    f"{label} allowed a later object to duplicate the already-satisfied classification",
+                )
+                self.assertIn("classification", " ".join(result.get("reasons", [])).casefold())
+
+    def test_weekly_catchup_ignores_wrongly_daily_monday_boundary_object(self):
+        monitor = MonitorHarness()
+        monday = datetime(2026, 6, 8, 4, 30, tzinfo=SAO_PAULO)
+        monthly_key = monitor.add_prior_monthly_evidence(monday)
+        monday_key = monitor.add_object(monday, "daily", key_classification="daily")
+        tuesday = datetime(2026, 6, 9, 4, 30, tzinfo=SAO_PAULO)
+        weekly_key = monitor.add_object(tuesday, "weekly", key_classification="weekly")
+        self.assertEqual({}, monitor.dynamo.table.items)
+        self.assertEqual({monthly_key, monday_key, weekly_key}, set(monitor.s3.objects))
+
+        monitor.module._current_local_date = lambda: tuesday
+        result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "ok",
+            result["status"],
+            "a wrongly daily Monday object must not satisfy the weekly boundary or block Tuesday's correct catch-up",
+        )
+        self.assertEqual(weekly_key, result["recovery_point"])
+
+    def test_monthly_catchup_ignores_wrongly_daily_first_day_object(self):
+        monitor = MonitorHarness()
+        month_start = datetime(2026, 6, 1, 4, 30, tzinfo=SAO_PAULO)
+        month_start_key = monitor.add_object(month_start, "daily", key_classification="daily")
+        second_day = datetime(2026, 6, 2, 4, 30, tzinfo=SAO_PAULO)
+        monthly_key = monitor.add_object(second_day, "monthly", key_classification="monthly")
+        self.assertEqual({}, monitor.dynamo.table.items)
+        self.assertEqual({month_start_key, monthly_key}, set(monitor.s3.objects))
+
+        monitor.module._current_local_date = lambda: second_day
+        result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "ok",
+            result["status"],
+            "a wrongly daily first-day object must not satisfy the monthly boundary or block day two's correct catch-up",
+        )
+        self.assertEqual(monthly_key, result["recovery_point"])
+
+    def test_monitor_accepts_first_weekly_success_after_intermediate_monitor_failure(self):
         monitor = MonitorHarness()
         failed_wednesday = datetime(2026, 6, 10, 4, 30, tzinfo=SAO_PAULO)
+        monthly_key = monitor.add_prior_monthly_evidence(failed_wednesday)
         monitor.module._current_local_date = lambda: failed_wednesday
         failure_result = monitor.module.lambda_handler({"phase": "daily"}, None)
         self.assertEqual("invalid", failure_result["status"])
-        self.assertIn("backup-monitor/2026-06-10", monitor.dynamo.table.items)
+        failure_id = "backup-monitor/2026-06-10"
+        self.assertIn(failure_id, monitor.dynamo.table.items)
 
         thursday = datetime(2026, 6, 11, 4, 30, tzinfo=SAO_PAULO)
-        monitor.add_object(thursday, "weekly", key_classification="weekly")
+        recovery_key = monitor.add_object(thursday, "weekly", key_classification="weekly")
+        self.assertEqual(
+            {monthly_key, recovery_key},
+            set(monitor.s3.objects),
+            "the Thursday object must be the first successful immutable recovery point since Monday after monthly evidence",
+        )
         monitor.module._current_local_date = lambda: thursday
         catchup_result = monitor.module.lambda_handler({"phase": "daily"}, None)
 
         self.assertEqual(
-            "invalid",
+            "ok",
             catchup_result["status"],
-            "weekly catch-up must require a failed Monday attempt, not an arbitrary same-week failure",
+            "the first successful artifact after an unobserved Monday and a later monitor failure must retain weekly classification",
         )
+        self.assertEqual(recovery_key, catchup_result["recovery_point"])
+        self.assertTrue(
+            any(message.get("Subject") == "GAM backup recovery notice" for message in monitor.sns.messages),
+            "the later weekly success must publish recovery for the observed Wednesday failure",
+        )
+        self.assertNotIn(failure_id, monitor.dynamo.table.items)
+
+    def test_monitor_accepts_first_monthly_success_after_intermediate_monitor_failure(self):
+        monitor = MonitorHarness()
+        failed_second_day = datetime(2026, 6, 2, 4, 30, tzinfo=SAO_PAULO)
+        monitor.module._current_local_date = lambda: failed_second_day
+        failure_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+        self.assertEqual("invalid", failure_result["status"])
+        failure_id = "backup-monitor/2026-06-02"
+        self.assertIn(failure_id, monitor.dynamo.table.items)
+
+        third_day = datetime(2026, 6, 3, 4, 30, tzinfo=SAO_PAULO)
+        recovery_key = monitor.add_object(third_day, "monthly", key_classification="monthly")
+        self.assertEqual(
+            {recovery_key},
+            set(monitor.s3.objects),
+            "the day-three object must be the first successful immutable recovery point of the month",
+        )
+        monitor.module._current_local_date = lambda: third_day
+        catchup_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "ok",
+            catchup_result["status"],
+            "the first successful artifact after an unobserved month start and a later monitor failure must retain monthly classification",
+        )
+        self.assertEqual(recovery_key, catchup_result["recovery_point"])
+        self.assertTrue(
+            any(message.get("Subject") == "GAM backup recovery notice" for message in monitor.sns.messages),
+            "the later monthly success must publish recovery for the observed day-two failure",
+        )
+        self.assertNotIn(failure_id, monitor.dynamo.table.items)
 
     def test_monitor_lambda_state_transition_resolves_a_multiday_outage(self):
         monitor = MonitorHarness()
         failed_monday = datetime(2026, 6, 8, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_prior_monthly_evidence(failed_monday)
         monitor.module._current_local_date = lambda: failed_monday
         failure_result = monitor.module.lambda_handler({"phase": "daily"}, None)
         self.assertEqual("invalid", failure_result["status"])
@@ -806,32 +1754,29 @@ exit 0
         )
         self.assertNotIn(prior_failure_id, monitor.dynamo.table.items)
 
-    def test_monitor_rejects_midmonth_weekly_monthly_and_post_first_day_daily_classes(self):
-        cases = (
-            ("mid-month weekly", datetime(2026, 6, 10, 4, 30, tzinfo=SAO_PAULO), "weekly"),
-            ("mid-month monthly", datetime(2026, 6, 10, 4, 30, tzinfo=SAO_PAULO), "monthly"),
-            ("post-first-day daily", datetime(2026, 6, 2, 4, 30, tzinfo=SAO_PAULO), "daily"),
+    def test_monitor_rejects_daily_after_persisted_first_day_outage(self):
+        monitor = MonitorHarness()
+        outage_day = datetime(2026, 6, 1, 4, 30, tzinfo=SAO_PAULO)
+        monitor.module._current_local_date = lambda: outage_day
+        outage_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+        self.assertEqual("invalid", outage_result["status"])
+        self.assertIn(
+            "backup-monitor/2026-06-01",
+            monitor.dynamo.table.items,
+            "the rejected post-first-day daily must represent a persisted prior outage",
         )
-        for label, local_date, classification in cases:
-            with self.subTest(label=label):
-                monitor = MonitorHarness()
-                if label == "post-first-day daily":
-                    outage_day = datetime(2026, 6, 1, 4, 30, tzinfo=SAO_PAULO)
-                    monitor.module._current_local_date = lambda: outage_day
-                    outage_result = monitor.module.lambda_handler({"phase": "daily"}, None)
-                    self.assertEqual("invalid", outage_result["status"])
-                    self.assertIn(
-                        "backup-monitor/2026-06-01",
-                        monitor.dynamo.table.items,
-                        "the rejected post-first-day daily must represent a persisted prior outage",
-                    )
-                monitor.add_object(local_date, classification, key_classification=classification)
-                monitor.module._current_local_date = lambda local_date=local_date: local_date
-                valid, reasons, _ = monitor.module._check_today()
-                self.assertFalse(
-                    valid,
-                    f"{label} classification was accepted without a valid calendar catch-up: {reasons}",
-                )
+
+        local_date = datetime(2026, 6, 2, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_object(local_date, "daily", key_classification="daily")
+        monitor.module._current_local_date = lambda: local_date
+        result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "invalid",
+            result["status"],
+            "daily classification must not replace the required first successful monthly recovery point",
+        )
+        self.assertIn("classification", " ".join(result.get("reasons", [])).casefold())
 
     def test_monthly_pending_survives_first_of_month_outage_and_is_accepted_on_next_success(self):
         backup_source = read("operations/recovery/backup/backup.sh")
@@ -855,6 +1800,215 @@ exit 0
         self.assertTrue(valid, f"a valid monthly catch-up artifact was rejected: {reasons}")
         self.assertEqual("monthly", details["classification"])
 
+    def test_monthly_catchup_is_accepted_when_first_of_month_monitor_invocation_was_missed(self):
+        monitor = MonitorHarness()
+        catch_up_day = datetime(2026, 6, 2, 4, 30, tzinfo=SAO_PAULO)
+        recovery_key = monitor.add_object(catch_up_day, "monthly", key_classification="monthly")
+        self.assertEqual(
+            {},
+            monitor.dynamo.table.items,
+            "the scenario requires an unobserved first-of-month outage with no monitor failure or success state",
+        )
+
+        monitor.module._current_local_date = lambda: catch_up_day
+        result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "ok",
+            result["status"],
+            "the first successful monthly artifact must be accepted even when the monitor missed the first day; "
+            f"reasons: {result.get('reasons', [])}",
+        )
+        self.assertEqual(recovery_key, result["recovery_point"])
+
+    def test_weekly_catchup_is_accepted_when_monday_monitor_invocation_was_missed(self):
+        monitor = MonitorHarness()
+        catch_up_tuesday = datetime(2026, 6, 9, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_prior_monthly_evidence(catch_up_tuesday)
+        recovery_key = monitor.add_object(catch_up_tuesday, "weekly", key_classification="weekly")
+        self.assertEqual(
+            {},
+            monitor.dynamo.table.items,
+            "the scenario requires an unobserved Monday outage with no monitor failure or success state",
+        )
+
+        monitor.module._current_local_date = lambda: catch_up_tuesday
+        result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "ok",
+            result["status"],
+            "the next successful weekly artifact must be accepted even when the monitor missed Monday; "
+            f"reasons: {result.get('reasons', [])}",
+        )
+        self.assertEqual(recovery_key, result["recovery_point"])
+
+    def test_monthly_catchup_rejects_daily_without_monitor_state_or_prior_boundary_evidence(self):
+        monitor = MonitorHarness()
+        catch_up_day = datetime(2026, 6, 2, 4, 30, tzinfo=SAO_PAULO)
+        wrongly_daily_key = monitor.add_object(catch_up_day, "daily", key_classification="daily")
+        self.assertEqual(
+            {},
+            monitor.dynamo.table.items,
+            "the scenario requires a missed first-of-month monitor invocation with no persisted state",
+        )
+        self.assertEqual(
+            {wrongly_daily_key},
+            set(monitor.s3.objects),
+            "no earlier correctly classified monthly artifact may satisfy the boundary",
+        )
+
+        monitor.module._current_local_date = lambda: catch_up_day
+        result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "invalid",
+            result["status"],
+            "the first successful artifact of the month must be monthly even when monitor state is absent",
+        )
+        self.assertIn("classification", " ".join(result.get("reasons", [])).casefold())
+
+    def test_weekly_catchup_rejects_daily_without_monitor_state_or_prior_boundary_evidence(self):
+        monitor = MonitorHarness()
+        catch_up_tuesday = datetime(2026, 6, 9, 4, 30, tzinfo=SAO_PAULO)
+        wrongly_daily_key = monitor.add_object(catch_up_tuesday, "daily", key_classification="daily")
+        self.assertEqual(
+            {},
+            monitor.dynamo.table.items,
+            "the scenario requires a missed Monday monitor invocation with no persisted state",
+        )
+        self.assertEqual(
+            {wrongly_daily_key},
+            set(monitor.s3.objects),
+            "no earlier correctly classified weekly artifact may satisfy the boundary",
+        )
+
+        monitor.module._current_local_date = lambda: catch_up_tuesday
+        result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "invalid",
+            result["status"],
+            "the first successful artifact after Monday must be weekly even when monitor state is absent",
+        )
+        self.assertIn("classification", " ".join(result.get("reasons", [])).casefold())
+
+    def test_late_monthly_catchup_rejects_daily_without_monitor_state_or_prior_boundary_evidence(self):
+        monitor = MonitorHarness()
+        catch_up_day = datetime(2026, 6, 3, 4, 30, tzinfo=SAO_PAULO)
+        wrongly_daily_key = monitor.add_object(catch_up_day, "daily", key_classification="daily")
+        self.assertEqual({}, monitor.dynamo.table.items)
+        self.assertEqual(
+            {wrongly_daily_key},
+            set(monitor.s3.objects),
+            "the third-day object must be the first immutable artifact of the unsatisfied month",
+        )
+
+        monitor.module._current_local_date = lambda: catch_up_day
+        result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "invalid",
+            result["status"],
+            "the first successful artifact of an unsatisfied month must remain monthly after day two",
+        )
+        self.assertIn("classification", " ".join(result.get("reasons", [])).casefold())
+
+    def test_late_weekly_catchup_rejects_daily_without_monitor_state_or_prior_boundary_evidence(self):
+        monitor = MonitorHarness()
+        catch_up_wednesday = datetime(2026, 6, 10, 4, 30, tzinfo=SAO_PAULO)
+        wrongly_daily_key = monitor.add_object(catch_up_wednesday, "daily", key_classification="daily")
+        self.assertEqual({}, monitor.dynamo.table.items)
+        self.assertEqual(
+            {wrongly_daily_key},
+            set(monitor.s3.objects),
+            "the Wednesday object must be the first immutable artifact of the unsatisfied week",
+        )
+
+        monitor.module._current_local_date = lambda: catch_up_wednesday
+        result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "invalid",
+            result["status"],
+            "the first successful artifact of an unsatisfied week must remain weekly after Tuesday",
+        )
+        self.assertIn("classification", " ".join(result.get("reasons", [])).casefold())
+
+    def test_daily_is_accepted_after_monthly_and_weekly_boundaries_have_immutable_success_evidence(self):
+        monitor = MonitorHarness()
+        monthly_date = datetime(2026, 6, 1, 4, 30, tzinfo=SAO_PAULO)
+        monthly_key = monitor.add_object(monthly_date, "monthly", key_classification="monthly")
+        weekly_date = datetime(2026, 6, 8, 4, 30, tzinfo=SAO_PAULO)
+        weekly_key = monitor.add_object(weekly_date, "weekly", key_classification="weekly")
+        current_date = datetime(2026, 6, 10, 4, 30, tzinfo=SAO_PAULO)
+        daily_key = monitor.add_object(current_date, "daily", key_classification="daily")
+        self.assertEqual({}, monitor.dynamo.table.items)
+        self.assertEqual({monthly_key, weekly_key, daily_key}, set(monitor.s3.objects))
+
+        monitor.module._current_local_date = lambda: current_date
+        result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "ok",
+            result["status"],
+            "daily classification must remain valid after immutable evidence satisfies both boundaries",
+        )
+        self.assertEqual(daily_key, result["recovery_point"])
+
+    def test_monthly_catchup_after_multiple_unobserved_days_is_accepted(self):
+        monitor = MonitorHarness()
+        catch_up_day = datetime(2026, 6, 3, 4, 30, tzinfo=SAO_PAULO)
+        recovery_key = monitor.add_object(catch_up_day, "monthly", key_classification="monthly")
+        self.assertEqual(
+            {recovery_key},
+            set(monitor.s3.objects),
+            "the monthly artifact must be the first successful recovery point of the month",
+        )
+        self.assertEqual(
+            {},
+            monitor.dynamo.table.items,
+            "the scenario requires multiple missed monitor invocations with no persisted monitor state",
+        )
+
+        monitor.module._current_local_date = lambda: catch_up_day
+        result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "ok",
+            result["status"],
+            "the first successful monthly artifact remains monthly after more than one unobserved day; "
+            f"reasons: {result.get('reasons', [])}",
+        )
+        self.assertEqual(recovery_key, result["recovery_point"])
+
+    def test_weekly_catchup_after_multiple_unobserved_days_is_accepted(self):
+        monitor = MonitorHarness()
+        catch_up_wednesday = datetime(2026, 6, 10, 4, 30, tzinfo=SAO_PAULO)
+        monthly_key = monitor.add_prior_monthly_evidence(catch_up_wednesday)
+        recovery_key = monitor.add_object(catch_up_wednesday, "weekly", key_classification="weekly")
+        self.assertEqual(
+            {monthly_key, recovery_key},
+            set(monitor.s3.objects),
+            "the weekly artifact must be the first successful recovery point since Monday after monthly evidence",
+        )
+        self.assertEqual(
+            {},
+            monitor.dynamo.table.items,
+            "the scenario requires missed Monday and Tuesday monitor invocations with no persisted monitor state",
+        )
+
+        monitor.module._current_local_date = lambda: catch_up_wednesday
+        result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "ok",
+            result["status"],
+            "the next successful weekly artifact remains weekly after more than one unobserved day; "
+            f"reasons: {result.get('reasons', [])}",
+        )
+        self.assertEqual(recovery_key, result["recovery_point"])
+
     def test_monthly_catch_up_after_first_sunday_and_lost_pending_markers_is_not_weekly_only(self):
         backup_source = read("operations/recovery/backup/backup.sh")
         self.assertIn('MONTHLY_PENDING="$STATE_DIR/monthly.pending"', backup_source)
@@ -875,6 +2029,107 @@ exit 0
         valid, reasons, details = monitor.module._check_today()
         self.assertTrue(valid, f"monthly catch-up after a first-Sunday outage was rejected: {reasons}")
         self.assertEqual("monthly", details["classification"])
+
+        weekly_only_monitor = MonitorHarness()
+        weekly_only_key = weekly_only_monitor.add_object(
+            monday_after_outage,
+            "weekly",
+            key_classification="weekly",
+        )
+        self.assertEqual({}, weekly_only_monitor.dynamo.table.items)
+        self.assertEqual(
+            {weekly_only_key},
+            set(weekly_only_monitor.s3.objects),
+            "the weekly-only fixture must have no earlier monthly recovery point or monitor state",
+        )
+        weekly_only_monitor.module._current_local_date = lambda: monday_after_outage
+        weekly_only_valid, weekly_only_reasons, _ = weekly_only_monitor.module._check_today()
+        self.assertFalse(
+            weekly_only_valid,
+            "when monthly and weekly are simultaneously pending, weekly-only retention must be rejected",
+        )
+        self.assertIn("classification", " ".join(weekly_only_reasons).casefold())
+
+    def test_monday_after_existing_first_sunday_monthly_object_is_weekly_without_monitor_history(self):
+        monitor = MonitorHarness()
+        first_sunday = datetime(2026, 11, 1, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_object(first_sunday, "monthly", key_classification="monthly")
+        self.assertNotIn(
+            "backup-monitor-classification/2026-11",
+            monitor.dynamo.table.items,
+            "the edge case requires a valid Sunday object whose monitor-success state was never recorded",
+        )
+
+        following_monday = datetime(2026, 11, 2, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_object(following_monday, "weekly", key_classification="weekly")
+        monitor.module._current_local_date = lambda: following_monday
+        monday_valid, monday_reasons, monday_details = monitor.module._check_today()
+
+        self.assertTrue(
+            monday_valid,
+            "Monday must be weekly when the existing Sunday object already satisfied the monthly point, "
+            f"even if Sunday monitor state is absent: {monday_reasons}",
+        )
+        self.assertEqual("weekly", monday_details["classification"])
+
+    def test_stale_month_start_failure_does_not_override_valid_sunday_monthly_evidence(self):
+        monitor = MonitorHarness()
+        first_sunday = datetime(2026, 11, 1, 4, 30, tzinfo=SAO_PAULO)
+        monitor.module._current_local_date = lambda: first_sunday
+        failure_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+        self.assertEqual("invalid", failure_result["status"])
+        sunday_failure_id = "backup-monitor/2026-11-01"
+        self.assertIn(sunday_failure_id, monitor.dynamo.table.items)
+
+        monitor.add_object(first_sunday, "monthly", key_classification="monthly")
+        following_monday = datetime(2026, 11, 2, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_object(following_monday, "weekly", key_classification="weekly")
+        monitor.module._current_local_date = lambda: following_monday
+
+        recovery_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "ok",
+            recovery_result["status"],
+            "immutable Sunday monthly evidence must take precedence over a stale monitor-failure marker",
+        )
+        self.assertNotIn(
+            sunday_failure_id,
+            monitor.dynamo.table.items,
+            "Monday success must clear the stale Sunday failure after validating the prior monthly object",
+        )
+
+    def test_monthly_catchup_clears_cross_week_failures_before_later_daily_validation(self):
+        monitor = MonitorHarness()
+        first_sunday = datetime(2026, 11, 1, 4, 30, tzinfo=SAO_PAULO)
+        following_monday = datetime(2026, 11, 2, 4, 30, tzinfo=SAO_PAULO)
+        for outage_day in (first_sunday, following_monday):
+            monitor.module._current_local_date = lambda outage_day=outage_day: outage_day
+            failure_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+            self.assertEqual("invalid", failure_result["status"])
+
+        catchup_tuesday = datetime(2026, 11, 3, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_object(catchup_tuesday, "monthly", key_classification="monthly")
+        monitor.module._current_local_date = lambda: catchup_tuesday
+        catchup_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+        self.assertEqual("ok", catchup_result["status"])
+
+        for failure_id in ("backup-monitor/2026-11-01", "backup-monitor/2026-11-02"):
+            self.assertNotIn(
+                failure_id,
+                monitor.dynamo.table.items,
+                "monthly catch-up must clear every unresolved failure that led to the first successful monthly point",
+            )
+
+        following_wednesday = datetime(2026, 11, 4, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_object(following_wednesday, "daily", key_classification="daily")
+        monitor.module._current_local_date = lambda: following_wednesday
+        daily_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+        self.assertEqual(
+            "ok",
+            daily_result["status"],
+            "a completed monthly catch-up must not cause later daily artifacts to be rejected as monthly",
+        )
 
     def test_backup_catchup_markers_inherit_across_timer_misses_and_calendar_boundaries(self):
         backup_source = read("operations/recovery/backup/backup.sh")
@@ -910,6 +2165,7 @@ exit 0
     def test_next_day_catchup_resolves_prior_failure_and_publishes_recovery_notice(self):
         monitor = MonitorHarness()
         failed_monday = datetime(2026, 6, 8, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_prior_monthly_evidence(failed_monday)
         monitor.module._current_local_date = lambda: failed_monday
         first_result = monitor.module.lambda_handler({"phase": "daily"}, None)
         self.assertEqual("invalid", first_result["status"])
@@ -928,6 +2184,31 @@ exit 0
         )
         self.assertNotIn(prior_failure_id, monitor.dynamo.table.items)
 
+    def test_same_day_retry_clears_failure_and_publishes_recovery_notice(self):
+        monitor = MonitorHarness()
+        failed_check = datetime(2026, 6, 3, 4, 30, tzinfo=SAO_PAULO)
+        monitor.module._current_local_date = lambda: failed_check
+        first_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+        self.assertEqual("invalid", first_result["status"])
+        failure_id = "backup-monitor/2026-06-03"
+        self.assertIn(failure_id, monitor.dynamo.table.items)
+
+        successful_retry = datetime(2026, 6, 3, 5, 0, tzinfo=SAO_PAULO)
+        monitor.add_object(successful_retry, "monthly", key_classification="monthly")
+        monitor.module._current_local_date = lambda: successful_retry
+        recovery_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual("ok", recovery_result["status"])
+        self.assertTrue(
+            any(message.get("Subject") == "GAM backup recovery notice" for message in monitor.sns.messages),
+            "a valid retry between 04:30 and 12:00 must notify recovery of the same local-date failure",
+        )
+        self.assertNotIn(
+            failure_id,
+            monitor.dynamo.table.items,
+            "same-day recovery must clear unresolved state so the 12:00 phase cannot escalate a recovered failure",
+        )
+
     def test_monitor_validates_object_tags_and_class_lifecycle_semantics(self):
         monitor = MonitorHarness()
         date = datetime(2026, 6, 3, 4, 30, tzinfo=SAO_PAULO)
@@ -945,6 +2226,232 @@ exit 0
         self.assertGreater(monitor.s3.tag_calls, 0, "monitor must inspect object tags")
         self.assertGreater(monitor.s3.lifecycle_calls, 0, "monitor must inspect class lifecycle semantics")
 
+    def test_monthly_lifecycle_failure_stays_unresolved_until_lifecycle_is_repaired(self):
+        monitor = MonitorHarness()
+        month_start = datetime(2026, 6, 1, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_object(
+            month_start,
+            "monthly",
+            key_classification="monthly",
+            lifecycle=[recovery_lifecycle_rule("monthly", valid=False)],
+        )
+        monitor.module._current_local_date = lambda: month_start
+
+        failed_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        failure_id = "backup-monitor/2026-06-01"
+        self.assertEqual("invalid", failed_result["status"])
+        self.assertIn("lifecycle", " ".join(failed_result.get("reasons", [])).casefold())
+        self.assertIn(failure_id, monitor.dynamo.table.items)
+
+        next_day = datetime(2026, 6, 2, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_object(
+            next_day,
+            "daily",
+            key_classification="daily",
+            lifecycle=[
+                recovery_lifecycle_rule("daily"),
+                recovery_lifecycle_rule("monthly", valid=False),
+            ],
+        )
+        monitor.module._current_local_date = lambda: next_day
+
+        premature_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "invalid",
+            premature_result["status"],
+            "a monthly artifact with invalid lifecycle must not satisfy the boundary for a later daily object",
+        )
+        self.assertIn(
+            failure_id,
+            monitor.dynamo.table.items,
+            "the lifecycle-originated monthly failure must remain unresolved",
+        )
+        self.assertFalse(
+            any(message.get("Subject") == "GAM backup recovery notice" for message in monitor.sns.messages),
+            "invalid monthly lifecycle evidence must not publish a recovery notice",
+        )
+
+        monitor.s3.lifecycle = [
+            recovery_lifecycle_rule("daily"),
+            recovery_lifecycle_rule("monthly"),
+        ]
+        repaired_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual("ok", repaired_result["status"])
+        self.assertNotIn(failure_id, monitor.dynamo.table.items)
+        self.assertTrue(
+            any(message.get("Subject") == "GAM backup recovery notice" for message in monitor.sns.messages),
+            "repairing the monthly lifecycle must allow the valid boundary evidence to resolve the failure",
+        )
+
+    def test_weekly_lifecycle_failure_stays_unresolved_until_lifecycle_is_repaired(self):
+        monitor = MonitorHarness()
+        monday = datetime(2026, 6, 8, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_prior_monthly_evidence(monday)
+        monitor.add_object(
+            monday,
+            "weekly",
+            key_classification="weekly",
+            lifecycle=[
+                recovery_lifecycle_rule("monthly"),
+                recovery_lifecycle_rule("weekly", valid=False),
+            ],
+        )
+        monitor.module._current_local_date = lambda: monday
+
+        failed_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        failure_id = "backup-monitor/2026-06-08"
+        self.assertEqual("invalid", failed_result["status"])
+        self.assertIn("lifecycle", " ".join(failed_result.get("reasons", [])).casefold())
+        self.assertIn(failure_id, monitor.dynamo.table.items)
+
+        tuesday = datetime(2026, 6, 9, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_object(
+            tuesday,
+            "daily",
+            key_classification="daily",
+            lifecycle=[
+                recovery_lifecycle_rule("daily"),
+                recovery_lifecycle_rule("monthly"),
+                recovery_lifecycle_rule("weekly", valid=False),
+            ],
+        )
+        monitor.module._current_local_date = lambda: tuesday
+
+        premature_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "invalid",
+            premature_result["status"],
+            "a weekly artifact with invalid lifecycle must not satisfy the boundary for a later daily object",
+        )
+        self.assertIn(
+            failure_id,
+            monitor.dynamo.table.items,
+            "the lifecycle-originated weekly failure must remain unresolved",
+        )
+        self.assertFalse(
+            any(message.get("Subject") == "GAM backup recovery notice" for message in monitor.sns.messages),
+            "invalid weekly lifecycle evidence must not publish a recovery notice",
+        )
+
+        monitor.s3.lifecycle = [
+            recovery_lifecycle_rule("daily"),
+            recovery_lifecycle_rule("monthly"),
+            recovery_lifecycle_rule("weekly"),
+        ]
+        repaired_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual("ok", repaired_result["status"])
+        self.assertNotIn(failure_id, monitor.dynamo.table.items)
+        self.assertTrue(
+            any(message.get("Subject") == "GAM backup recovery notice" for message in monitor.sns.messages),
+            "repairing the weekly lifecycle must allow the valid boundary evidence to resolve the failure",
+        )
+
+    def test_unobserved_monthly_lifecycle_defect_cannot_satisfy_the_boundary(self):
+        monitor = MonitorHarness()
+        month_start = datetime(2026, 6, 1, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_object(
+            month_start,
+            "monthly",
+            key_classification="monthly",
+            lifecycle=[recovery_lifecycle_rule("monthly", valid=False)],
+        )
+
+        next_day = datetime(2026, 6, 2, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_object(
+            next_day,
+            "daily",
+            key_classification="daily",
+            lifecycle=[
+                recovery_lifecycle_rule("daily"),
+                recovery_lifecycle_rule("monthly", valid=False),
+            ],
+        )
+        self.assertEqual(
+            {},
+            monitor.dynamo.table.items,
+            "the fixture requires a missed month-start monitor invocation with no persisted failure or success state",
+        )
+        monitor.module._current_local_date = lambda: next_day
+
+        invalid_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "invalid",
+            invalid_result["status"],
+            "an unobserved monthly artifact with invalid lifecycle must not authorize a later daily artifact",
+        )
+
+        monitor.s3.lifecycle = [
+            recovery_lifecycle_rule("daily"),
+            recovery_lifecycle_rule("monthly"),
+        ]
+        repaired_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "ok",
+            repaired_result["status"],
+            "repairing the monthly lifecycle must make the immutable boundary evidence usable",
+        )
+
+    def test_unobserved_weekly_lifecycle_defect_cannot_satisfy_the_boundary(self):
+        monitor = MonitorHarness()
+        monday = datetime(2026, 6, 8, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_prior_monthly_evidence(monday)
+        monitor.add_object(
+            monday,
+            "weekly",
+            key_classification="weekly",
+            lifecycle=[
+                recovery_lifecycle_rule("monthly"),
+                recovery_lifecycle_rule("weekly", valid=False),
+            ],
+        )
+
+        tuesday = datetime(2026, 6, 9, 4, 30, tzinfo=SAO_PAULO)
+        monitor.add_object(
+            tuesday,
+            "daily",
+            key_classification="daily",
+            lifecycle=[
+                recovery_lifecycle_rule("daily"),
+                recovery_lifecycle_rule("monthly"),
+                recovery_lifecycle_rule("weekly", valid=False),
+            ],
+        )
+        self.assertEqual(
+            {},
+            monitor.dynamo.table.items,
+            "the fixture requires a missed Monday monitor invocation with no persisted failure or success state",
+        )
+        monitor.module._current_local_date = lambda: tuesday
+
+        invalid_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "invalid",
+            invalid_result["status"],
+            "an unobserved weekly artifact with invalid lifecycle must not authorize a later daily artifact",
+        )
+
+        monitor.s3.lifecycle = [
+            recovery_lifecycle_rule("daily"),
+            recovery_lifecycle_rule("monthly"),
+            recovery_lifecycle_rule("weekly"),
+        ]
+        repaired_result = monitor.module.lambda_handler({"phase": "daily"}, None)
+
+        self.assertEqual(
+            "ok",
+            repaired_result["status"],
+            "repairing the weekly lifecycle must make the immutable boundary evidence usable",
+        )
+
     def test_monitor_runtime_rejects_mismatched_object_and_s3_checksum_values(self):
         monitor = MonitorHarness()
         local_date = datetime(2026, 6, 3, 4, 30, tzinfo=SAO_PAULO)
@@ -958,6 +2465,26 @@ exit 0
             "the monitor must reject an artifact whose stored SHA-256 disagrees with the S3 checksum metadata",
         )
         self.assertIn("checksum", " ".join(reasons).casefold())
+
+    def test_monitor_rejects_malformed_s3_checksum_and_non_sha256_metadata(self):
+        scenarios = (
+            ("malformed S3 checksum", "not-base64-or-hex", "a" * 64),
+            ("arbitrary SHA-256 metadata", "still-not-a-checksum", "not-a-sha256"),
+        )
+        for label, s3_checksum, metadata_sha256 in scenarios:
+            with self.subTest(scenario=label):
+                monitor = MonitorHarness()
+                local_date = datetime(2026, 6, 3, 4, 30, tzinfo=SAO_PAULO)
+                key = monitor.add_object(local_date, "daily", key_classification="daily")
+                monitor.s3.attribute_checksums[key] = s3_checksum
+                monitor.s3.objects[key]["Metadata"]["checksum"] = s3_checksum
+                monitor.s3.objects[key]["Metadata"]["sha256"] = metadata_sha256
+                monitor.module._current_local_date = lambda: local_date
+
+                valid, reasons, _ = monitor.module._check_today()
+
+                self.assertFalse(valid, f"{label} was accepted as independently verifiable: {reasons}")
+                self.assertIn("checksum", " ".join(reasons).casefold())
 
     def test_monitor_schedules_are_enabled_and_disabled_drift_is_detected(self):
         tasks = list(task_nodes(load_yaml("operations/ansible/backup-monitor.yml")))
@@ -1008,15 +2535,21 @@ exit 0
             for task in tasks
             if "scheduler" in command_argv(task) and "create-schedule" in command_argv(task)
         ]
-        schedule_by_name = {argv_value(command_argv(task), "--name"): command_argv(task) for task in schedules}
+        schedule_by_name = {argv_value(command_argv(task), "--name"): task for task in schedules}
         self.assertEqual(
             {"gam-production-backup-monitor-0430", "gam-production-backup-monitor-1200"},
             set(schedule_by_name),
         )
-        self.assertEqual("cron(30 4 * * ? *)", argv_value(schedule_by_name["gam-production-backup-monitor-0430"], "--schedule-expression"))
-        self.assertEqual("cron(0 12 * * ? *)", argv_value(schedule_by_name["gam-production-backup-monitor-1200"], "--schedule-expression"))
-        for argv in schedule_by_name.values():
-            self.assertIn("Arn={{ backup_monitor_lambda_arn }}", argv_value(argv, "--target"))
+        self.assertEqual(
+            "cron(30 4 * * ? *)",
+            argv_value(command_argv(schedule_by_name["gam-production-backup-monitor-0430"]), "--schedule-expression"),
+        )
+        self.assertEqual(
+            "cron(0 12 * * ? *)",
+            argv_value(command_argv(schedule_by_name["gam-production-backup-monitor-1200"]), "--schedule-expression"),
+        )
+        for task in schedule_by_name.values():
+            self.assertEqual("{{ backup_monitor_lambda_arn }}", scheduler_target(task).get("Arn"))
 
         alarms = [
             task
@@ -1077,12 +2610,14 @@ exit 0
                 or target.get("Input") != specification["input"]
             ):
                 violations.append(f"incorrect Lambda target or input for {name}")
-            retry_policy = scheduler_key_values(argv_value(create_argv, "--retry-policy"))
+            if "--retry-policy" in create_argv:
+                violations.append(f"retry policy uses the invalid top-level AWS CLI option for {name}")
+            retry_policy = scheduler_target_retry_policy(create_task)
             if retry_policy != {
                 "MaximumEventAgeInSeconds": "86400",
                 "MaximumRetryAttempts": "3",
             }:
-                violations.append(f"retry policy is not explicitly configured for {name}")
+                violations.append(f"retry policy is not nested under Target for {name}")
 
             get_tasks = [
                 task
@@ -1111,7 +2646,9 @@ exit 0
                 update_task = update_tasks[0]
                 update_argv = command_argv(update_task)
                 update_target = scheduler_target(update_task)
-                update_retry_policy = scheduler_key_values(argv_value(update_argv, "--retry-policy"))
+                if "--retry-policy" in update_argv:
+                    violations.append(f"update-schedule uses the invalid top-level retry option for {name}")
+                update_retry_policy = scheduler_target_retry_policy(update_task)
                 if argv_value(update_argv, "--schedule-expression") != specification["expression"]:
                     violations.append(f"update-schedule does not restore the cron expression for {name}")
                 if argv_value(update_argv, "--schedule-expression-timezone") != "America/Sao_Paulo":
@@ -1125,7 +2662,7 @@ exit 0
                     "MaximumEventAgeInSeconds": "86400",
                     "MaximumRetryAttempts": "3",
                 }:
-                    violations.append(f"update-schedule does not restore retry policy for {name}")
+                    violations.append(f"update-schedule does not restore Target.RetryPolicy for {name}")
 
                 when_values = update_task.get("when", [])
                 if isinstance(when_values, str):
@@ -1152,6 +2689,49 @@ exit 0
                     )
 
         self.assertEqual([], violations, "EventBridge schedule drift violations: " + "; ".join(violations))
+
+    def test_monitor_schedule_target_arguments_pass_aws_cli_serialization_validation(self):
+        tasks = list(task_nodes(load_yaml("operations/ansible/backup-monitor.yml")))
+        schedule_tasks = [
+            task
+            for task in tasks
+            if any(operation in command_argv(task) for operation in ("create-schedule", "update-schedule"))
+            and argv_value(command_argv(task), "--name")
+            in {"gam-production-backup-monitor-0430", "gam-production-backup-monitor-1200"}
+        ]
+        self.assertEqual(4, len(schedule_tasks), "daily and unresolved create/update paths must all be validated")
+
+        replacements = {
+            "{{ backup_monitor_lambda_arn }}": "arn:aws:lambda:sa-east-1:123456789012:function:gam-monitor",
+            "{{ backup_monitor_scheduler_role_arn }}": "arn:aws:iam::123456789012:role/gam-scheduler",
+            "{{ aws_region }}": "sa-east-1",
+        }
+        failures = []
+        for task in schedule_tasks:
+            rendered_argv = []
+            for argument in command_argv(task):
+                for placeholder, value in replacements.items():
+                    argument = argument.replace(placeholder, value)
+                rendered_argv.append(argument)
+
+            result = subprocess.run(
+                [*rendered_argv, "--generate-cli-skeleton", "output"],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode != 0:
+                failures.append(
+                    f"{rendered_argv[2]} {argv_value(rendered_argv, '--name')}: {result.stderr.strip()}"
+                )
+
+        self.assertEqual(
+            [],
+            failures,
+            "EventBridge Target.Input must be serialized as the string required by the AWS CLI: "
+            + "; ".join(failures),
+        )
 
     def test_monitor_permission_failures_are_alarmable(self):
         tasks = list(task_nodes(load_yaml("operations/ansible/backup-monitor.yml")))
@@ -1292,19 +2872,150 @@ exit 0
             self.assertIn("Environment", text, f"created monitor resource is missing Environment tag: {task.get('name')}")
             self.assertIn("Purpose", text, f"created monitor resource is missing Purpose tag: {task.get('name')}")
 
-    def test_better_stack_collector_is_deployed_and_verified_with_docker_compose(self):
+    def test_better_stack_collector_uses_a_durable_executable_installed_state_probe(self):
         tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
-        compose_commands = [
-            task
-            for task in tasks
-            if module_payload(task, "ansible.builtin.command", "command", "ansible.builtin.shell", "shell") is not None
-            and "docker compose" in " ".join(command_argv(task)).casefold()
-        ]
-        self.assertTrue(compose_commands, "the metrics-only collector must use Docker Compose")
-        self.assertTrue(
-            any("docker compose ps" in " ".join(command_argv(task)).casefold() for task in compose_commands),
-            "the Docker Compose collector deployment must be verified after startup",
+        status_task = next(
+            (task for task in tasks if task.get("register") == "better_stack_collector_status"),
+            None,
         )
+        self.assertIsNotNone(status_task, "the metrics-only collector must expose an installed-state probe")
+
+        violations = []
+        if not is_durable_better_stack_collector_probe(status_task):
+            violations.append(
+                "collector status must use the durable Compose project label or an explicitly persistent compose file"
+            )
+
+        failed_when = str(status_task.get("failed_when", "")).strip()
+        if failed_when.casefold() in {"", "false"}:
+            violations.append("collector status parsing or execution failures must fail closed")
+        else:
+            register = str(status_task.get("register", ""))
+            if f"{register}.rc" not in failed_when:
+                violations.append("collector status must reject a nonzero probe exit status")
+            if f"{register}.stdout" not in failed_when:
+                violations.append("collector status must reject an empty installed-state result")
+
+        unusable_compose_probes = []
+        for task in tasks:
+            argv = command_argv(task)
+            lowered = [argument.casefold() for argument in argv]
+            if lowered[:2] == ["docker", "compose"] and "ps" in lowered:
+                compose_file = argv_value(argv, "--file") or argv_value(argv, "-f")
+                if not compose_file or compose_file.casefold().startswith(("/tmp/", "${tmpdir", "{{ tmp")):
+                    unusable_compose_probes.append(task.get("name", "<unnamed>"))
+        if unusable_compose_probes:
+            violations.append(
+                "Compose ps cannot discover the installer's deleted temporary compose file: "
+                + ", ".join(unusable_compose_probes)
+            )
+
+        self.assertEqual([], violations, "Better Stack collector installed-state violations: " + "; ".join(violations))
+
+    def test_better_stack_collector_requires_every_official_service_running_and_healthy(self):
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        preinstall_probe = next(
+            (task for task in tasks if task.get("register") == "better_stack_collector_preinstall_state"),
+            None,
+        )
+        readiness_probe = next(
+            (task for task in tasks if task.get("register") == "better_stack_collector_status"),
+            None,
+        )
+        installer = next(
+            (task for task in tasks if task.get("name") == "Run the official Better Stack collector Docker Compose deployment"),
+            None,
+        )
+        self.assertIsNotNone(preinstall_probe)
+        self.assertIsNotNone(readiness_probe)
+        self.assertIsNotNone(installer)
+
+        required_services = {"collector", "ebpf"}
+
+        def loop_values(task: dict) -> set[str]:
+            loop = task.get("loop", [])
+            if isinstance(loop, list):
+                return {str(value) for value in loop}
+            loop_variable = re.fullmatch(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}", str(loop))
+            if loop_variable is None:
+                return set()
+            variables = load_yaml("operations/ansible/group_vars/production.yml")
+            configured = variables.get(loop_variable.group(1), [])
+            return {str(value) for value in configured} if isinstance(configured, list) else set()
+
+        violations = []
+        for label, probe in (("pre-install", preinstall_probe), ("readiness", readiness_probe)):
+            argv = command_argv(probe)
+            argv_text = " ".join(argv)
+            if loop_values(probe) != required_services:
+                violations.append(f"{label} probe must iterate exactly the official collector and ebpf services")
+            for required_filter in (
+                "label=com.docker.compose.project=better-stack-collector",
+                "label=com.docker.compose.service={{ item }}",
+                "status=running",
+                "health=healthy",
+            ):
+                if required_filter not in argv_text:
+                    violations.append(f"{label} probe must filter {required_filter}")
+
+        install_when = str(installer.get("when", ""))
+        for signal in ("better_stack_collector_preinstall_state.results", "stdout"):
+            if signal not in install_when:
+                violations.append(f"installer remediation must evaluate {signal} for every required service")
+        if not re.search(
+            r"(?is)results.*(?:selectattr|rejectattr|map).*stdout.*(?:list|length).*>\s*0",
+            install_when,
+        ):
+            violations.append("installer remediation must run when any required-service probe is empty")
+        readiness_failed_when = str(readiness_probe.get("failed_when", ""))
+        for signal in ("better_stack_collector_status.results", "stdout"):
+            if signal not in readiness_failed_when:
+                violations.append(f"readiness must fail closed using {signal} for every required service")
+        if not re.search(
+            r"(?is)results.*(?:selectattr|rejectattr|map).*stdout.*(?:list|length).*>\s*0",
+            readiness_failed_when,
+        ):
+            violations.append("readiness must fail when any required-service probe is empty")
+
+        self.assertEqual([], violations, "Better Stack collector completeness violations: " + "; ".join(violations))
+
+        cases = {
+            "missing service": [
+                {"service": "collector", "state": "running", "health": "healthy"},
+            ],
+            "stopped service": [
+                {"service": "collector", "state": "running", "health": "healthy"},
+                {"service": "ebpf", "state": "exited", "health": "healthy"},
+            ],
+            "unhealthy service": [
+                {"service": "collector", "state": "running", "health": "healthy"},
+                {"service": "ebpf", "state": "running", "health": "unhealthy"},
+            ],
+            "complete healthy deployment": [
+                {"service": "collector", "state": "running", "health": "healthy"},
+                {"service": "ebpf", "state": "running", "health": "healthy"},
+            ],
+        }
+        for case, containers in cases.items():
+            with self.subTest(deployment_state=case):
+                probe_results = {
+                    service: [
+                        container
+                        for container in containers
+                        if container["service"] == service
+                        and container["state"] == "running"
+                        and container["health"] == "healthy"
+                    ]
+                    for service in required_services
+                }
+                deployment_ready = all(probe_results[service] for service in required_services)
+                expected_ready = case == "complete healthy deployment"
+                self.assertEqual(expected_ready, deployment_ready)
+                self.assertEqual(
+                    not expected_ready,
+                    not deployment_ready,
+                    "partial or unhealthy state must trigger installation remediation and fail readiness",
+                )
 
     def test_better_stack_collector_configures_and_verifies_the_provider_source(self):
         tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
@@ -1418,25 +3129,20 @@ exit 0
 
     def test_better_stack_realization_binds_supported_collector_configuration_and_external_contract(self):
         tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
-        compose_tasks = [
-            task
-            for task in tasks
-            if "docker compose" in " ".join(command_argv(task)).casefold()
-            or "docker-compose" in " ".join(command_argv(task)).casefold()
-        ]
+        installer_tasks = [task for task in tasks if is_official_better_stack_installer_execution(task)]
         self.assertTrue(
-            compose_tasks,
-            "the supported Better Stack collector must be installed through Docker Compose",
+            installer_tasks,
+            "the supported Better Stack Docker Compose collector installer must be executed",
         )
 
         service_binding = any(
             "/etc/gam/better-stack-monitoring-contract.yml" in task_text(task)
             for task in tasks
             if module_payload(task, "ansible.builtin.template", "template") is not None
-        ) and any("docker compose" in " ".join(command_argv(task)).casefold() for task in tasks)
+        ) and bool(installer_tasks)
         self.assertTrue(
             service_binding,
-            "the Docker Compose collector must be paired with the versioned metrics-only contract",
+            "the official collector deployment must be paired with the versioned metrics-only contract",
         )
 
         monitoring = yaml.safe_load(read("operations/ansible/templates/better-stack-monitoring.yml.j2"))
@@ -1589,17 +3295,14 @@ exit 0
 
     def test_better_stack_clean_host_provisions_supported_metrics_collector_and_service_alerts(self):
         tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
-        supported_installation = any(
+        installer_downloaded = any(
             module_payload(task, "ansible.builtin.get_url", "get_url") is not None
             and "better-stack" in task_text(task).casefold()
             for task in tasks
-        ) and any(
-            "docker compose" in " ".join(command_argv(task)).casefold()
-            and "better-stack" in task_text(task).casefold()
-            for task in tasks
         )
+        installer_executed = any(is_official_better_stack_installer_execution(task) for task in tasks)
         self.assertTrue(
-            supported_installation,
+            installer_downloaded and installer_executed,
             "a clean host must install and execute the supported Better Stack Docker Compose collector",
         )
 
@@ -1653,19 +3356,23 @@ exit 0
             "collector targets must use the existing provider credential binding, not an invented metrics token",
         )
 
-        supported_kinds = {"postgres", "nginx", "apache", "kafka", "prometheus"}
+        creation_target_tasks = [
+            task
+            for task in target_tasks
+            if str(module_payload(task, "ansible.builtin.uri", "uri").get("method", "")).upper() == "POST"
+        ]
         target_bodies = [
             module_payload(task, "ansible.builtin.uri", "uri").get("body", {})
-            for task in target_tasks
+            for task in creation_target_tasks
         ]
-        for service, required_kind in (
-            ("proxy", {"nginx", "apache", "prometheus"}),
-            ("backend", {"nginx", "apache", "prometheus"}),
-            ("postgresql", {"postgres"}),
+        for service, required_kind, required_fields, forbidden_fields in (
+            ("proxy", "prometheus", {"host", "service", "endpoint"}, {"port"}),
+            ("backend", "prometheus", {"host", "service", "endpoint"}, {"port"}),
+            ("postgresql", "postgres", {"host", "port", "ssl_mode"}, set()),
         ):
             matching = [
                 (task, body)
-                for task, body in zip(target_tasks, target_bodies)
+                for task, body in zip(creation_target_tasks, target_bodies)
                 if service in task_text(task).casefold()
                 or service in json.dumps(body, ensure_ascii=False, sort_keys=True).casefold()
             ]
@@ -1676,19 +3383,35 @@ exit 0
             self.assertTrue(
                 any(
                     isinstance(body, dict)
-                    and body.get("kind") in supported_kinds
-                    and body.get("kind") in required_kind
-                    and all(field in body for field in ("host", "port"))
+                    and body.get("kind") == required_kind
+                    and required_fields.issubset(body)
+                    and forbidden_fields.isdisjoint(body)
                     for _, body in matching
                 ),
-                f"the {service} target must use the official provider kind and host/port inputs",
+                f"the {service} target must use the official {required_kind} provider fields",
             )
 
         postgres_bodies = [body for body in target_bodies if isinstance(body, dict) and body.get("kind") == "postgres"]
         self.assertTrue(postgres_bodies, "the PostgreSQL target must use Better Stack's supported postgres kind")
+        production_variables = load_yaml("operations/ansible/group_vars/production.yml")
+        postgres_port_declaration = str(production_variables.get("better_stack_postgresql_target_port", ""))
         self.assertTrue(
-            all("ssl_mode" in body for body in postgres_bodies),
-            "the PostgreSQL collector target must use the provider-supported ssl_mode field",
+            all(
+                body.get("ssl_mode") == "require"
+                and (
+                    isinstance(body.get("port"), int)
+                    and not isinstance(body.get("port"), bool)
+                    or (
+                        "better_stack_postgresql_target_port" in str(body.get("port", ""))
+                        and (
+                            re.search(r"\|\s*int\b", str(body.get("port", ""))) is not None
+                            or re.search(r"\|\s*int\b", postgres_port_declaration) is not None
+                        )
+                    )
+                )
+                for body in postgres_bodies
+            ),
+            "the PostgreSQL target must serialize an integer port and provider-supported ssl_mode=require",
         )
 
         alert_tasks = [
@@ -1798,8 +3521,81 @@ exit 0
             "the total recovery deadline must remain enforced through representative application access and final validation",
         )
 
-    def test_better_stack_collector_target_requests_serialize_integer_ports_and_postgres_ssl_mode(self):
-        """Protect Better Stack's documented integer port and PostgreSQL fields."""
+    def test_restore_interrupts_each_blocking_step_at_the_shared_total_recovery_deadline(self):
+        restore = read("operations/recovery/restore/restore.sh")
+        budget_wrappers = []
+        for match in re.finditer(
+            r"(?ms)^\s*(?P<name>[a-z_][a-z0-9_]*)\(\)\s*\{(?P<body>.*?)^\}",
+            restore,
+        ):
+            body = match.group("body")
+            if "TOTAL_RECOVERY_DEADLINE" in body and re.search(r"(?m)\btimeout\b", body):
+                budget_wrappers.append((match.group("name"), body))
+
+        self.assertEqual(
+            1,
+            len(budget_wrappers),
+            "restore must define one interruptible wrapper that derives each command timeout from TOTAL_RECOVERY_DEADLINE",
+        )
+        wrapper_name, wrapper_body = budget_wrappers[0]
+        self.assertRegex(wrapper_body, r"date\s+\+%s", "the wrapper must calculate the remaining shared budget")
+        self.assertRegex(
+            wrapper_body,
+            r"(?m)\btimeout\b.*(?:\"\$@\"|\$@)",
+            "the wrapper must interrupt its supplied blocking command when the remaining budget expires",
+        )
+
+        blocking_steps = {
+            "S3 restore request": r"aws\s+s3api\s+restore-object\b",
+            "S3 archive download": r"aws\s+s3\s+cp\b",
+            "age decryption": r"age\s+--decrypt\b",
+            "archive extraction": r"tar\s+--extract\b",
+            "representative application access": r"bash\s+-Eeuo\s+pipefail\s+-c\s+\"\$REPRESENTATIVE_ACCESS_CHECK_COMMAND\"",
+            "final restoration verification": r"/usr/local/libexec/gam-verify-restoration\b",
+        }
+        for label, command_pattern in blocking_steps.items():
+            with self.subTest(blocking_step=label):
+                self.assertRegex(
+                    restore,
+                    rf"(?m)^\s*{re.escape(wrapper_name)}\s+(?:--\s+)?{command_pattern}",
+                    f"{label} must execute inside the interruptible shared-deadline wrapper",
+                )
+
+        repeated_blocking_steps = {
+            "S3 object metadata request": (r"aws\s+s3api\s+head-object\b", 2),
+            "isolated database creation": (r"createdb\b", 2),
+            "isolated SQL operation": (r"psql\b", 3),
+        }
+        for label, (command_pattern, minimum) in repeated_blocking_steps.items():
+            with self.subTest(repeated_blocking_step=label):
+                all_invocations = re.findall(command_pattern, restore)
+                wrapped_invocations = re.findall(
+                    rf"{re.escape(wrapper_name)}\s+(?:--\s+)?{command_pattern}",
+                    restore,
+                )
+                self.assertGreaterEqual(
+                    len(all_invocations),
+                    minimum,
+                    f"the restore contract must retain all required {label} operations",
+                )
+                self.assertEqual(
+                    len(all_invocations),
+                    len(wrapped_invocations),
+                    f"every {label} must execute inside the interruptible shared-deadline wrapper",
+                )
+
+        wrapped_pg_restore = re.findall(
+            rf"(?m)^\s*{re.escape(wrapper_name)}\s+(?:--\s+)?pg_restore\b",
+            restore,
+        )
+        self.assertGreaterEqual(
+            len(wrapped_pg_restore),
+            2,
+            "both pg_restore archive inspection and database restoration must be interruptible",
+        )
+
+    def test_better_stack_collector_target_payloads_are_kind_specific(self):
+        """Protect provider-supported Prometheus and PostgreSQL target fields."""
 
         tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
         target_tasks = [
@@ -1812,31 +3608,87 @@ exit 0
         ]
         self.assertTrue(target_tasks, "Better Stack collector target requests must exist")
 
-        group_vars = read("operations/ansible/group_vars/production.yml")
-        port_variables = (
-            "better_stack_proxy_target_port",
-            "better_stack_backend_target_port",
-            "better_stack_postgresql_target_port",
-        )
-        violations = []
-        for variable in port_variables:
-            declaration = re.search(rf"(?m)^\s*{re.escape(variable)}:\s*(.+)$", group_vars)
-            if declaration is None or "| int" not in declaration.group(1):
-                violations.append(f"{variable} must coerce the environment input to an integer")
+        variables = load_yaml("operations/ansible/group_vars/production.yml")
+        external_port_inputs = {
+            "BETTER_STACK_POSTGRESQL_TARGET_PORT": "5432",
+        }
 
-        target_bodies = [
-            module_payload(task, "ansible.builtin.uri", "uri").get("body", {})
-            for task in target_tasks
-        ]
-        for body in target_bodies:
-            if not isinstance(body, dict) or body.get("kind") not in {"prometheus", "postgres"}:
+        def render_group_variable(variable: str):
+            expression = str(variables.get(variable, ""))
+            lookup = re.fullmatch(
+                r"\{\{\s*lookup\(\s*['\"]env['\"]\s*,\s*['\"](?P<environment>[A-Z0-9_]+)['\"]\s*\)"
+                r"(?P<filters>(?:\s*\|\s*[a-zA-Z_][a-zA-Z0-9_]*)*)\s*\}\}",
+                expression,
+            )
+            if lookup is None or lookup.group("environment") not in external_port_inputs:
+                return expression
+            value = external_port_inputs[lookup.group("environment")]
+            if re.search(r"\|\s*int\b", lookup.group("filters")):
+                value = int(value)
+            return value
+
+        def render_port_expression(expression):
+            parameter = re.fullmatch(
+                r"\{\{\s*(?P<variable>better_stack_postgresql_target_port)"
+                r"(?P<filters>(?:\s*\|\s*[a-zA-Z_][a-zA-Z0-9_]*)*)\s*\}\}",
+                str(expression),
+            )
+            if parameter is None:
+                return None
+            value = render_group_variable(parameter.group("variable"))
+            if re.search(r"\|\s*int\b", parameter.group("filters")):
+                value = int(value)
+            return value
+
+        violations = []
+        for task in target_tasks:
+            request = module_payload(task, "ansible.builtin.uri", "uri")
+            body = request.get("body", {})
+            method = str(request.get("method", "")).upper()
+            task_name = str(task.get("name", "")).casefold()
+            service = next(
+                (candidate for candidate in ("proxy", "backend", "postgresql") if candidate in task_name),
+                None,
+            )
+            if not isinstance(body, dict) or service is None:
                 continue
-            port = body.get("port")
-            if not isinstance(port, int) or isinstance(port, bool):
+
+            kind = "postgres" if service == "postgresql" else "prometheus"
+            mutable_fields = (
+                {"host", "port", "ssl_mode"}
+                if kind == "postgres"
+                else {"host", "service", "endpoint"}
+            )
+            expected_fields = mutable_fields | ({"kind"} if method == "POST" else set())
+            if set(body) != expected_fields:
                 violations.append(
-                    f"{body.get('kind')} target port must serialize as an integer, observed {port!r}"
+                    f"{method} {kind} target fields must be {sorted(expected_fields)}, observed {sorted(body)}"
                 )
-            if body.get("kind") == "postgres" and body.get("ssl_mode") != "require":
+            if method == "POST" and body.get("kind") != kind:
+                violations.append(f"POST {service} target must declare immutable kind={kind}")
+            if method == "PATCH" and "kind" in body:
+                violations.append(f"PATCH {service} target must exclude the provider-immutable kind field")
+
+            if kind == "prometheus":
+                if "port" in body:
+                    violations.append("Prometheus target payloads must not send the unsupported optional port field")
+                continue
+
+            source_port = body.get("port")
+            rendered_port = render_port_expression(source_port)
+            if rendered_port is None:
+                violations.append(
+                    "PostgreSQL target port must remain a parameterized Better Stack port expression"
+                )
+                continue
+
+            provider_payload = json.loads(json.dumps({**body, "port": rendered_port}))
+            if not isinstance(provider_payload["port"], int) or isinstance(provider_payload["port"], bool):
+                violations.append(
+                    "PostgreSQL target port must render and serialize as an integer, "
+                    f"observed {provider_payload['port']!r} from {source_port!r}"
+                )
+            if provider_payload.get("ssl_mode") != "require":
                 violations.append("PostgreSQL target must send the provider-supported ssl_mode=require field")
 
         self.assertEqual([], violations, "Better Stack collector target schema violations: " + "; ".join(violations))
@@ -1891,6 +3743,228 @@ exit 0
                 violations.append("target PATCH reconciliation must iterate provider readback targets")
 
         self.assertEqual([], violations, "Better Stack target reconciliation violations: " + "; ".join(violations))
+
+    def test_better_stack_target_readback_verifies_every_reconciled_connection_field(self):
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        readback_index = next(
+            (
+                index
+                for index, task in enumerate(tasks)
+                if task.get("register") == "better_stack_collector_targets_readback"
+            ),
+            None,
+        )
+        self.assertIsNotNone(readback_index, "collector targets must be read back after reconciliation")
+        next_provider_section = next(
+            (
+                index
+                for index, task in enumerate(tasks[readback_index + 1 :], start=readback_index + 1)
+                if task.get("register") == "better_stack_existing_dashboard_alerts"
+            ),
+            len(tasks),
+        )
+        verification_text = "\n".join(
+            task_text(task)
+            for task in tasks[readback_index + 1 : next_provider_section]
+            if isinstance(module_payload(task, "ansible.builtin.assert", "assert"), dict)
+        )
+        self.assertTrue(verification_text, "provider target readback must be asserted")
+
+        expected_connections = {
+            "proxy": {
+                "kind": "prometheus",
+                "host": "better_stack_proxy_target_host",
+                "service": "better_stack_proxy_target_service",
+                "endpoint": "better_stack_proxy_target_endpoint",
+            },
+            "backend": {
+                "kind": "prometheus",
+                "host": "better_stack_backend_target_host",
+                "service": "better_stack_backend_target_service",
+                "endpoint": "better_stack_backend_target_endpoint",
+            },
+            "postgresql": {
+                "kind": "postgres",
+                "host": "better_stack_postgresql_target_host",
+                "port": "better_stack_postgresql_target_port",
+                "ssl_mode": "require",
+            },
+        }
+        violations = []
+        for service, fields in expected_connections.items():
+            for field, expected in fields.items():
+                if not re.search(
+                    rf"(?is)selectattr\(\s*['\"]attributes\.{re.escape(field)}['\"].{{0,180}}{re.escape(expected)}",
+                    verification_text,
+                ):
+                    violations.append(
+                        f"{service} readback must verify attributes.{field} against {expected}"
+                    )
+
+        self.assertEqual([], violations, "Better Stack target readback violations: " + "; ".join(violations))
+
+    def test_better_stack_target_reconciliation_converges_drift_without_duplicates(self):
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        target_tasks = [
+            task
+            for task in tasks
+            if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
+            and "/api/v1/collectors/" in str(module_payload(task, "ansible.builtin.uri", "uri").get("url", ""))
+            and "/targets" in str(module_payload(task, "ansible.builtin.uri", "uri").get("url", ""))
+        ]
+
+        def target_task(service: str, method: str) -> dict:
+            return next(
+                task
+                for task in target_tasks
+                if service in str(task.get("name", "")).casefold()
+                and str(module_payload(task, "ansible.builtin.uri", "uri").get("method", "")).upper() == method
+            )
+
+        def creation_identity_fields(task: dict) -> set[str]:
+            return set(
+                re.findall(
+                    r"selectattr\(\s*['\"]attributes\.([a-z_]+)['\"]\s*,\s*['\"]equalto['\"]",
+                    str(task.get("when", "")),
+                )
+            )
+
+        def patch_identity_fields(task: dict) -> set[str]:
+            return set(
+                re.findall(
+                    r"item\.attributes\.([a-z_]+)[^=\n]{0,120}==",
+                    str(task.get("when", "")),
+                )
+            )
+
+        scenarios = {
+            "postgresql stale port": {
+                "service": "postgresql",
+                "desired": {"kind": "postgres", "host": "postgres", "port": 5432, "ssl_mode": "require"},
+                "existing": {"id": "target-db", "kind": "postgres", "host": "postgres", "port": 5433, "ssl_mode": "require"},
+                "provider_identity": {"kind", "host"},
+            },
+            "postgresql stale host": {
+                "service": "postgresql",
+                "desired": {"kind": "postgres", "host": "postgres", "port": 5432, "ssl_mode": "require"},
+                "existing": {"id": "target-db", "kind": "postgres", "host": "old-postgres", "port": 5432, "ssl_mode": "require"},
+                "provider_identity": {"kind"},
+            },
+            "proxy stale host": {
+                "service": "proxy",
+                "desired": {
+                    "kind": "prometheus",
+                    "host": "caddy:2019",
+                    "service": "caddy",
+                    "endpoint": "/metrics",
+                },
+                "existing": {
+                    "id": "target-proxy",
+                    "kind": "prometheus",
+                    "host": "old-caddy:2019",
+                    "service": "caddy",
+                    "endpoint": "/metrics",
+                },
+                "provider_identity": {"kind", "service"},
+            },
+        }
+
+        for case, scenario in scenarios.items():
+            with self.subTest(provider_transition=case):
+                service = scenario["service"]
+                desired = scenario["desired"]
+                provider_targets = [dict(scenario["existing"])]
+                create_task = target_task(service, "POST")
+                patch_task = target_task(service, "PATCH")
+                create_fields = creation_identity_fields(create_task)
+                patch_fields = patch_identity_fields(patch_task)
+                self.assertTrue(create_fields, "creation must have a stable existing-target identity guard")
+                self.assertTrue(patch_fields, "PATCH must select the existing logical target")
+
+                should_create = not any(
+                    all(target.get(field) == desired.get(field) for field in create_fields)
+                    for target in provider_targets
+                )
+                duplicate_post_rejected = False
+                if should_create:
+                    provider_identity = scenario["provider_identity"]
+                    duplicate_post_rejected = any(
+                        all(target.get(field) == desired.get(field) for field in provider_identity)
+                        for target in provider_targets
+                    )
+                    if not duplicate_post_rejected:
+                        provider_targets.append({"id": "unexpected-created-target", **desired})
+
+                if not duplicate_post_rejected:
+                    patch_body = module_payload(patch_task, "ansible.builtin.uri", "uri").get("body", {})
+                    for target in provider_targets:
+                        if all(target.get(field) == desired.get(field) for field in patch_fields):
+                            for field in patch_body:
+                                target[field] = desired[field]
+
+                self.assertFalse(
+                    duplicate_post_rejected,
+                    "reconciliation must identify and PATCH a drifted logical target before attempting duplicate POST",
+                )
+                desired_targets = [
+                    target
+                    for target in provider_targets
+                    if all(target.get(field) == value for field, value in desired.items())
+                ]
+                self.assertEqual(1, len(desired_targets), "reconciliation must converge to exactly one desired target")
+                self.assertEqual(1, len(provider_targets), "reconciliation must leave no stale or created duplicate target")
+
+        readback_index = next(
+            index
+            for index, task in enumerate(tasks)
+            if task.get("register") == "better_stack_collector_targets_readback"
+        )
+        next_section = next(
+            (
+                index
+                for index, task in enumerate(tasks[readback_index + 1 :], start=readback_index + 1)
+                if task.get("register") == "better_stack_existing_dashboard_alerts"
+            ),
+            len(tasks),
+        )
+        readback_assertions = "\n".join(
+            task_text(task)
+            for task in tasks[readback_index + 1 : next_section]
+            if isinstance(module_payload(task, "ansible.builtin.assert", "assert"), dict)
+        )
+        unique_assertions = re.findall(r"list\s*\|\s*length\s*==\s*1", readback_assertions)
+        self.assertGreaterEqual(
+            len(unique_assertions),
+            3,
+            "final readback must prove exactly one proxy, backend, and PostgreSQL target rather than mere existence",
+        )
+        readback_tasks = [
+            task
+            for task in tasks[readback_index + 1 : next_section]
+            if isinstance(module_payload(task, "ansible.builtin.assert", "assert"), dict)
+        ]
+        readback_conditions = [
+            str(condition)
+            for task in readback_tasks
+            for condition in module_payload(task, "ansible.builtin.assert", "assert").get("that", [])
+        ]
+        postgresql_uniqueness = [
+            condition
+            for condition in readback_conditions
+            if re.search(
+                r"(?is)selectattr\(\s*['\"]attributes\.kind['\"]\s*,\s*['\"]equalto['\"]\s*,\s*['\"]postgres['\"]\s*\)",
+                condition,
+            )
+            and re.search(r"(?is)\|\s*list\s*\|\s*length\s*==\s*1", condition)
+            and not any(
+                f"attributes.{field}" in condition
+                for field in ("host", "port", "ssl_mode")
+            )
+        ]
+        self.assertTrue(
+            postgresql_uniqueness,
+            "final readback must prove exactly one PostgreSQL target across all hosts before validating desired connection fields",
+        )
 
     def test_better_stack_dashboard_alerts_read_back_declared_values_and_patch_provider_drift(self):
         """Require provider-side alert field verification and official PATCH drift repair."""
@@ -1999,11 +4073,27 @@ exit 0
         if changed_when.casefold() == "better_stack_collector_install.rc == 0":
             violations.append("collector installation must not mark every successful replay changed solely because rc is zero")
 
-        pre_install_state = any(
-            "docker compose" in " ".join(command_argv(task)).casefold()
-            and any(token in " ".join(command_argv(task)).casefold() for token in ("ps", "inspect", "config"))
-            for task in tasks[:install_index]
+        def uses_installer_deployment_identity(task: dict) -> bool:
+            return is_durable_better_stack_collector_probe(task)
+
+        preinstall_probe = next(
+            (task for task in tasks if task.get("register") == "better_stack_collector_preinstall_state"),
+            None,
         )
+        verification_probe = next(
+            (task for task in tasks if task.get("register") == "better_stack_collector_status"),
+            None,
+        )
+        if preinstall_probe is None or not uses_installer_deployment_identity(preinstall_probe):
+            violations.append(
+                "collector replay must inspect the installer's better-stack-collector project or a persistent compose file"
+            )
+        if verification_probe is None or not uses_installer_deployment_identity(verification_probe):
+            violations.append(
+                "collector verification must address the installer's better-stack-collector project or labeled containers"
+            )
+
+        pre_install_state = preinstall_probe is not None and uses_installer_deployment_identity(preinstall_probe)
         output_sensitive_change = bool(
             re.search(r"(?i)(stdout|changed|created|updated|installed)", changed_when)
         )
@@ -2134,6 +4224,124 @@ exit 0
         credentials_template = read("operations/ansible/templates/backup-writer.credentials.j2")
         self.assertIn("GAM_BACKUP_ACCESS_KEY_ID", credentials_template)
         self.assertIn("GAM_BACKUP_SECRET_ACCESS_KEY", credentials_template)
+
+    def test_machine_writer_preflight_rejects_a_skipped_registered_key_without_external_credentials(self):
+        site_tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        preflight = next(
+            (
+                task
+                for task in site_tasks
+                if task.get("name") == "Require nonempty machine writer credentials before production activation"
+            ),
+            None,
+        )
+        self.assertIsNotNone(preflight, "production activation needs a machine writer credential preflight")
+        payload = module_payload(preflight, "ansible.builtin.assert", "assert") if preflight else {}
+        condition_text = "\n".join(str(condition) for condition in payload.get("that", []))
+
+        self.assertRegex(
+            condition_text,
+            r"backup_writer_access_key\.(?:skipped|skip_reason)|backup_writer_access_key\s+is\s+not\s+skipped",
+            "a registered result from a skipped create-access-key task must not count as usable credentials",
+        )
+        for field in ("AccessKeyId", "SecretAccessKey"):
+            self.assertIn(
+                field,
+                condition_text,
+                f"preflight must validate the created key's nonempty {field} or require its external credential counterpart",
+            )
+
+    def test_no_rotation_replay_guards_skipped_key_result_and_accepts_external_credentials(self):
+        aws_tasks = list(task_nodes(load_yaml("operations/ansible/aws-resources.yml")))
+        create_task = next(
+            task
+            for task in aws_tasks
+            if "create-access-key" in command_argv(task)
+            and task.get("register") == "backup_writer_access_key"
+        )
+        self.assertIn(
+            "backup_writer_rotation_required",
+            str(create_task.get("when", "")),
+            "the no-rotation replay path must skip access-key creation",
+        )
+
+        follow_up_names = (
+            "Require nonempty machine writer credentials before activation",
+            "Materialize the active machine credential on the production host",
+            "Retire prior machine backup-writer access keys after materialization",
+        )
+        for task_name in follow_up_names:
+            with self.subTest(task=task_name):
+                task = next(task for task in aws_tasks if task.get("name") == task_name)
+                when_values = task.get("when", [])
+                if isinstance(when_values, str):
+                    when_values = [when_values]
+                condition_text = "\n".join(str(condition) for condition in when_values)
+                skipped_guard = re.search(
+                    r"backup_writer_access_key\s+is\s+not\s+skipped|"
+                    r"not\s+backup_writer_access_key\.skipped\s*\|\s*default\(false\)|"
+                    r"backup_writer_access_key\.skipped\s*\|\s*default\(false\)"
+                    r"(?:\s*\|\s*bool)?\s*==\s*false",
+                    condition_text,
+                )
+                self.assertIsNotNone(
+                    skipped_guard,
+                    f"{task_name} must reject the defined-but-skipped registered result before reading rc or stdout",
+                )
+                rc_reference = condition_text.find("backup_writer_access_key.rc")
+                if rc_reference >= 0:
+                    self.assertLess(
+                        skipped_guard.start(),
+                        rc_reference,
+                        f"{task_name} must guard skipped results before dereferencing backup_writer_access_key.rc",
+                    )
+
+        site_tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        activation_preflight = next(
+            task
+            for task in site_tasks
+            if task.get("name") == "Require nonempty machine writer credentials before production activation"
+        )
+        preflight_text = task_text(activation_preflight)
+        self.assertIn("GAM_BACKUP_ACCESS_KEY_ID", preflight_text)
+        self.assertIn("GAM_BACKUP_SECRET_ACCESS_KEY", preflight_text)
+        self.assertRegex(
+            preflight_text,
+            r"(?is)backup_writer_access_key.{0,400}\bor\b.{0,160}GAM_BACKUP_ACCESS_KEY_ID",
+            "a no-rotation replay must accept a nonempty externally supplied writer access key",
+        )
+        self.assertRegex(
+            preflight_text,
+            r"(?is)backup_writer_access_key.{0,400}\bor\b.{0,160}GAM_BACKUP_SECRET_ACCESS_KEY",
+            "a no-rotation replay must accept a nonempty externally supplied writer secret",
+        )
+
+    def test_recovery_shell_scripts_use_lf_and_pass_independent_bash_syntax(self):
+        bash = Path(r"C:\Program Files\Git\bin\bash.exe")
+        self.assertTrue(bash.is_file(), "Git Bash is required for independent recovery-script syntax validation")
+
+        violations = []
+        for relative_path in (
+            "operations/recovery/restore/restore.sh",
+            "operations/recovery/verify-restoration/verify-restoration.sh",
+        ):
+            script_path = ROOT / relative_path
+            script_bytes = script_path.read_bytes()
+            if b"\r" in script_bytes:
+                violations.append(f"{relative_path} must use LF line endings without CRLF or mixed EOL bytes")
+
+            result = subprocess.run(
+                [str(bash), "-n", relative_path],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode != 0:
+                diagnostic = (result.stderr or result.stdout).strip().replace("\n", " | ")
+                violations.append(f"{relative_path} failed bash -n: {diagnostic}")
+
+        self.assertEqual([], violations, "Recovery shell contract violations: " + "; ".join(violations))
 
     def test_backup_uses_postgresql_18_client_or_checks_major_version_compatibility(self):
         site_tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
@@ -2334,6 +4542,7 @@ exit 0
         for label, outage_days, recovery_day in scenarios:
             with self.subTest(scenario=label):
                 monitor = MonitorHarness()
+                monitor.add_prior_monthly_evidence(recovery_day)
                 for outage_day in outage_days:
                     monitor.module._current_local_date = lambda outage_day=outage_day: outage_day
                     result = monitor.module.lambda_handler({"phase": "daily"}, None)
@@ -2468,12 +4677,12 @@ exit 0
             "the collector installer must receive the dedicated COLLECTOR_SECRET",
         )
         self.assertTrue(
-            any("docker compose" in " ".join(command_argv(task)).casefold() for task in tasks),
-            "clean-host provisioning must execute the supported Docker Compose deployment",
+            any(is_official_better_stack_installer_execution(task) for task in tasks),
+            "clean-host provisioning must execute the supported Docker Compose installer",
         )
         self.assertTrue(
-            any("docker compose ps" in " ".join(command_argv(task)).casefold() for task in tasks),
-            "clean-host provisioning must verify the Docker Compose collector status",
+            any(is_durable_better_stack_collector_probe(task) for task in tasks),
+            "clean-host provisioning must verify collector status through durable container identity",
         )
 
     def test_writer_key_bootstrap_does_not_require_a_preexisting_machine_credential(self):
@@ -2567,20 +4776,13 @@ class FakeS3:
         ]
         self.attribute_checksums[key] = "a" * 64
         if lifecycle is None:
-            lifecycle_rule = {
-                "ID": f"{classification}-recovery-points",
-                "Status": "Enabled",
-                "Filter": {"Tag": {"Key": "classification", "Value": classification}},
-                "Expiration": {"Days": {"daily": 31, "weekly": 85, "monthly": 370}[classification]},
-            }
-            if classification == "weekly":
-                lifecycle_rule["Transitions"] = [{"Days": 30, "StorageClass": "STANDARD_IA"}]
-            elif classification == "monthly":
-                lifecycle_rule["Transitions"] = [
-                    {"Days": 30, "StorageClass": "STANDARD_IA"},
-                    {"Days": 90, "StorageClass": "GLACIER"},
-                ]
-            self.lifecycle = [lifecycle_rule]
+            self.lifecycle = [
+                rule
+                for rule in self.lifecycle
+                if str(rule.get("Filter", {}).get("Tag", {}).get("Value", "")).casefold()
+                != classification.casefold()
+            ]
+            self.lifecycle.append(recovery_lifecycle_rule(classification))
         else:
             self.lifecycle = lifecycle
 
@@ -2677,6 +4879,12 @@ class MonitorHarness:
         key = f"production/postgresql/{when:%Y/%m/%d}/20260601T031500Z-{key_classification}.dump.age"
         self.s3.add_object(key, when, classification, key_classification, tags=tags, lifecycle=lifecycle)
         return key
+
+    def add_prior_monthly_evidence(self, when: datetime):
+        if when.day == 1:
+            raise ValueError("prior monthly evidence requires a date after the first day of the month")
+        month_start = when.replace(day=1)
+        return self.add_object(month_start, "monthly", key_classification="monthly")
 
     def __del__(self):
         try:
