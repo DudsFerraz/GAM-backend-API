@@ -24,6 +24,8 @@ These are all presence intentions, but not confirmed, since the event has not be
 
 0.7- freeze backend branch, openAPI contract to a stable version
 
+0.8- Adicionar fotos de perfil, para oratorianos e membros
+
 1- Entender de verdade toda a security chain
 
 5- Design Patterns

@@ -1,0 +1,7 @@
+Backend evolved by the last week, the last commit that I am sure the frontend repo fulfilled is ba761b74177674557bf584a33de77cdb04143157. Thefore, every backend commit made after that should be analyzed. Are any frontend adaptation needed after these backend commits? If so, you must create new issues at the frontend github repo (DudsFerraz/GAM-frontend) adressing it.
+
+You should ignore docs commits and focus on feat, fix and test, mainly the ones affecting openAPI Contract. Make sure to absorb the context of all relevant backend commits to avoid creating redundant issues or useless issues adressing behavior that were later changed by another backend commit.
+
+A frontend issue was already created by a LLM before and it was approved by the frontend development team, you should follow its design, https://github.com/DudsFerraz/GAM-frontend/issues/12
+
+Before creating any issue, establish a plan on which issues to create and what problems they solve. I will analyze and aprove or reject the plan.
