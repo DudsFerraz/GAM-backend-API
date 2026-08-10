@@ -252,9 +252,7 @@
       - --description
       - "Project=GAM; Environment=production; Purpose=backup-monitor; daily validation"
       - --target
-      - "Arn={{ backup_monitor_lambda_arn }},RoleArn={{ backup_monitor_scheduler_role_arn }},Input={\"phase\":\"daily\"}"
-      - --retry-policy
-      - MaximumEventAgeInSeconds=86400,MaximumRetryAttempts=3
+      - '{"Arn":"{{ backup_monitor_lambda_arn }}","RoleArn":"{{ backup_monitor_scheduler_role_arn }}","RetryPolicy":{"MaximumEventAgeInSeconds":86400,"MaximumRetryAttempts":3},"Input":"{\"phase\":\"daily\"}"}'
       - --region
       - "{{ aws_region }}"
   register: daily_schedule
@@ -280,9 +278,7 @@
       - --description
       - "Project=GAM; Environment=production; Purpose=backup-monitor; unresolved escalation"
       - --target
-      - "Arn={{ backup_monitor_lambda_arn }},RoleArn={{ backup_monitor_scheduler_role_arn }},Input={\"phase\":\"unresolved\"}"
-      - --retry-policy
-      - MaximumEventAgeInSeconds=86400,MaximumRetryAttempts=3
+      - '{"Arn":"{{ backup_monitor_lambda_arn }}","RoleArn":"{{ backup_monitor_scheduler_role_arn }}","RetryPolicy":{"MaximumEventAgeInSeconds":86400,"MaximumRetryAttempts":3},"Input":"{\"phase\":\"unresolved\"}"}'
       - --region
       - "{{ aws_region }}"
   register: escalation_schedule
@@ -338,9 +334,7 @@
       - --state
       - ENABLED
       - --target
-      - "Arn={{ backup_monitor_lambda_arn }},RoleArn={{ backup_monitor_scheduler_role_arn }},Input={\"phase\":\"daily\"}"
-      - --retry-policy
-      - MaximumEventAgeInSeconds=86400,MaximumRetryAttempts=3
+      - '{"Arn":"{{ backup_monitor_lambda_arn }}","RoleArn":"{{ backup_monitor_scheduler_role_arn }}","RetryPolicy":{"MaximumEventAgeInSeconds":86400,"MaximumRetryAttempts":3},"Input":"{\"phase\":\"daily\"}"}'
       - --region
       - "{{ aws_region }}"
   when:
@@ -374,9 +368,7 @@
       - --state
       - ENABLED
       - --target
-      - "Arn={{ backup_monitor_lambda_arn }},RoleArn={{ backup_monitor_scheduler_role_arn }},Input={\"phase\":\"unresolved\"}"
-      - --retry-policy
-      - MaximumEventAgeInSeconds=86400,MaximumRetryAttempts=3
+      - '{"Arn":"{{ backup_monitor_lambda_arn }}","RoleArn":"{{ backup_monitor_scheduler_role_arn }}","RetryPolicy":{"MaximumEventAgeInSeconds":86400,"MaximumRetryAttempts":3},"Input":"{\"phase\":\"unresolved\"}"}'
       - --region
       - "{{ aws_region }}"
   when:

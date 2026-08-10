@@ -39,30 +39,54 @@ def _expected_classifications(local_date: datetime) -> set[str]:
     if local_date.day == 1:
         return {"monthly"}
 
-    # A persisted first-of-month failure owns the month's first successful
-    # recovery point. It must retain monthly semantics even when the outage
-    # crossed Sunday/Monday and the local pending marker was lost.
     month_start = local_date.replace(day=1)
-    if _load_failure(month_start):
+    month_history = _load_classification_history(local_date)
+    month_start_failure = _load_failure(month_start)
+    month_lifecycle_failure = _failure_requires_lifecycle_validation(month_start_failure)
+    month_boundary_satisfied = (
+        not month_lifecycle_failure and bool(month_history.get("first_classification"))
+    ) or _valid_recovery_point_exists_before(
+        month_start,
+        local_date,
+        {"monthly"},
+        validate_bucket_lifecycle=True,
+    )
+
+    # A persisted first-of-month failure owns the month's first successful
+    # recovery point unless durable success evidence proves it is stale.
+    if month_start_failure and not month_boundary_satisfied:
         return {"monthly"}
 
-    # When the first of the month was a Sunday, the following Monday is the
-    # first possible successful timer invocation. Its durable artifact must
-    # retain the month-start classification even if the local pending marker
-    # was lost before the independent monitor ran.
-    if local_date.day == 2 and month_start.isoweekday() == 7:
-        return {"monthly"}
+    pending_classifications: set[str] = set()
+    if not month_boundary_satisfied:
+        pending_classifications.add("monthly")
 
-    # Monday is always the weekly calendar point.  On later weekdays only a
-    # persisted Monday failure can authorize a weekly catch-up; a Wednesday
-    # or Thursday failure must not promote an arbitrary later artifact.
+    # Monday is always the weekly calendar point. On later days an unresolved
+    # Monday failure or a validated weekly object may establish catch-up, but
+    # only while no earlier immutable artifact has satisfied the week.
     week_start = local_date - timedelta(days=local_date.isoweekday() - 1)
-    if local_date.isoweekday() == 1 or _load_failure(week_start):
-        return {"weekly"}
+    if local_date.isoweekday() == 1:
+        pending_classifications.add("weekly")
+        return {"monthly"} if "monthly" in pending_classifications else pending_classifications
+    week_start_failure = _load_failure(week_start)
+    week_boundary_satisfied = _valid_recovery_point_exists_before(
+        week_start,
+        local_date,
+        {"weekly", "monthly"},
+        validate_bucket_lifecycle=True,
+    )
+    if week_start_failure and not week_boundary_satisfied:
+        pending_classifications.add("weekly")
+    elif not week_boundary_satisfied:
+        pending_classifications.add("weekly")
 
-    # A normal run without a calendar classification or persisted outage
-    # evidence is daily only. Long-lived weekly/monthly retention must not be
-    # manufactured by an arbitrary first-week object.
+    if pending_classifications:
+        # One object represents overlapping retention classes, so the longest
+        # pending retention always wins.
+        return {"monthly"} if "monthly" in pending_classifications else pending_classifications
+
+    # Daily is valid only after immutable or persisted success evidence has
+    # satisfied every applicable longer-lived boundary.
     return {"daily"}
 
 
@@ -96,6 +120,8 @@ def _validate_object(
     key: str,
     now: datetime,
     expected_classifications: set[str],
+    *,
+    validate_bucket_lifecycle: bool = True,
 ) -> tuple[bool, list[str], dict[str, str]]:
     reasons: list[str] = []
     head = s3.head_object(Bucket=BUCKET, Key=key)
@@ -124,6 +150,13 @@ def _validate_object(
             reasons.append("object checksum metadata disagrees with the S3 checksum")
     metadata_sha256 = metadata.get("sha256", "").lower()
     if metadata_sha256:
+        try:
+            metadata_sha256_bytes = bytes.fromhex(metadata_sha256)
+        except ValueError:
+            metadata_sha256_bytes = b""
+        if len(metadata_sha256_bytes) != 32:
+            reasons.append("object sha256 checksum metadata is malformed")
+
         expected_hex_checksum = ""
         try:
             decoded_checksum = base64.b64decode(s3_checksum, validate=True)
@@ -141,6 +174,8 @@ def _validate_object(
                 expected_hex_checksum = s3_checksum.lower()
             except ValueError:
                 expected_hex_checksum = ""
+        if not expected_hex_checksum:
+            reasons.append("S3 checksum is malformed or is not SHA-256")
         if expected_hex_checksum and metadata_sha256 != expected_hex_checksum:
             reasons.append("object sha256 metadata disagrees with the S3 checksum")
     if head.get("ServerSideEncryption", "").upper() != "AES256":
@@ -171,44 +206,45 @@ def _validate_object(
     except Exception as exception:  # noqa: BLE001 - failure stays non-sensitive
         reasons.append(f"object tags could not be validated: {type(exception).__name__}")
 
-    try:
-        lifecycle_rules = s3.get_bucket_lifecycle_configuration(Bucket=BUCKET).get("Rules", [])
-        matching_rules = []
-        for rule in lifecycle_rules:
-            tag_filter = rule.get("Filter", {}).get("Tag", {})
-            if tag_filter.get("Key") == "classification" and str(tag_filter.get("Value", "")).lower() == classification:
-                matching_rules.append(rule)
-        if not matching_rules:
-            reasons.append("class-specific lifecycle rule is missing")
-        elif not any(str(rule.get("Status", "")).lower() == "enabled" for rule in matching_rules):
-            reasons.append("class-specific lifecycle rule is not enabled")
-        else:
-            # When transition details are returned, validate the accepted
-            # class-specific schedule without requiring fake clients to invent
-            # fields that are not relevant to their object metadata contract.
-            rule = next(
-                rule for rule in matching_rules if str(rule.get("Status", "")).lower() == "enabled"
-            )
-            transitions = rule.get("Transitions", [])
-            if classification in {"weekly", "monthly"}:
-                if not transitions:
-                    reasons.append("weekly/monthly lifecycle transitions are missing")
-                else:
-                    required_transition = {"Days": 30, "StorageClass": "STANDARD_IA"}
-                    if not any(
-                        int(transition.get("Days", -1)) == required_transition["Days"]
-                        and str(transition.get("StorageClass", "")).upper() == required_transition["StorageClass"]
-                        for transition in transitions
-                    ):
-                        reasons.append("weekly/monthly lifecycle transition is invalid")
-                    if classification == "monthly" and not any(
-                        int(transition.get("Days", -1)) == 90
-                        and str(transition.get("StorageClass", "")).upper() == "GLACIER"
-                        for transition in transitions
-                    ):
-                        reasons.append("monthly lifecycle Glacier transition is invalid")
-    except Exception as exception:  # noqa: BLE001 - failure stays non-sensitive
-        reasons.append(f"bucket lifecycle could not be validated: {type(exception).__name__}")
+    if validate_bucket_lifecycle:
+        try:
+            lifecycle_rules = s3.get_bucket_lifecycle_configuration(Bucket=BUCKET).get("Rules", [])
+            matching_rules = []
+            for rule in lifecycle_rules:
+                tag_filter = rule.get("Filter", {}).get("Tag", {})
+                if tag_filter.get("Key") == "classification" and str(tag_filter.get("Value", "")).lower() == classification:
+                    matching_rules.append(rule)
+            if not matching_rules:
+                reasons.append("class-specific lifecycle rule is missing")
+            elif not any(str(rule.get("Status", "")).lower() == "enabled" for rule in matching_rules):
+                reasons.append("class-specific lifecycle rule is not enabled")
+            else:
+                # When transition details are returned, validate the accepted
+                # class-specific schedule without requiring fake clients to invent
+                # fields that are not relevant to their object metadata contract.
+                rule = next(
+                    rule for rule in matching_rules if str(rule.get("Status", "")).lower() == "enabled"
+                )
+                transitions = rule.get("Transitions", [])
+                if classification in {"weekly", "monthly"}:
+                    if not transitions:
+                        reasons.append("weekly/monthly lifecycle transitions are missing")
+                    else:
+                        required_transition = {"Days": 30, "StorageClass": "STANDARD_IA"}
+                        if not any(
+                            int(transition.get("Days", -1)) == required_transition["Days"]
+                            and str(transition.get("StorageClass", "")).upper() == required_transition["StorageClass"]
+                            for transition in transitions
+                        ):
+                            reasons.append("weekly/monthly lifecycle transition is invalid")
+                        if classification == "monthly" and not any(
+                            int(transition.get("Days", -1)) == 90
+                            and str(transition.get("StorageClass", "")).upper() == "GLACIER"
+                            for transition in transitions
+                        ):
+                            reasons.append("monthly lifecycle Glacier transition is invalid")
+        except Exception as exception:  # noqa: BLE001 - failure stays non-sensitive
+            reasons.append(f"bucket lifecycle could not be validated: {type(exception).__name__}")
 
     retain_until = head.get("ObjectLockRetainUntilDate")
     if retain_until is None:
@@ -229,6 +265,56 @@ def _validate_object(
         "retention": str(retain_until or ""),
     }
     return not reasons, reasons, details
+
+
+def _valid_classification_exists(local_date: datetime, classification: str) -> bool:
+    """Use immutable object evidence when monitor success history is absent."""
+
+    return _valid_recovery_point_exists(local_date, {classification})
+
+
+def _valid_recovery_point_exists(
+    local_date: datetime,
+    classifications: set[str],
+    *,
+    validate_bucket_lifecycle: bool = False,
+) -> bool:
+    """Return whether a boundary date already has an accepted immutable class."""
+
+    for key in _candidate_keys(local_date):
+        try:
+            valid, _, details = _validate_object(
+                key,
+                datetime.now(timezone.utc),
+                classifications,
+                validate_bucket_lifecycle=validate_bucket_lifecycle,
+            )
+        except Exception:  # noqa: BLE001 - absence or invalid metadata fails closed
+            continue
+        if valid and details.get("classification") in classifications:
+            return True
+    return False
+
+
+def _valid_recovery_point_exists_before(
+    first_date: datetime,
+    end_date: datetime,
+    boundary_classifications: set[str],
+    *,
+    validate_bucket_lifecycle: bool = False,
+) -> bool:
+    """Return whether an earlier correctly classified artifact satisfied a boundary."""
+
+    candidate_date = first_date
+    while candidate_date < end_date:
+        if _valid_recovery_point_exists(
+            candidate_date,
+            boundary_classifications,
+            validate_bucket_lifecycle=validate_bucket_lifecycle,
+        ):
+            return True
+        candidate_date += timedelta(days=1)
+    return False
 
 
 def _check_today() -> tuple[bool, list[str], dict[str, str]]:
@@ -333,25 +419,42 @@ def _load_failure(local_date: datetime) -> dict:
     return state_table.get_item(Key={"id": _failure_id(local_date)}).get("Item", {})
 
 
+def _failure_requires_lifecycle_validation(failure: dict) -> bool:
+    """Return whether recovery depends on repairing class lifecycle semantics."""
+
+    return any(
+        "lifecycle" in str(reason).casefold()
+        for reason in failure.get("reasons", [])
+    )
+
+
 def _clear_failure(local_date: datetime) -> None:
     state_table.delete_item(Key={"id": _failure_id(local_date)})
 
 
-def _recovery_failure_dates(local_date: datetime) -> list[datetime]:
+def _recovery_failure_dates(
+    local_date: datetime,
+    recovered_classification: str = "",
+) -> list[datetime]:
     """Return unresolved failures in the current recovery window only."""
 
     week_start = local_date - timedelta(days=local_date.isoweekday() - 1)
-    first_prior_date = (
-        local_date - timedelta(days=1)
-        if local_date.isoweekday() == 1
-        else week_start
-    )
+    if recovered_classification == "monthly":
+        first_prior_date = local_date.replace(day=1)
+    else:
+        first_prior_date = (
+            local_date - timedelta(days=1)
+            if local_date.isoweekday() == 1
+            else week_start
+        )
     dates: list[datetime] = []
     cursor = first_prior_date
     while cursor < local_date:
         if _load_failure(cursor):
             dates.append(cursor)
         cursor += timedelta(days=1)
+    if _load_failure(local_date):
+        dates.append(local_date)
     return dates
 
 
@@ -364,7 +467,10 @@ def lambda_handler(event: dict, context: object) -> dict:
         valid, reasons, details = _check_today()
         unresolved_failures = [
             (failure_date, _load_failure(failure_date))
-            for failure_date in _recovery_failure_dates(local_date)
+            for failure_date in _recovery_failure_dates(
+                local_date,
+                details.get("classification", "") if valid else "",
+            )
         ]
 
         if valid:

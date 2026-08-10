@@ -356,6 +356,7 @@
     active_backup_writer_access_key: "{{ backup_writer_access_key.stdout | from_json }}"
   when:
     - backup_writer_access_key is defined
+    - backup_writer_access_key is not skipped
     - backup_writer_access_key.rc == 0
 
 - name: Materialize the active machine credential on the production host
@@ -374,6 +375,7 @@
   become: true
   when:
     - backup_writer_access_key is defined
+    - backup_writer_access_key is not skipped
     - backup_writer_access_key.rc == 0
   no_log: true
 
@@ -393,6 +395,7 @@
         else backup_writer_access_keys.stdout) | from_json).AccessKeyMetadata | default([]) }}
   when:
     - backup_writer_access_key is defined
+    - backup_writer_access_key is not skipped
     - backup_writer_access_key.rc == 0
     - item.AccessKeyId != (backup_writer_access_key.stdout | from_json).AccessKey.AccessKeyId
   changed_when: true
