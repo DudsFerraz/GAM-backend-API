@@ -18,6 +18,8 @@ These are all presence intentions, but not confirmed, since the event has not be
 
 0.2- Cronjobs
 
+0.3- Create a Missa development fixture dataset after the Missa Requirement Specification is accepted.
+
 0.4- OpenAI agents SDK
 
 0.6- import planilha oratorio
