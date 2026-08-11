@@ -40,7 +40,8 @@ them.
 | **GamPhoneNumber** | The common primitive for a normalized, dialable phone number.                                                                                                                                | None                 | PhoneNumber, MyPhoneNumber       |
 | **GamCPF**         | The common primitive for a checksum-valid Brazilian CPF stored as eleven digits.                                                                                                             | None                 | CPF primitive, GamCpf            |
 | **GamRG**          | The common primitive for a bounded textual legacy Brazilian RG number without state-specific validation.                                                                                     | None                 | RG primitive, GamRg              |
-| **GamLocation**    | An independently persisted, reusable physical place where GAM activities may occur and which multiple Events may reference.                                                                  | None                 | Location                         |
+| **GamLocation**    | An independently persisted, reusable location that an Event may reference. A GamLocation is normally a physical place; the system catalog also contains the single non-physical **Remote GamLocation**. | None                 | Location                         |
+| **Remote GamLocation** | The single system-managed GamLocation with code `REMOTE` and name `Remoto`, used when an Event has no physical venue. It contains no address, coordinates, or meeting URL. | remote location | User-managed remote location, online venue |
 | **Event**          | The shared persisted record for a GAM activity, including its identity, time range, GamLocation, type, audience restriction, and lifecycle state.                                            | None                 | Activity record                  |
 | **Presence**       | The persisted historical fact that a Member's attendance at an Event was confirmed. At most one active Presence may exist for one Event and Member pair.                                    | None                 | RSVP, planned attendance         |
 | **Generic Event**  | An Event created through the common Event workflow because it requires no specialized Oratorio, Missa, or other type-specific data.                                                          | None                 | Generic activity                 |
@@ -88,6 +89,7 @@ source-code symbols remain unchanged at the API boundary.
 | **GamCPF** | **CPF** | User-facing Brazilian document term. |
 | **GamRG** | **RG** | User-facing Brazilian document term. |
 | **GamLocation** | **local** | User-facing place term. Keep `GamLocation` in technical domain documentation and code. |
+| **Remote GamLocation** | **Remoto** | User-facing name of the single system-managed non-physical location. Keep `REMOTE` as its technical catalog code. |
 | **Event** | **Evento** | User-facing domain term. |
 | **Presence** | **Presença** | User-facing attendance-record term; do not translate it as RSVP or planned attendance. |
 | **Generic Event** | **Evento genérico** | User-facing specialization of **Evento**. |
@@ -123,6 +125,7 @@ source-code symbols remain unchanged at the API boundary.
 - A **displayName** belongs to an **Account** and must not be treated as a **GamName**.
 - A **GamName** is composed of `firstName` and `surname`.
 - A **GamLocation** may be referenced by multiple Events and may exist without an Event reference.
+- The **Remote GamLocation** is the only non-physical **GamLocation**; every other GamLocation represents a physical place.
 - An **Event** references one **GamLocation**.
 - A **Presence** references exactly one **Member** and one **Event**.
 - Removing a **Presence** ends its active identity without erasing its preserved historical row; the same Member and Event may later receive a new Presence with a new UUID.

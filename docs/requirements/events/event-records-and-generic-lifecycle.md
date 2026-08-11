@@ -97,10 +97,17 @@ Invalid examples:
 
 Generic Event creation and any update that links a GamLocation shall require
 the selected GamLocation to exist, be active, and be eligible for current
-configuration. An ordinary active location or a current system location is
-eligible. A missing, soft-deleted, or retired system GamLocation shall return
-`404 RESOURCE_NOT_FOUND` for resource `GamLocation` without creating or
+configuration. An ordinary active physical location, a current physical system
+location, or the current system-managed Remote GamLocation with code `REMOTE`
+is eligible. A missing, soft-deleted, or retired system GamLocation shall
+return `404 RESOURCE_NOT_FOUND` for resource `GamLocation` without creating or
 changing the Event.
+
+Selecting `REMOTE` shall represent only that the Event has no physical venue.
+It shall not add or require a meeting URL, provider, or online-room identifier.
+The Event shall continue to store the Remote GamLocation UUID in
+`gamLocationId` and embed its complete representation like any other selected
+GamLocation.
 
 An Event that already references a system location when it becomes retired
 shall preserve that UUID and embedded location representation under
@@ -382,6 +389,14 @@ Scenario: Create a public future Generic Event
   And requiredPermission is null
   And one EVENT_CREATED activity is recorded
 
+Scenario: Create a remote Generic Event
+  Given the caller has EVENT_CREATE
+  And the current system GamLocation REMOTE exists
+  When the caller creates a Generic Event using the REMOTE GamLocation UUID
+  Then the response is 201 Created
+  And the Event embeds code REMOTE and name "Remoto"
+  And the embedded address and coordinate fields are null
+
 Scenario: Reject a client-selected Event type
   Given the caller has EVENT_CREATE
   When the caller posts to /events with type ORATORIO
@@ -564,6 +579,7 @@ The command transitions in this diagram apply to Generic Events. `SCHEDULED -> C
 * Event restoration and developer hard deletion.
 * Changing an Event's type.
 * Temporary free-text Event places or locationless Generic Events.
+* Meeting URLs, remote providers, and provider-specific online-room data.
 * A separate in-progress temporal status.
 * Backward-compatible aliases for legacy `locationId` or client-supplied Generic Event `type` fields.
 
@@ -573,6 +589,7 @@ The command transitions in this diagram apply to Generic Events. `SCHEDULED -> C
 * [ADR-0011: Serialize Event Mutation and Presence Linking](../../decisions/0011-serialize-event-mutation-and-presence-linking.md) (Superseded)
 * [ADR-0012: Serialize Event and Presence Mutations](../../decisions/0012-serialize-event-and-presence-mutations.md)
 * [ADR-0017: Serialize Oratorio and Oratoriano mutations](../../decisions/0017-serialize-oratorio-and-oratoriano-mutations.md)
+* [ADR-0031: Model remote attendance as a single system GamLocation](../../decisions/0031-model-remote-attendance-as-a-single-system-gam-location.md)
 
 ## Related requirements
 

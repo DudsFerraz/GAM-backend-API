@@ -47,14 +47,17 @@ The system shall derive:
 
 `gam.oratorio.location-code` shall default to `DBSM`, making São Mário the
 normal Oratorio location. An intentional deployment-wide override may select
-`DBA` or `DBCA`. The configured value shall resolve by immutable location code,
-not by mutable name or a hard-coded database UUID.
+`DBA` or `DBCA`. These three physical system locations are the complete
+Oratorio location catalog. `REMOTE` shall not be accepted because an Oratorio
+occurrence remains a physical activity. The configured value shall resolve by
+immutable location code, not by mutable name or a hard-coded database UUID.
 
 Application startup shall fail before serving requests when the configured code
-is blank, unknown, retired, soft-deleted, or not system-managed. Creation shall
-also fail atomically if the validated configured location becomes unavailable
-before an occurrence commits. The complete catalog and configuration lifecycle
-is governed by `REQ-GAM-LOCATION-CATALOG-008`.
+is blank, unknown, `REMOTE`, retired, soft-deleted, not system-managed, or not
+one of `DBSM`, `DBA`, and `DBCA`. Creation shall also fail atomically if the
+validated configured location becomes unavailable before an occurrence
+commits. The complete catalog and configuration lifecycle is governed by
+`REQ-GAM-LOCATION-CATALOG-008`.
 
 Past, present, and future dates are accepted without an artificial horizon. The common Event temporal rules determine whether the new occurrence is `SCHEDULED` or `COMPLETED`.
 
@@ -201,7 +204,7 @@ Scenario: Create an occurrence from a date
   And its audience permission is EVENT_GET_MEMBER
 
 Scenario: Invalid configured location blocks startup
-  Given gam.oratorio.location-code is blank or does not identify a current system GamLocation
+  Given gam.oratorio.location-code is blank, REMOTE, or does not identify an accepted physical Oratorio location
   When the application starts
   Then startup fails before requests are served
 
@@ -261,6 +264,7 @@ Scenario: Removed attendance does not block deletion
 * [ADR-0015: Compose Oratorio permission bundles in code](../../decisions/0015-compose-oratorio-permission-bundles-in-code.md)
 * [ADR-0012: Serialize Event and Presence mutations](../../decisions/0012-serialize-event-and-presence-mutations.md)
 * [ADR-0017: Serialize Oratorio and Oratoriano mutations](../../decisions/0017-serialize-oratorio-and-oratoriano-mutations.md)
+* [ADR-0031: Model remote attendance as a single system GamLocation](../../decisions/0031-model-remote-attendance-as-a-single-system-gam-location.md)
 
 ## Related requirements
 

@@ -6,16 +6,18 @@ Accepted
 
 ## Context
 
-GAM Piracicaba depends on a small catalog of recurring institutional places.
-The three Dom Bosco units shall be present in every applicable runtime
-environment, retain stable identities when their descriptive metadata changes,
-and remain protected from ordinary product mutations.
+GAM Piracicaba depends on a small catalog of recurring institutional places
+and one shared option for Events that have no physical venue. The three Dom
+Bosco units and the Remote GamLocation shall be present in every applicable
+runtime environment, retain stable identities when their descriptive metadata
+changes, and remain protected from ordinary product mutations.
 
 The São Mário unit is also the default place for Oratorio occurrences. Matching
 that place by mutable normalized name is not a stable configuration contract.
 
-This specification classifies the three units as code-owned system reference
-data, defines their accepted values and lifecycle, and specializes the
+This specification classifies the three units and the Remote GamLocation as
+code-owned system reference data, defines their accepted values and lifecycle,
+and specializes the
 cross-domain synchronization policy in
 [Database Reference Data and Enum Mirrors](../platform/database-reference-data-and-enum-mirrors.md).
 
@@ -43,14 +45,19 @@ records:
 | `DBSM` | `Dom Bosco São Mário` | `Av. Santa Rosa, 653 - Areião` | `Piracicaba` | `SP` | `13414-038` | `BR` | Absent | Absent |
 | `DBA` | `Dom Bosco Assunção` | `Rua Boa Morte, 1835 - Centro` | `Piracicaba` | `SP` | `13400-140` | `BR` | Absent | Absent |
 | `DBCA` | `Dom Bosco Cidade Alta` | `Rua Alfredo Guedes, 1199 - Bairro Alto` | `Piracicaba` | `SP` | `13419-080` | `BR` | Absent | Absent |
+| `REMOTE` | `Remoto` | Absent | Absent | Absent | Absent | Absent | Absent | Absent |
 
-All three records shall exist as current active system reference data in every
-applicable runtime environment. Their accepted punctuation, accents, postal
-code formatting, and absent coordinate pairs are application-owned metadata.
+All four records shall exist as current active system reference data in every
+applicable runtime environment. Their accepted names, physical address values,
+and absent values are application-owned metadata. `REMOTE` shall be the only
+non-physical GamLocation. Its street, city, state, postal code, country code,
+latitude, and longitude shall all be absent, and it shall not contain a meeting
+URL.
 
 Rationale:
-These recurring GAM Piracicaba places are baseline operational data rather
-than demonstration fixtures or independently administered location records.
+These recurring GAM Piracicaba places and the singleton remote option are
+baseline operational data rather than demonstration fixtures or independently
+administered location records.
 
 ---
 
@@ -86,7 +93,7 @@ breaking Event references.
 ### REQ-GAM-LOCATION-CATALOG-003: Read-only ownership representation
 
 Every direct or embedded `GamLocation` response shall add these fields to the
-representation defined by `REQ-GAM-LOCATION-001`:
+representation defined by `REQ-GAM-LOCATION-014`:
 
 | Field | Current system record | Retired system record embedded in historical data | Ordinary record |
 | --- | --- | --- | --- |
@@ -102,6 +109,13 @@ and new configuration workflows, while an existing Event reference may still
 embed the preserved record. A direct get for a retired system record shall
 return the same `404 RESOURCE_NOT_FOUND` contract used for a missing or
 soft-deleted `GamLocation`.
+
+The Remote GamLocation shall be available to any Event workflow whose owning
+Requirement Specification permits remote attendance. Membership in the system
+catalog alone shall not override a specialized Event workflow's narrower
+location rules. In particular, Oratorio shall continue to accept only `DBSM`,
+`DBA`, and `DBCA` under `REQ-GAM-LOCATION-CATALOG-008` and
+`REQ-ORATORIO-002`.
 
 Create and update request bodies shall continue to accept only the eight
 mutable location fields. Supplying `code`, `systemManaged`, or another unknown
@@ -155,6 +169,7 @@ The synchronizer shall follow `REQ-DATA-002` through `REQ-DATA-006` and
 - restore a unique soft-deleted system-managed match when its code is current;
 - update only changed application-owned metadata;
 - regenerate duplicate-comparison keys from the accepted metadata;
+- preserve the accepted absent address and coordinate values of `REMOTE`;
 - perform no write, timestamp change, or product activity emission when already
   converged; and
 - fail migration and application startup when synchronization cannot complete.
@@ -234,11 +249,12 @@ code to acquire a different identity.
 The environment-wide Oratorio location setting shall be
 `gam.oratorio.location-code` and shall default to `DBSM`.
 
-The configured value shall be one exact current system `GamLocation` code.
-Blank, unknown, retired, soft-deleted, or user-managed values shall fail
-application startup before requests are served. The application shall resolve
-the configured code to its preserved UUID; it shall not match the default by
-mutable location name or hard-code a database UUID.
+The configured value shall be exactly one of the current physical system
+GamLocation codes `DBSM`, `DBA`, or `DBCA`. Blank, unknown, `REMOTE`, retired,
+soft-deleted, or user-managed values shall fail application startup before
+requests are served. The application shall resolve the configured code to its
+preserved UUID; it shall not match the default by mutable location name or
+hard-code a database UUID.
 
 `DBSM` shall therefore be the normal São Mário default. An intentional
 deployment-wide override may select `DBA` or `DBCA`.
@@ -276,9 +292,15 @@ migration path.
 Scenario: New database receives the complete system location catalog
   Given the production-safe migration path is configured
   When Flyway completes successfully
-  Then current system GamLocations DBSM, DBA, and DBCA exist exactly once
+  Then current system GamLocations DBSM, DBA, DBCA, and REMOTE exist exactly once
   And each record has its accepted metadata
   And each record has systemManaged true and a stable UUID
+
+Scenario: Remote is the single addressless system location
+  Given the system location catalog is converged
+  When an authorized caller lists GamLocations
+  Then exactly one record has code REMOTE and name "Remoto"
+  And its street, city, state, postalCode, countryCode, latitude, and longitude are null
 
 Scenario: Repeated synchronization is a no-op
   Given the system location catalog is converged
@@ -332,7 +354,7 @@ Scenario: Oratorio uses the São Mário default
   And the Oratorio Event references the DBSM UUID
 
 Scenario: Invalid Oratorio location configuration blocks startup
-  Given gam.oratorio.location-code identifies an unknown, retired, or ordinary location
+  Given gam.oratorio.location-code identifies REMOTE, an unknown, retired, or ordinary location
   When the application starts
   Then startup fails before requests are served
 ```
@@ -346,9 +368,11 @@ flowchart LR
     Preflight -- "Yes" --> StartupFailure["Rollback and fail startup"]
     Preflight -- "No" --> Catalog[("System GamLocation rows")]
     Catalog --> Current{"Code current?"}
-    Current -- "Yes" --> DirectReads["Direct reads and configuration"]
+    Current -- "Yes" --> DirectReads["Direct reads and Event selection"]
     Current -- "No" --> Historical["Hidden historical Event reference"]
-    DirectReads --> Oratorio["Configured Oratorio default"]
+    DirectReads --> PhysicalCode{"DBSM, DBA, or DBCA?"}
+    PhysicalCode -- "Yes" --> Oratorio["Configured Oratorio default"]
+    PhysicalCode -- "No: REMOTE" --> OtherEvents["Eligible Event workflows"]
 ```
 
 ## Open questions
@@ -359,11 +383,12 @@ flowchart LR
 
 * A separate `displayName`, `officialName`, alias, or alternate-name field.
 * Separate neighborhood, building-number, complement, or address-line fields.
-* Coordinates for DBSM, DBA, or DBCA.
+* Coordinates for DBSM, DBA, DBCA, or REMOTE.
 * Per-occurrence Oratorio location selection.
 * User-managed codes or custom system location registries.
 * Production seeding of arbitrary convenient locations outside the accepted
-  three-record catalog.
+  four-record catalog.
+* Meeting URLs or provider-specific metadata for REMOTE.
 * A product endpoint for retiring, restoring, or permanently cleaning up a
   system location.
 * Compatibility adoption of the pre-production name-matched São Mário seed.
@@ -376,6 +401,7 @@ flowchart LR
 * [ADR-0021: Use Flyway repeatable migrations for code-owned system reference data](../../decisions/0021-use-flyway-repeatable-migrations-for-system-reference-data.md)
 * [ADR-0009: Enforce Active GamLocation Duplicate Identity in Persistence](../../decisions/0009-enforce-active-gam-location-duplicate-identity-in-persistence.md)
 * [ADR-0010: Serialize GamLocation Mutation and Event Linking](../../decisions/0010-serialize-gam-location-mutation-and-event-linking.md)
+* [ADR-0031: Model remote attendance as a single system GamLocation](../../decisions/0031-model-remote-attendance-as-a-single-system-gam-location.md)
 
 ## Related requirements
 

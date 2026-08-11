@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-GAM activities need reusable physical places that can be created once, referenced by multiple Events, corrected over time, retrieved directly, and removed when unused. Some recurring institutional places are application-owned system reference data governed by the [System GamLocation Catalog](system-gam-location-catalog.md); all other `GamLocation` records remain user-managed. The previous Location implementation and tests predated the Requirement Specification workflow and were used only as discovery material.
+GAM activities need reusable locations that can be created once, referenced by multiple Events, corrected over time, retrieved directly, and removed when unused. Most locations are physical places. Events that have no physical venue use one application-owned Remote GamLocation governed by the [System GamLocation Catalog](system-gam-location-catalog.md). Some recurring institutional places are also application-owned system reference data; all other `GamLocation` records remain user-managed physical places. The previous Location implementation and tests predated the Requirement Specification workflow and were used only as discovery material.
 
 This specification establishes `GamLocation` as the canonical domain and API concept. It defines its fields, validation, active-record uniqueness, HTTP operations, authorization, audit behavior, and consistency with Event references.
 
@@ -17,48 +17,80 @@ This specification establishes `GamLocation` as the canonical domain and API con
 
 ## Functional requirements
 
-### REQ-GAM-LOCATION-001: Reusable physical-place record
+### REQ-GAM-LOCATION-001: Reusable physical-place record (superseded)
 
-A `GamLocation` shall represent an independently persisted, reusable physical place where GAM activities may occur. Multiple Events may reference the same `GamLocation`, and a `GamLocation` may exist without an Event reference.
+This requirement is superseded by `REQ-GAM-LOCATION-014`.
 
-Every `GamLocation` shall use the UUID identity rules in `REQ-GAM-ID-001` through `REQ-GAM-ID-004` and expose exactly these fields:
+The superseded rule allowed only physical places and required every
+`GamLocation` to contain city, state, and country metadata. It did not support
+an Event whose participants attend without a physical venue.
 
-| Field | Meaning | Response nullability |
-| --- | --- | --- |
-| `id` | Immutable UUID identity assigned by the system | Required |
-| `code` | Immutable application-owned key for a system GamLocation; absent for an ordinary record | Nullable |
-| `systemManaged` | Whether the record belongs to the application-owned system catalog | Required |
-| `name` | Human-facing label by which GAM recognizes the place | Required |
-| `street` | Complete address line below the city/state level | Nullable |
-| `city` | City or equivalent locality | Required |
-| `state` | First-level administrative division | Required |
-| `postalCode` | Country-specific postal code | Nullable |
-| `countryCode` | ISO 3166-1 alpha-2 country code | Required |
-| `latitude` | Geographic latitude | Nullable only as part of an absent coordinate pair |
-| `longitude` | Geographic longitude | Nullable only as part of an absent coordinate pair |
+---
 
-Create, get, list, and update responses shall use this same representation. `code` and `systemManaged` are read-only ownership metadata governed by `REQ-GAM-LOCATION-CATALOG-002` through `REQ-GAM-LOCATION-CATALOG-004`. Responses shall not expose Events, credentials, authorization data, row-audit metadata, or soft-delete metadata.
+### REQ-GAM-LOCATION-014: Reusable physical or remote Event location
+
+A `GamLocation` shall represent an independently persisted, reusable location
+where a GAM Event may occur. Multiple Events may reference the same
+`GamLocation`, and a `GamLocation` may exist without an Event reference.
+
+Every ordinary user-managed GamLocation and every system GamLocation other
+than the Remote GamLocation shall represent a physical place. Exactly one
+non-physical GamLocation shall exist: the system-managed Remote GamLocation
+defined by `REQ-GAM-LOCATION-CATALOG-001`. It shall be identified by stable
+code `REMOTE`, not by its mutable name or by null inspection. No location-kind
+field shall be exposed.
+
+Every `GamLocation` shall use the UUID identity rules in `REQ-GAM-ID-001`
+through `REQ-GAM-ID-004` and expose exactly these fields:
+
+| Field | Meaning | Physical response | Remote response |
+| --- | --- | --- | --- |
+| `id` | Immutable UUID identity assigned by the system | Required | Required |
+| `code` | Immutable application-owned key for a system GamLocation; absent for an ordinary record | Nullable | `REMOTE` |
+| `systemManaged` | Whether the record belongs to the application-owned system catalog | Required | `true` |
+| `name` | Human-facing label by which GAM recognizes the location | Required | `Remoto` |
+| `street` | Complete address line below the city/state level | Nullable | `null` |
+| `city` | City or equivalent locality | Required | `null` |
+| `state` | First-level administrative division | Required | `null` |
+| `postalCode` | Country-specific postal code | Nullable | `null` |
+| `countryCode` | ISO 3166-1 alpha-2 country code | Required | `null` |
+| `latitude` | Geographic latitude | Nullable only as part of an absent coordinate pair | `null` |
+| `longitude` | Geographic longitude | Nullable only as part of an absent coordinate pair | `null` |
+
+Create, get, list, update, and embedded Event responses shall use this same
+representation. `code` and `systemManaged` are read-only ownership metadata
+governed by `REQ-GAM-LOCATION-CATALOG-002` through
+`REQ-GAM-LOCATION-CATALOG-004`. Responses shall not expose Events, meeting
+URLs, credentials, authorization data, row-audit metadata, or soft-delete
+metadata.
 
 Rationale:
-A stable shared record avoids repeating free-text addresses across Events while keeping the public representation small and consistent.
+A stable shared record avoids repeating free-text addresses across Events and
+allows all Events to retain one required GamLocation reference without
+inventing physical address data for remote attendance.
 
 Valid examples:
-- `Colégio Dom Bosco São Mário — Quadra` is a human-facing `name`.
-- An ordinary place response contains `code: null` and `systemManaged: false`.
-- A current catalog place response contains its accepted code and `systemManaged: true`.
+- `Colégio Dom Bosco São Mário — Quadra` is a human-facing physical `name`.
+- An ordinary physical response contains `code: null` and `systemManaged: false`.
+- A current physical catalog response contains its accepted code and `systemManaged: true`.
+- The Remote response contains `code: REMOTE`, `systemManaged: true`, `name: Remoto`, and null address and coordinate fields.
 - A `GamLocation` exists before any Event references it.
-- Several Events reference the same `GamLocation` UUID.
+- Several Events reference the same physical or Remote GamLocation UUID.
 
 Invalid examples:
+- A product request creates a second remote or addressless GamLocation.
 - An online meeting URL is persisted as a `GamLocation`.
 - An organization is treated as the place merely because it owns the venue.
-- A response embeds every Event that references the place.
+- A response embeds every Event that references the location.
 
 ---
 
 ### REQ-GAM-LOCATION-002: Text normalization and validation
 
-The system shall trim leading and trailing whitespace from every text field before validation and persistence. Required text that becomes blank shall be rejected.
+The system shall trim leading and trailing whitespace from every supplied text
+field before validation and persistence. Required physical-location text that
+becomes blank shall be rejected. The Remote GamLocation shall use its accepted
+catalog metadata rather than product-input validation.
 
 The text fields shall enforce these post-trimming lengths:
 
@@ -66,10 +98,10 @@ The text fields shall enforce these post-trimming lengths:
 | --- | --- |
 | `name` | 1 to 255 characters |
 | `street` | 1 to 255 characters when present |
-| `city` | 1 to 100 characters |
-| `state` | 1 to 50 characters |
+| `city` | 1 to 100 characters when required for a physical location |
+| `state` | 1 to 50 characters when required for a physical location |
 | `postalCode` | 1 to 20 characters when present |
-| `countryCode` | Exactly 2 letters before country-code validation |
+| `countryCode` | Exactly 2 letters before country-code validation when required for a physical location |
 
 `name`, `street`, `city`, `state`, and `postalCode` shall accept Unicode letters, numbers, spaces, and ordinary punctuation. They shall reject control characters and line breaks because they are single-line values.
 
@@ -94,7 +126,11 @@ Invalid examples:
 
 `state` shall mean the place's first-level administrative division and shall not be restricted to Brazilian state abbreviations. `postalCode`, when present, shall be treated as country-specific text without a universal format pattern.
 
-`countryCode` shall be a currently recognized ISO 3166-1 alpha-2 code. The system shall accept letter case without distinction, normalize the stored and returned value to uppercase, and reject alpha-3 codes, country names, invented codes, or non-letter values.
+For every physical GamLocation, `countryCode` shall be a currently recognized
+ISO 3166-1 alpha-2 code. The system shall accept letter case without
+distinction, normalize the stored and returned value to uppercase, and reject
+alpha-3 codes, country names, invented codes, or non-letter values. The Remote
+GamLocation shall have `countryCode: null` under `REQ-GAM-LOCATION-014`.
 
 Rationale:
 The address model must support GAM activity outside Brazil while giving `countryCode` one interoperable meaning.
@@ -149,7 +185,7 @@ The system shall expose these operations:
 
 The legacy `/locations` route and legacy Location schema or operation names shall not remain as aliases, redirects, or compatibility contracts.
 
-Create and update request bodies may contain only the eight mutable fields from `REQ-GAM-LOCATION-001` and shall reject an `id` or any other unknown property with `400 Bad Request`. The removal body may contain only `reason` and shall reject unknown properties.
+Create and update request bodies may contain only the eight mutable physical-location fields from `REQ-GAM-LOCATION-014` and shall reject an `id` or any other unknown property with `400 Bad Request`. The removal body may contain only `reason` and shall reject unknown properties.
 
 Rationale:
 The canonical `GamLocation` pattern must be consistent across domain language, API paths, OpenAPI schemas, operation IDs, code, tests, and handoffs. GAM is pre-production, so unreleased compatibility layers are unnecessary.
@@ -160,7 +196,7 @@ The canonical `GamLocation` pattern must be consistent across domain language, A
 
 `POST /gam-locations` shall require `name`, `city`, `state`, and `countryCode`. The other mutable fields are optional under their owning rules.
 
-The system shall fully validate and normalize the request before duplicate detection. A valid nonduplicate request shall create one active `GamLocation` with a new UUID v7, return `201 Created`, set the HTTP `Location` header to the complete public API path `/api/gam-locations/{id}`, and return the complete representation from `REQ-GAM-LOCATION-001`.
+The system shall fully validate and normalize the request before duplicate detection. A valid nonduplicate request shall create one active physical `GamLocation` with a new UUID v7, return `201 Created`, set the HTTP `Location` header to the complete public API path `/api/gam-locations/{id}`, and return the complete representation from `REQ-GAM-LOCATION-014`.
 
 Any validation failure shall return `400 Bad Request` and persist nothing. Duplicate conflicts are governed by `REQ-GAM-LOCATION-007`.
 
@@ -197,7 +233,16 @@ GAM needs one active shared record for the same named address while preserving l
 
 `GET /gam-locations/{id}` shall return `200 OK` and the complete active record when it is eligible for ordinary visibility. A missing, soft-deleted, or retired system UUID shall return `404 Not Found` with `code: RESOURCE_NOT_FOUND`, `details.resource: GamLocation`, and the requested UUID as `details.identifier`.
 
-`GET /gam-locations` shall return only active ordinary records and current system records in the GAM-owned paged envelope defined by `REQ-OPENAPI-007`. Retired system records shall remain excluded under `REQ-GAM-LOCATION-CATALOG-003`. The endpoint shall allow sorting by `name`, `city`, `state`, and `countryCode`. With no requested sort, results shall order by `name` ascending and then UUID ascending as a deterministic internal tie-breaker. UUID need not be a client-selectable sort field.
+`GET /gam-locations` shall return only active ordinary records and current
+system records, including the Remote GamLocation, in the GAM-owned paged
+envelope defined by `REQ-OPENAPI-007`. Retired system records shall remain
+excluded under `REQ-GAM-LOCATION-CATALOG-003`. The endpoint shall allow sorting
+by `name`, `city`, `state`, and `countryCode`. When sorting by `city`, `state`,
+or `countryCode`, null values shall sort after non-null physical values in both
+ascending and descending directions. Equal and null primary sort values shall
+use `name` ascending and then UUID ascending as deterministic internal
+tie-breakers. With no requested sort, results shall order by `name` ascending
+and then UUID ascending. UUID need not be a client-selectable sort field.
 
 Filtering, text search, proximity search, bounding-box search, and Event-based filtering shall not be added to this endpoint by this specification.
 
@@ -305,6 +350,20 @@ Scenario: Create a normalized GamLocation
   And the complete response contains trimmed text and countryCode "BR"
   And the identifier is UUID v7
 
+Scenario: Discover the singleton Remote GamLocation
+  Given the system GamLocation catalog is current
+  And the caller has GAM_LOCATION_GET
+  When the caller lists GamLocations
+  Then exactly one record has code REMOTE and name "Remoto"
+  And that record has systemManaged true
+  And its street, city, state, postalCode, countryCode, latitude, and longitude are null
+
+Scenario: Address sorting places Remote after physical locations
+  Given physical GamLocations and the Remote GamLocation exist
+  When the caller lists GamLocations sorted by city, state, or countryCode
+  Then physical non-null values follow the requested direction
+  And the Remote GamLocation appears after every physical value
+
 Scenario: Reject invalid coordinates
   Given an otherwise valid create request
   When latitude is supplied without longitude
@@ -403,7 +462,8 @@ flowchart TD
 
 ## Out of scope
 
-* Online venues and meeting URLs.
+* Meeting URLs, remote providers, and provider-specific online venues.
+* User-managed remote or addressless GamLocations.
 * Temporary free-text Event addresses.
 * Organization or venue-owner records.
 * Separate neighborhood, building number, complement, or address-line fields.
@@ -427,6 +487,7 @@ flowchart TD
 
 * [ADR-0009: Enforce Active GamLocation Duplicate Identity in Persistence](../../decisions/0009-enforce-active-gam-location-duplicate-identity-in-persistence.md)
 * [ADR-0010: Serialize GamLocation Mutation and Event Linking](../../decisions/0010-serialize-gam-location-mutation-and-event-linking.md)
+* [ADR-0031: Model remote attendance as a single system GamLocation](../../decisions/0031-model-remote-attendance-as-a-single-system-gam-location.md)
 
 ## Related videos
 
