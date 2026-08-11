@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,6 +38,31 @@ def read(relative_path: str) -> str:
 
 def load_yaml(relative_path: str):
     return yaml.safe_load(read(relative_path))
+
+
+def bash_executable() -> str:
+    """Resolve Bash from the active runner instead of a workstation path."""
+
+    candidates = []
+    git_executable = shutil.which("git")
+    if git_executable:
+        candidates.append(
+            Path(git_executable).parent.parent
+            / "bin"
+            / ("bash.exe" if os.name == "nt" else "bash")
+        )
+
+    path_bash = shutil.which("bash")
+    if path_bash:
+        candidates.append(Path(path_bash))
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+
+    raise AssertionError(
+        "Bash is required for executable recovery-script contract validation"
+    )
 
 
 def recovery_lifecycle_rule(classification: str, *, valid: bool = True) -> dict:
@@ -356,8 +382,7 @@ class ProductionBackupAwsContractTest(unittest.TestCase):
         isolation_start = restore.index("export RESTORE_PUBLIC_INTERFACE")
         isolation_end = restore.index("umask 077", isolation_start)
         isolation_contract = restore[isolation_start:isolation_end]
-        git_bash = Path(r"C:\Program Files\Git\bin\bash.exe")
-        self.assertTrue(git_bash.is_file(), "Git Bash is required for executable firewall-contract validation")
+        git_bash = bash_executable()
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -392,7 +417,7 @@ class ProductionBackupAwsContractTest(unittest.TestCase):
                 }
             )
             result = subprocess.run(
-                [str(git_bash), "-Eeuo", "pipefail", "-c", isolation_contract],
+                [git_bash, "-Eeuo", "pipefail", "-c", isolation_contract],
                 cwd=ROOT,
                 env=environment,
                 capture_output=True,
@@ -428,8 +453,7 @@ class ProductionBackupAwsContractTest(unittest.TestCase):
                     self.assertNotIn("22", arguments, "operator SSH access must remain available during restoration")
 
     def test_restore_cleanup_continues_after_dropdb_failure_before_shredding(self):
-        git_bash = Path(r"C:\Program Files\Git\bin\bash.exe")
-        self.assertTrue(git_bash.is_file(), "the safe Git Bash runtime is required for the restore failure-path test")
+        git_bash = bash_executable()
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
@@ -535,7 +559,7 @@ exit 0
             )
 
             result = subprocess.run(
-                [str(git_bash), "operations/recovery/restore/restore.sh"],
+                [git_bash, "operations/recovery/restore/restore.sh"],
                 cwd=ROOT,
                 env=environment,
                 capture_output=True,
@@ -553,8 +577,7 @@ exit 0
             self.assertNotIn("isolated restoration verified", result.stdout)
 
     def test_restore_success_becomes_failure_when_exit_trap_cleanup_fails(self):
-        git_bash = Path(r"C:\Program Files\Git\bin\bash.exe")
-        self.assertTrue(git_bash.is_file(), "Git Bash is required for executable EXIT-trap validation")
+        git_bash = bash_executable()
 
         restore = read("operations/recovery/restore/restore.sh")
         cleanup_start = restore.index("cleanup()")
@@ -627,7 +650,7 @@ exit 0
             )
 
             result = subprocess.run(
-                [str(git_bash), str(harness)],
+                [git_bash, str(harness)],
                 cwd=ROOT,
                 capture_output=True,
                 text=True,
@@ -658,8 +681,7 @@ exit 0
                 )
 
     def test_restore_cleanup_bounds_stalled_dropdb_then_destroys_plaintext_and_removes_isolation(self):
-        git_bash = Path(r"C:\Program Files\Git\bin\bash.exe")
-        self.assertTrue(git_bash.is_file(), "Git Bash is required for executable cleanup validation")
+        git_bash = bash_executable()
 
         restore = read("operations/recovery/restore/restore.sh")
         cleanup_start = restore.index("cleanup()")
@@ -778,7 +800,7 @@ exit 0
             )
 
             result = subprocess.run(
-                [str(git_bash), str(harness)],
+                [git_bash, str(harness)],
                 cwd=ROOT,
                 capture_output=True,
                 text=True,
@@ -806,8 +828,7 @@ exit 0
             )
 
     def test_restore_finalizes_success_evidence_atomically_only_after_exit_cleanup_succeeds(self):
-        git_bash = Path(r"C:\Program Files\Git\bin\bash.exe")
-        self.assertTrue(git_bash.is_file(), "Git Bash is required for executable evidence-finalization validation")
+        git_bash = bash_executable()
 
         restore = read("operations/recovery/restore/restore.sh")
         verification = read("operations/recovery/verify-restoration/verify-restoration.sh")
@@ -927,7 +948,7 @@ exit 0
             )
 
             result = subprocess.run(
-                [str(git_bash), str(harness)],
+                [git_bash, str(harness)],
                 cwd=ROOT,
                 capture_output=True,
                 text=True,
@@ -1231,12 +1252,11 @@ exit 0
         reason_gate_start = verification.index('case "$RESTORATION_REASON" in')
         reason_gate_end = verification.index("POSTGRESQL_VERSION=", reason_gate_start)
         reason_gate = verification[reason_gate_start:reason_gate_end]
-        git_bash = Path(r"C:\Program Files\Git\bin\bash.exe")
-        self.assertTrue(git_bash.is_file(), "Git Bash is required for executable restoration-reason validation")
+        git_bash = bash_executable()
 
         result = subprocess.run(
             [
-                str(git_bash),
+                git_bash,
                 "-Eeuo",
                 "pipefail",
                 "-c",
@@ -1256,7 +1276,7 @@ exit 0
         )
         self.assertIn("reason-accepted", result.stdout)
 
-    def test_public_health_contract_is_unauthenticated_and_returns_exact_up_body(self):
+    def test_backend_health_contract_is_unauthenticated_and_returns_exact_up_body(self):
         java_sources = [
             path.read_text(encoding="utf-8")
             for path in (ROOT / "src" / "main" / "java").rglob("*.java")
@@ -1264,25 +1284,34 @@ exit 0
         health_routes = [
             source
             for source in java_sources
-            if re.search(r'@RequestMapping\(\s*["\']/api/health["\']', source)
+            if re.search(r'@RequestMapping\(\s*["\']/health["\']', source)
             and re.search(r"@GetMapping\b", source)
         ]
         self.assertTrue(
             health_routes,
-            "production must expose a GET /api/health route for external availability monitoring",
+            "the backend must expose GET /health after the proxy removes exactly one public /api prefix",
+        )
+        self.assertFalse(
+            any(re.search(r'@RequestMapping\(\s*["\']/api/health["\']', source) for source in java_sources),
+            "REQ-WEB-014 forbids a duplicate backend /api/health controller alias",
         )
         normalized_health_sources = re.sub(r"\s+", "", "".join(health_routes))
         self.assertIn(
             '{"status":"UP"}',
             normalized_health_sources.replace('\\"', '"'),
-            "the public health route must return the exact healthy response body",
+            "the backend readiness route must return the exact healthy response body forwarded publicly",
         )
 
         security = re.sub(r"\s+", "", read("src/main/java/br/org/gam/api/security/SecurityConfig.java"))
         self.assertIn(
+            '.requestMatchers(HttpMethod.GET,"/health").permitAll()',
+            security,
+            "backend GET /health must be explicitly unauthenticated for the public proxy route",
+        )
+        self.assertNotIn(
             '.requestMatchers(HttpMethod.GET,"/api/health").permitAll()',
             security,
-            "GET /api/health must be explicitly unauthenticated rather than falling through to authenticated requests",
+            "security configuration must not preserve the removed backend /api/health alias",
         )
 
     def test_sampled_attachment_bytes_are_compared_with_stored_sha256_values(self):
@@ -3102,6 +3131,66 @@ exit 0
             "collector deployment must retain the dedicated COLLECTOR_SECRET installation",
         )
 
+    def test_new_better_stack_collector_is_metrics_only_before_docker_startup(self):
+        """Clean-state creation must disable broad telemetry before the secret starts Docker."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        create_index, create_task = next(
+            (
+                (index, task)
+                for index, task in enumerate(tasks)
+                if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
+                and str(module_payload(task, "ansible.builtin.uri", "uri").get("method", "")).upper() == "POST"
+                and re.search(
+                    r"/api/v1/collectors$",
+                    str(module_payload(task, "ansible.builtin.uri", "uri").get("url", "")),
+                )
+            ),
+            (None, None),
+        )
+        install_index, _ = next(
+            (
+                (index, task)
+                for index, task in enumerate(tasks)
+                if task.get("name") == "Run the official Better Stack collector Docker Compose deployment"
+            ),
+            (None, None),
+        )
+
+        self.assertIsNotNone(create_task, "clean-state provisioning must create the provider collector")
+        self.assertIsNotNone(install_index, "clean-state provisioning must retain the supported Docker installer")
+        self.assertLess(
+            create_index,
+            install_index,
+            "provider collector creation and its metrics-only policy must precede Docker startup",
+        )
+
+        create_payload = module_payload(create_task, "ansible.builtin.uri", "uri")
+        components = create_payload.get("body", {}).get("configuration", {}).get("components", {})
+        disabled_components = {
+            "logs_docker",
+            "logs_host",
+            "logs_kubernetes",
+            "logs_collector_internals",
+            "ebpf_tracing_basic",
+            "ebpf_tracing_full",
+            "traces_opentelemetry",
+        }
+        metrics_components = {"ebpf_metrics", "ebpf_red_metrics", "metrics_databases"}
+        violations = []
+        for component in sorted(disabled_components):
+            if components.get(component) is not False:
+                violations.append(f"collector POST must set {component}=false before startup")
+        for component in sorted(metrics_components):
+            if components.get(component) is not True:
+                violations.append(f"collector POST must set {component}=true before startup")
+
+        self.assertEqual(
+            [],
+            violations,
+            "Better Stack initial metrics-only collector violations: " + "; ".join(violations),
+        )
+
     def test_better_stack_availability_and_tls_checks_are_registered_externally(self):
         tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
         registrations = [
@@ -3171,19 +3260,42 @@ exit 0
         tls = next(body for body in registrations if body.get("body", {}).get("monitor_type") == "status")
         self.assertEqual(3600, tls["body"]["check_frequency"])
 
-    def test_better_stack_collector_secret_is_preflighted_and_bound_to_persistent_service(self):
-        site_tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
-        assert_payloads = [
-            module_payload(task, "ansible.builtin.assert", "assert")
-            for task in site_tasks
-            if isinstance(module_payload(task, "ansible.builtin.assert", "assert"), dict)
+    def test_better_stack_collector_secret_is_gated_after_creation_and_bound_to_persistent_service(self):
+        site = load_yaml("operations/ansible/site.yml")
+        site_tasks = list(task_nodes(site))
+        production_play = next(
+            play
+            for play in site
+            if isinstance(play, dict)
+            and play.get("name") == "Provision GAM production backup, recovery, AWS, and monitoring behavior"
+        )
+        global_preflight = "\n".join(task_text(task) for task in production_play.get("pre_tasks", []))
+        self.assertNotIn(
+            "better_stack_collector_secret",
+            global_preflight,
+            "clean-provider commissioning must reach collector discovery and POST before the generated secret can enter external custody",
+        )
+
+        create_index = next(
+            index
+            for index, task in enumerate(site_tasks)
+            if task.get("register") == "better_stack_collector_created"
+        )
+        install_index = next(
+            index
+            for index, task in enumerate(site_tasks)
+            if task.get("name") == "Run the official Better Stack collector Docker Compose deployment"
+        )
+        custody_gates = [
+            task
+            for task in site_tasks[create_index + 1 : install_index]
+            if module_payload(task, "ansible.builtin.fail", "fail", "ansible.builtin.assert", "assert") is not None
+            and "BETTER_STACK_COLLECTOR_SECRET" in task_text(task)
+            and "better_stack_collector_created" in task_text(task)
         ]
         self.assertTrue(
-            any(
-                any("better_stack_collector_secret | length > 0" in str(condition) for condition in payload.get("that", []))
-                for payload in assert_payloads
-            ),
-            "Better Stack metrics credentials must be required by deployment preflight",
+            custody_gates,
+            "new collector creation must stop before Docker startup for external secret custody and replay",
         )
 
         self.assertTrue(
@@ -3292,6 +3404,828 @@ exit 0
             self.assertIn("selectattr('attributes.pronounceable_name'", duplicate_guard)
             self.assertNotIn("selectattr('pronounceable_name'", duplicate_guard)
             self.assertIn(provider_name, duplicate_guard)
+
+    def test_better_stack_provider_resource_ids_are_discovered_instead_of_supplied(self):
+        """Provider-created identities must come from API responses, never operator inputs."""
+
+        variables = load_yaml("operations/ansible/group_vars/production.yml")
+        site = load_yaml("operations/ansible/site.yml")
+        tasks = list(task_nodes(site))
+        provider_identifiers = {
+            "better_stack_collector_id": "BETTER_STACK_COLLECTOR_ID",
+            "better_stack_dashboard_id": "BETTER_STACK_DASHBOARD_ID",
+            "better_stack_proxy_chart_id": "BETTER_STACK_PROXY_CHART_ID",
+            "better_stack_backend_chart_id": "BETTER_STACK_BACKEND_CHART_ID",
+            "better_stack_postgresql_chart_id": "BETTER_STACK_POSTGRESQL_CHART_ID",
+            "better_stack_filesystem_chart_id": "BETTER_STACK_FILESYSTEM_CHART_ID",
+        }
+
+        production_play = next(
+            play
+            for play in site
+            if isinstance(play, dict)
+            and play.get("name") == "Provision GAM production backup, recovery, AWS, and monitoring behavior"
+        )
+        preflight_text = "\n".join(task_text(task) for task in production_play.get("pre_tasks", []))
+        fact_tasks = [
+            task
+            for task in tasks
+            if isinstance(module_payload(task, "ansible.builtin.set_fact", "set_fact"), dict)
+        ]
+
+        violations = []
+        for identifier, environment_name in provider_identifiers.items():
+            declaration = str(variables.get(identifier, ""))
+            if environment_name in declaration:
+                violations.append(f"{identifier} must not be read from {environment_name}")
+            if identifier in preflight_text:
+                violations.append(f"{identifier} must not be a production preflight prerequisite")
+
+            assignments = [
+                module_payload(task, "ansible.builtin.set_fact", "set_fact")[identifier]
+                for task in fact_tasks
+                if identifier in module_payload(task, "ansible.builtin.set_fact", "set_fact")
+            ]
+            if not assignments:
+                violations.append(f"{identifier} must be selected from Better Stack provider state")
+                continue
+            assignment_text = "\n".join(str(assignment) for assignment in assignments)
+            if "id" not in assignment_text.casefold() or not any(
+                signal in assignment_text
+                for signal in (".json.data", "['data']", '["data"]')
+            ):
+                violations.append(f"{identifier} must derive from a provider response data.id")
+
+        self.assertEqual([], violations, "Better Stack resource identity violations: " + "; ".join(violations))
+
+        self.assertIn("BETTER_STACK_API_TOKEN", str(variables.get("better_stack_api_token", "")))
+        self.assertIn("BETTER_STACK_COLLECTOR_SECRET", str(variables.get("better_stack_collector_secret", "")))
+
+    def test_new_better_stack_collector_requires_external_secret_custody_before_startup(self):
+        """Clean-state creation must stop for approved secret custody before Docker starts."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        create_index, collector_create = next(
+            (
+                (index, task)
+                for index, task in enumerate(tasks)
+                if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
+                and str(module_payload(task, "ansible.builtin.uri", "uri").get("method", "")).upper() == "POST"
+                and re.search(
+                    r"/api/v1/collectors$",
+                    str(module_payload(task, "ansible.builtin.uri", "uri").get("url", "")),
+                )
+            ),
+            (None, None),
+        )
+        self.assertIsNotNone(collector_create, "clean-state provisioning must create the provider collector")
+        create_register = str(collector_create.get("register", "")).strip()
+
+        install_index, install_task = next(
+            (
+                (index, task)
+                for index, task in enumerate(tasks)
+                if task.get("name") == "Run the official Better Stack collector Docker Compose deployment"
+            ),
+            (None, None),
+        )
+        self.assertIsNotNone(install_task, "the supported Better Stack collector installer must remain exercised")
+
+        violations = []
+        if not create_register:
+            violations.append("collector creation must register whether a new provider resource was created")
+        if collector_create.get("no_log") is not True:
+            violations.append("collector creation must suppress its provider-generated secret")
+
+        transient_secret_uses = [
+            task.get("name", "<unnamed>")
+            for task in tasks
+            if create_register
+            and create_register in task_text(task)
+            and "json.data.attributes.secret" in task_text(task)
+        ]
+        if transient_secret_uses:
+            violations.append(
+                "collector creation response secret must not bypass approved external custody: "
+                + ", ".join(transient_secret_uses)
+            )
+
+        custody_gates = []
+        if create_register and create_index is not None and install_index is not None:
+            for task in tasks[create_index + 1 : install_index]:
+                gate_payload = module_payload(task, "ansible.builtin.fail", "fail", "ansible.builtin.assert", "assert")
+                if gate_payload is None:
+                    continue
+                gate_text = task_text(task)
+                if create_register in gate_text and "BETTER_STACK_COLLECTOR_SECRET" in gate_text:
+                    custody_gates.append(task)
+        if not custody_gates:
+            violations.append(
+                "a newly created collector must stop before Docker startup and require external BETTER_STACK_COLLECTOR_SECRET custody plus replay"
+            )
+        elif not any(
+            all(signal in task_text(task).casefold() for signal in ("custody", "rerun"))
+            for task in custody_gates
+        ):
+            violations.append("the clean-state stop must explain approved secret custody and rerun")
+
+        install_environment = install_task.get("environment", {}) if install_task else {}
+        installed_secret = str(install_environment.get("COLLECTOR_SECRET", ""))
+        if "better_stack_collector_secret" not in installed_secret:
+            violations.append(
+                "collector startup must consume the dedicated secret restored from approved external custody"
+            )
+        if (
+            create_register
+            and create_register in installed_secret
+            or "json.data.attributes.secret" in installed_secret
+        ):
+            violations.append("collector startup must not consume a transient provider creation response")
+        if install_task and install_task.get("no_log") is not True:
+            violations.append("collector installation must suppress the externally supplied collector secret")
+
+        self.assertEqual(
+            [],
+            violations,
+            "Better Stack collector external-custody violations: " + "; ".join(violations),
+        )
+
+    def test_better_stack_named_resource_discovery_cannot_stop_at_the_first_provider_page(self):
+        """Stable-name discovery must use documented filters or consume every provider page."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        indexed_uri_tasks = [
+            (index, task, module_payload(task, "ansible.builtin.uri", "uri"))
+            for index, task in enumerate(tasks)
+            if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
+        ]
+
+        violations = []
+
+        filtered_contracts = (
+            (
+                "collector",
+                r"/api/v1/collectors(?:\?|$)",
+                "name",
+                ("Discover Better Stack collectors", "Read back Better Stack collectors"),
+            ),
+            (
+                "dashboard",
+                r"/api/v2/dashboards(?:\?|$)",
+                "query",
+                ("Discover Better Stack dashboards", "Read back Better Stack dashboards"),
+            ),
+            (
+                "monitor",
+                r"(?:/api/v2)?/monitors(?:\?|$)",
+                "pronounceable_name",
+                ("Read existing Better Stack monitors", "Read back Better Stack monitors"),
+            ),
+        )
+        for resource, endpoint, filter_name, expected_names in filtered_contracts:
+            requests = [
+                task
+                for _, task, payload in indexed_uri_tasks
+                if str(payload.get("method", "")).upper() == "GET"
+                and re.search(endpoint, str(payload.get("url", "")))
+                and any(name in str(task.get("name", "")) for name in expected_names)
+            ]
+            if len(requests) != len(expected_names):
+                violations.append(
+                    f"{resource} discovery/readback must retain both provider list boundaries"
+                )
+                continue
+            for request in requests:
+                url = str(module_payload(request, "ansible.builtin.uri", "uri").get("url", ""))
+                if re.search(rf"[?&]{filter_name}=", url) is None:
+                    violations.append(
+                        f"{request.get('name')} must use Better Stack's supported {filter_name} filter instead of one unbounded page"
+                    )
+
+            if resource == "monitor":
+                monitor_request_text = "\n".join(task_text(task).casefold() for task in requests)
+                for stable_name in ("gam production availability", "gam production tls certificate"):
+                    if stable_name not in monitor_request_text:
+                        violations.append(
+                            f"monitor filtering must query the stable provider name {stable_name!r}"
+                        )
+
+        alert_boundaries = [
+            (index, task, payload)
+            for index, task, payload in indexed_uri_tasks
+            if str(payload.get("method", "")).upper() == "GET"
+            and re.search(r"/api/v2/alerts(?:\?|$)", str(payload.get("url", "")))
+            and str(task.get("name", ""))
+            in {
+                "Read existing Better Stack dashboard alerts",
+                "Read back Better Stack dashboard alerts",
+            }
+        ]
+        if len(alert_boundaries) != 2:
+            violations.append("alert discovery/readback must retain both provider list boundaries")
+
+        for boundary_index, boundary_task, boundary_payload in alert_boundaries:
+            register = str(boundary_task.get("register", "")).strip()
+            page_followups = [
+                task
+                for index, task, payload in indexed_uri_tasks
+                if index > boundary_index
+                and str(payload.get("method", "")).upper() == "GET"
+                and re.search(r"/api/v2/alerts(?:\?|$)", str(payload.get("url", "")))
+                and register
+                and register in task_text(task)
+                and "pagination" in task_text(task)
+                and any(signal in task_text(task) for signal in (".next", ".last"))
+            ]
+            if not page_followups:
+                violations.append(
+                    f"{boundary_task.get('name')} must traverse the provider pagination links beyond page one"
+                )
+                continue
+
+            followup_registers = [
+                str(task.get("register", "")).strip()
+                for task in page_followups
+                if str(task.get("register", "")).strip()
+            ]
+            later_text = "\n".join(task_text(task) for task in tasks[boundary_index + 1 :])
+            if not any(
+                followup_register in later_text
+                and ".results" in later_text
+                and ".json.data" in later_text
+                for followup_register in followup_registers
+            ):
+                violations.append(
+                    f"{boundary_task.get('name')} must merge subsequent-page data into discovery and verification decisions"
+                )
+
+        self.assertEqual(
+            [],
+            violations,
+            "Better Stack provider discovery completeness violations: " + "; ".join(violations),
+        )
+
+    def test_better_stack_metric_target_discovery_consumes_every_provider_page(self):
+        """Targets beyond page one must participate in creation, drift, and final verification."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        indexed_uri_tasks = [
+            (index, task, module_payload(task, "ansible.builtin.uri", "uri"))
+            for index, task in enumerate(tasks)
+            if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
+        ]
+        boundaries = [
+            (index, task)
+            for index, task, payload in indexed_uri_tasks
+            if str(payload.get("method", "")).upper() == "GET"
+            and re.search(r"/api/v1/collectors/[^/]+/targets(?:\?|$)", str(payload.get("url", "")))
+            and task.get("register")
+            in {
+                "better_stack_existing_collector_targets",
+                "better_stack_collector_targets_readback",
+            }
+        ]
+        self.assertEqual(
+            2,
+            len(boundaries),
+            "target discovery and final readback must retain separate provider list boundaries",
+        )
+
+        violations = []
+        for boundary_index, boundary_task in boundaries:
+            boundary_register = str(boundary_task.get("register", ""))
+            page_followups = [
+                task
+                for index, task, payload in indexed_uri_tasks
+                if index > boundary_index
+                and str(payload.get("method", "")).upper() == "GET"
+                and re.search(r"/api/v1/collectors/[^/]+/targets(?:\?|$)", str(payload.get("url", "")))
+                and boundary_register in task_text(task)
+                and "pagination" in task_text(task)
+                and any(signal in task_text(task) for signal in (".next", ".last"))
+            ]
+            if not page_followups:
+                violations.append(
+                    f"{boundary_task.get('name')} must traverse target pages beyond the first provider response"
+                )
+                continue
+
+            followup_registers = [
+                str(task.get("register", "")).strip()
+                for task in page_followups
+                if str(task.get("register", "")).strip()
+            ]
+            later_text = "\n".join(task_text(task) for task in tasks[boundary_index + 1 :])
+            if not any(
+                followup_register in later_text
+                and ".results" in later_text
+                and ".json.data" in later_text
+                for followup_register in followup_registers
+            ):
+                violations.append(
+                    f"{boundary_task.get('name')} must merge subsequent target pages into provider decisions"
+                )
+
+        self.assertEqual(
+            [],
+            violations,
+            "Better Stack metric-target pagination violations: " + "; ".join(violations),
+        )
+
+    def test_better_stack_chart_discovery_consumes_every_provider_page(self):
+        """Charts beyond page one must participate in creation, selection, and final verification."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        indexed_uri_tasks = [
+            (index, task, module_payload(task, "ansible.builtin.uri", "uri"))
+            for index, task in enumerate(tasks)
+            if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
+        ]
+        chart_registers = {
+            "better_stack_existing_charts",
+            "better_stack_charts_readback",
+            "better_stack_charts_final_readback",
+        }
+        boundaries = [
+            (index, task)
+            for index, task, payload in indexed_uri_tasks
+            if str(payload.get("method", "")).upper() == "GET"
+            and re.search(
+                r"/api/v2/dashboards/[^/]+/charts(?:\?|$)",
+                str(payload.get("url", "")),
+            )
+            and task.get("register") in chart_registers
+        ]
+        self.assertEqual(
+            3,
+            len(boundaries),
+            "chart discovery, post-create selection, and final verification must retain distinct provider boundaries",
+        )
+
+        violations = []
+        for boundary_index, boundary_task in boundaries:
+            boundary_register = str(boundary_task.get("register", ""))
+            page_followups = [
+                task
+                for index, task, payload in indexed_uri_tasks
+                if index > boundary_index
+                and str(payload.get("method", "")).upper() == "GET"
+                and re.search(
+                    r"/api/v2/dashboards/[^/]+/charts(?:\?|$)",
+                    str(payload.get("url", "")),
+                )
+                and boundary_register in task_text(task)
+                and "pagination" in task_text(task)
+                and any(signal in task_text(task) for signal in (".next", ".last"))
+            ]
+            if not page_followups:
+                violations.append(
+                    f"{boundary_task.get('name')} must traverse chart pages beyond the first provider response"
+                )
+                continue
+
+            followup_registers = [
+                str(task.get("register", "")).strip()
+                for task in page_followups
+                if str(task.get("register", "")).strip()
+            ]
+            later_text = "\n".join(task_text(task) for task in tasks[boundary_index + 1 :])
+            if not any(
+                followup_register in later_text
+                and ".results" in later_text
+                and ".json.data" in later_text
+                for followup_register in followup_registers
+            ):
+                violations.append(
+                    f"{boundary_task.get('name')} must merge subsequent chart pages into provider decisions"
+                )
+
+        self.assertEqual(
+            [],
+            violations,
+            "Better Stack chart pagination violations: " + "; ".join(violations),
+        )
+
+    def test_better_stack_final_alert_readback_rejects_duplicate_provider_resources(self):
+        """Final acceptance must require exactly one provider alert for every declared identity."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        alert_assertion = next(
+            (
+                task
+                for task in tasks
+                if task.get("name")
+                == "Verify Better Stack service and filesystem alerts are provider-side resources"
+                and isinstance(module_payload(task, "ansible.builtin.assert", "assert"), dict)
+            ),
+            None,
+        )
+        self.assertIsNotNone(alert_assertion, "dashboard alerts must retain fail-closed provider readback")
+        conditions = [
+            str(condition)
+            for condition in module_payload(alert_assertion, "ansible.builtin.assert", "assert").get("that", [])
+        ]
+        declared_names = (
+            "GAM proxy service unhealthy",
+            "GAM backend service unhealthy",
+            "GAM postgresql service unhealthy",
+            "GAM filesystem usage warning",
+            "GAM filesystem usage critical",
+        )
+        violations = []
+        for name in declared_names:
+            matching_conditions = [condition for condition in conditions if name in condition]
+            if len(matching_conditions) != 1:
+                violations.append(f"final readback must have one unambiguous assertion for {name}")
+                continue
+            if re.search(r"list\s*\|\s*length\s*==\s*1", matching_conditions[0]) is None:
+                violations.append(f"final readback must reject duplicate provider alerts named {name}")
+
+        self.assertEqual(
+            [],
+            violations,
+            "Better Stack dashboard-alert duplicate-state violations: " + "; ".join(violations),
+        )
+
+    def test_better_stack_dashboard_duplicates_fail_before_provider_id_selection(self):
+        """Two exact-name dashboards must stop provisioning before either ID can be selected."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        readback_index = next(
+            (
+                index
+                for index, task in enumerate(tasks)
+                if task.get("register") == "better_stack_dashboards_readback"
+            ),
+            None,
+        )
+        selection_index = next(
+            (
+                index
+                for index, task in enumerate(tasks)
+                if isinstance(module_payload(task, "ansible.builtin.set_fact", "set_fact"), dict)
+                and "better_stack_dashboard_id"
+                in module_payload(task, "ansible.builtin.set_fact", "set_fact")
+            ),
+            None,
+        )
+        self.assertIsNotNone(readback_index, "dashboard candidates must be read from the provider")
+        self.assertIsNotNone(selection_index, "one validated dashboard ID must eventually be selected")
+        self.assertLess(readback_index, selection_index)
+
+        preselection_tasks = tasks[readback_index + 1 : selection_index]
+        preselection_text = "\n".join(task_text(task) for task in preselection_tasks)
+        duplicate_guards = [
+            task
+            for task in preselection_tasks
+            if isinstance(module_payload(task, "ansible.builtin.assert", "assert"), dict)
+            and re.search(r"length\s*==\s*1", task_text(task))
+        ]
+        violations = []
+        if not duplicate_guards:
+            violations.append("exactly one dashboard match must be asserted before selecting data.id")
+        if not (
+            "better_stack_dashboards_readback" in preselection_text
+            and "selectattr('attributes.name', 'equalto', better_stack_dashboard_name)" in preselection_text
+        ):
+            violations.append("the preselection gate must count exact-name matches from provider readback")
+
+        self.assertEqual(
+            [],
+            violations,
+            "Better Stack dashboard duplicate-state violations: " + "; ".join(violations),
+        )
+
+    def test_better_stack_final_readback_verifies_enabled_metrics_and_chart_contracts(self):
+        """Final acceptance must prove complete collector and chart provider configuration."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        collector_assertion = next(
+            (
+                task
+                for task in tasks
+                if task.get("name") == "Verify the Better Stack collector remains metrics-only"
+                and isinstance(module_payload(task, "ansible.builtin.assert", "assert"), dict)
+            ),
+            None,
+        )
+        chart_assertion = next(
+            (
+                task
+                for task in tasks
+                if task.get("name") == "Verify Better Stack production chart provider state"
+                and isinstance(module_payload(task, "ansible.builtin.assert", "assert"), dict)
+            ),
+            None,
+        )
+        self.assertIsNotNone(collector_assertion, "collector configuration must retain fail-closed readback")
+        self.assertIsNotNone(chart_assertion, "chart configuration must retain fail-closed readback")
+
+        collector_text = task_text(collector_assertion)
+        chart_text = task_text(chart_assertion)
+        violations = []
+        for component in ("ebpf_metrics", "ebpf_red_metrics", "metrics_databases"):
+            if re.search(
+                rf"components\.{component}[^\n]*is\s+sameas\s+true",
+                collector_text,
+            ) is None:
+                violations.append(f"collector readback must verify enabled {component}=true")
+
+        for field in (
+            "attributes.chart_type",
+            "attributes.queries",
+            "query_type",
+            "source_variable",
+            "sql_query",
+        ):
+            if field not in chart_text:
+                violations.append(f"chart readback must verify {field}")
+        if not (
+            len(re.findall(r"list\s*\|\s*length\s*==\s*1", chart_text)) >= 4
+            or "better_stack_chart_contracts" in chart_text
+        ):
+            violations.append("chart readback must apply the complete contract to all four named charts")
+
+        self.assertEqual(
+            [],
+            violations,
+            "Better Stack final provider-readback violations: " + "; ".join(violations),
+        )
+
+    def test_better_stack_clean_provider_state_creates_every_named_resource(self):
+        """A clean Better Stack team must be commissionable without manually copied IDs."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        uri_tasks = [
+            task
+            for task in tasks
+            if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
+        ]
+
+        def matching_requests(method: str, predicate) -> list[dict]:
+            return [
+                task
+                for task in uri_tasks
+                if str(module_payload(task, "ansible.builtin.uri", "uri").get("method", "")).upper() == method
+                and predicate(str(module_payload(task, "ansible.builtin.uri", "uri").get("url", "")))
+            ]
+
+        collector_lists = matching_requests(
+            "GET",
+            lambda url: re.search(r"/api/v1/collectors(?:\?|$)", url) is not None,
+        )
+        collector_creates = matching_requests(
+            "POST",
+            lambda url: re.search(r"/api/v1/collectors$", url) is not None,
+        )
+        dashboard_lists = matching_requests(
+            "GET",
+            lambda url: re.search(r"/api/v2/dashboards(?:\?|$)", url) is not None,
+        )
+        dashboard_creates = matching_requests(
+            "POST",
+            lambda url: re.search(r"/api/v2/dashboards$", url) is not None,
+        )
+        chart_lists = matching_requests(
+            "GET",
+            lambda url: re.search(r"/api/v2/dashboards/[^/]+/charts(?:\?|$)", url) is not None,
+        )
+        chart_creates = matching_requests(
+            "POST",
+            lambda url: re.search(r"/api/v2/dashboards/[^/]+/charts$", url) is not None,
+        )
+        target_creates = matching_requests(
+            "POST",
+            lambda url: re.search(r"/api/v1/collectors/[^/]+/targets$", url) is not None,
+        )
+        alert_creates = matching_requests(
+            "POST",
+            lambda url: re.search(r"/api/v2/dashboards/[^/]+/charts/[^/]+/alerts$", url) is not None,
+        )
+        monitor_lists = matching_requests(
+            "GET",
+            lambda url: re.search(r"(?:/api/v2)?/monitors(?:\?|$)", url) is not None,
+        )
+        monitor_creates = matching_requests(
+            "POST",
+            lambda url: re.search(r"(?:/api/v2)?/monitors$", url) is not None,
+        )
+
+        self.assertTrue(collector_lists, "clean-state provisioning must list collectors by stable provider attributes")
+        self.assertTrue(collector_creates, "clean-state provisioning must create the metrics collector when absent")
+        collector_bodies = [module_payload(task, "ansible.builtin.uri", "uri").get("body", {}) for task in collector_creates]
+        self.assertTrue(
+            any(body.get("name") and body.get("platform") == "docker" for body in collector_bodies),
+            "collector creation must use Better Stack's supported name and platform=docker fields",
+        )
+
+        self.assertTrue(dashboard_lists, "clean-state provisioning must discover dashboards before creation")
+        self.assertTrue(dashboard_creates, "clean-state provisioning must create the GAM production dashboard")
+        self.assertTrue(
+            any(module_payload(task, "ansible.builtin.uri", "uri").get("body", {}).get("name") for task in dashboard_creates),
+            "dashboard creation must provide the provider-required name",
+        )
+
+        self.assertTrue(chart_lists, "clean-state provisioning must discover charts on the selected dashboard")
+        self.assertTrue(chart_creates, "clean-state provisioning must create the declared monitoring charts")
+        chart_creation_text = "\n".join(task_text(task) for task in chart_creates).casefold()
+        for chart in ("proxy", "backend", "postgresql", "filesystem"):
+            self.assertIn(chart, chart_creation_text, f"clean-state provisioning must create the {chart} chart")
+        self.assertIn("chart_type", chart_creation_text)
+        self.assertIn("queries", chart_creation_text)
+        self.assertIn("sql_expression", chart_creation_text)
+
+        self.assertGreaterEqual(len(target_creates), 3, "proxy, backend, and PostgreSQL metric targets must be creatable")
+        self.assertGreaterEqual(len(alert_creates), 5, "three service alerts and two filesystem alerts must be creatable")
+        self.assertTrue(monitor_lists, "availability and TLS monitors must be discovered before creation")
+        monitor_creation_text = "\n".join(task_text(task) for task in monitor_creates).casefold()
+        self.assertIn("availability", monitor_creation_text)
+        self.assertIn("tls", monitor_creation_text)
+
+        creation_tasks = (
+            collector_creates
+            + dashboard_creates
+            + chart_creates
+            + target_creates
+            + alert_creates
+            + monitor_creates
+        )
+        unguarded = [task.get("name", "<unnamed>") for task in creation_tasks if not task.get("when")]
+        self.assertEqual([], unguarded, "provider resource POSTs must be absent-state guarded: " + ", ".join(unguarded))
+
+    def test_better_stack_managed_resources_reconcile_drift_and_verify_provider_state(self):
+        """Replays must patch only observed drift and prove the resulting provider state."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        uri_tasks = [
+            (index, task, module_payload(task, "ansible.builtin.uri", "uri"))
+            for index, task in enumerate(tasks)
+            if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
+        ]
+
+        managed_sections = {
+            "collector": lambda url: re.search(r"/api/v1/collectors/[^/]+$", url) is not None,
+            "dashboard": lambda url: re.search(r"/api/v2/dashboards/[^/]+$", url) is not None,
+            "charts": lambda url: re.search(r"/api/v2/dashboards/[^/]+/charts(?:/[^/]+)?$", url) is not None,
+        }
+        violations = []
+        for resource, predicate in managed_sections.items():
+            requests = [
+                (index, task, payload)
+                for index, task, payload in uri_tasks
+                if predicate(str(payload.get("url", "")))
+            ]
+            patches = [item for item in requests if str(item[2].get("method", "")).upper() == "PATCH"]
+            reads = [item for item in requests if str(item[2].get("method", "")).upper() == "GET"]
+            if not patches:
+                violations.append(f"{resource} drift must be reconciled with the official PATCH endpoint")
+                continue
+            if not reads:
+                violations.append(f"{resource} provider state must be read for discovery and verification")
+                continue
+            for _, task, patch_request in patches:
+                condition = str(task.get("when", ""))
+                body = patch_request.get("body", {})
+                mutable_fields = set(body) - {"name", "alert_type", "kind"}
+                if not condition or not any(operator in condition for operator in ("!=", "not equalto", "difference")):
+                    violations.append(f"{task.get('name', resource)} must PATCH only observed drift")
+                if mutable_fields and not any(field in condition for field in mutable_fields):
+                    violations.append(f"{task.get('name', resource)} must compare provider fields before PATCH")
+            if max(index for index, _, _ in reads) < max(index for index, _, _ in patches):
+                violations.append(f"{resource} must be read back after reconciliation")
+
+        assertion_text = "\n".join(
+            task_text(task)
+            for task in tasks
+            if isinstance(module_payload(task, "ansible.builtin.assert", "assert"), dict)
+        ).casefold()
+        for resource in ("collector", "dashboard", "chart"):
+            if resource not in assertion_text:
+                violations.append(f"{resource} provider readback must have a fail-closed assertion")
+
+        self.assertEqual([], violations, "Better Stack provider reconciliation violations: " + "; ".join(violations))
+
+    def test_better_stack_monitors_patch_only_drift_and_are_read_back_after_reconciliation(self):
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        monitor_requests = [
+            (index, task, module_payload(task, "ansible.builtin.uri", "uri"))
+            for index, task in enumerate(tasks)
+            if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
+            and re.search(
+                r"(?:/api/v2)?/monitors(?:/[^/?]+)?(?:\?|$)",
+                str(module_payload(task, "ansible.builtin.uri", "uri").get("url", "")),
+            )
+        ]
+        patches = [item for item in monitor_requests if str(item[2].get("method", "")).upper() == "PATCH"]
+        reads = [item for item in monitor_requests if str(item[2].get("method", "")).upper() == "GET"]
+        self.assertGreaterEqual(len(patches), 2, "availability and TLS monitor drift must be patchable")
+        self.assertGreaterEqual(len(reads), 2, "monitors must be listed before and after reconciliation")
+        self.assertGreater(
+            max(index for index, _, _ in reads),
+            max(index for index, _, _ in patches),
+            "monitor provider state must be read back after create/update",
+        )
+
+        violations = []
+        for _, task, request in patches:
+            body = request.get("body", {})
+            condition = str(task.get("when", ""))
+            for field in body:
+                if field == "pronounceable_name":
+                    continue
+                if f"attributes.{field}" not in condition:
+                    violations.append(f"{task.get('name')} must compare attributes.{field} before PATCH")
+            if not any(operator in condition for operator in ("!=", "not equalto", "difference")):
+                violations.append(f"{task.get('name')} must skip PATCH when provider state already matches")
+
+        final_read_index = max(index for index, _, _ in reads)
+        final_assertions = "\n".join(
+            task_text(task)
+            for task in tasks[final_read_index + 1 :]
+            if isinstance(module_payload(task, "ansible.builtin.assert", "assert"), dict)
+        )
+        for field in (
+            "pronounceable_name",
+            "url",
+            "monitor_type",
+            "check_frequency",
+            "email",
+            "push",
+            "required_keyword",
+            "confirmation_period",
+            "ssl_expiration",
+            "verify_ssl",
+        ):
+            if f"attributes.{field}" not in final_assertions:
+                violations.append(f"monitor readback must verify attributes.{field}")
+        if len(re.findall(r"list\s*\|\s*length\s*==\s*1", final_assertions)) < 2:
+            violations.append("monitor readback must prove exactly one availability and one TLS monitor")
+
+        self.assertEqual([], violations, "Better Stack monitor idempotency violations: " + "; ".join(violations))
+
+    def test_better_stack_availability_monitor_normalizes_provider_http_method_on_replay(self):
+        """Provider lowercase `get` must be accepted as converged and verified after readback."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        availability_patch = next(
+            (
+                task
+                for task in tasks
+                if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
+                and str(module_payload(task, "ansible.builtin.uri", "uri").get("method", "")).upper() == "PATCH"
+                and module_payload(task, "ansible.builtin.uri", "uri").get("body", {}).get("pronounceable_name")
+                == "GAM production availability"
+            ),
+            None,
+        )
+        self.assertIsNotNone(
+            availability_patch,
+            "the availability monitor must retain provider-state reconciliation",
+        )
+
+        patch_payload = module_payload(availability_patch, "ansible.builtin.uri", "uri")
+        desired_http_method = str(patch_payload.get("body", {}).get("http_method", "")).casefold()
+        self.assertEqual("get", desired_http_method, "the declared request method must normalize to the provider value")
+
+        condition = str(availability_patch.get("when", ""))
+        lower_provider_method_is_converged = bool(
+            re.search(
+                r"attributes\.http_method[^\n]*(?:\|\s*lower[^\n]*)?!=\s*'get'",
+                condition,
+                flags=re.IGNORECASE,
+            )
+        ) and "!= 'GET'" not in condition
+
+        final_readback = next(
+            (
+                task
+                for task in tasks
+                if task.get("name") == "Verify Better Stack availability and TLS monitor provider state"
+                and isinstance(module_payload(task, "ansible.builtin.assert", "assert"), dict)
+            ),
+            None,
+        )
+        self.assertIsNotNone(final_readback, "monitor reconciliation must retain fail-closed provider readback")
+        readback_text = task_text(final_readback)
+        readback_verifies_normalized_method = "attributes.http_method" in readback_text and bool(
+            re.search(
+                r"attributes\.http_method.*(?:\|\s*lower.*)?equalto[^\n]*'get'",
+                readback_text,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+        )
+
+        violations = []
+        if not lower_provider_method_is_converged:
+            violations.append("provider http_method='get' must not trigger a replay PATCH")
+        if not readback_verifies_normalized_method:
+            violations.append("final provider readback must prove normalized attributes.http_method='get'")
+
+        self.assertEqual(
+            [],
+            violations,
+            "Better Stack availability monitor normalization violations: " + "; ".join(violations),
+        )
 
     def test_better_stack_clean_host_provisions_supported_metrics_collector_and_service_alerts(self):
         tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
@@ -4020,8 +4954,13 @@ exit 0
 
         patch_tasks = [
             task
-            for task in alert_uri_tasks
+            for task in tasks
+            if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
             if str(module_payload(task, "ansible.builtin.uri", "uri").get("method", "")).upper() == "PATCH"
+            and re.search(
+                r"/api/v2/alerts/[^/?]+$",
+                str(module_payload(task, "ansible.builtin.uri", "uri").get("url", "")),
+            )
         ]
         if not patch_tasks:
             violations.append("existing dashboard alerts with declared-value drift must be updated through the official PATCH endpoint")
@@ -4316,22 +5255,34 @@ exit 0
             "a no-rotation replay must accept a nonempty externally supplied writer secret",
         )
 
-    def test_recovery_shell_scripts_use_lf_and_pass_independent_bash_syntax(self):
-        bash = Path(r"C:\Program Files\Git\bin\bash.exe")
-        self.assertTrue(bash.is_file(), "Git Bash is required for independent recovery-script syntax validation")
+    def test_recovery_shell_scripts_are_lf_normalized_and_pass_independent_bash_syntax(self):
+        bash = bash_executable()
 
         violations = []
+        attributes = read(".gitattributes")
+        if re.search(r"(?m)^\*\.sh[ \t]+text[ \t]+eol=lf(?:[ \t]+#.*)?$", attributes) is None:
+            violations.append(
+                "Git must preserve LF shell scripts on every checkout before Ansible copies them to Linux"
+            )
+
         for relative_path in (
             "operations/recovery/restore/restore.sh",
             "operations/recovery/verify-restoration/verify-restoration.sh",
         ):
-            script_path = ROOT / relative_path
-            script_bytes = script_path.read_bytes()
-            if b"\r" in script_bytes:
-                violations.append(f"{relative_path} must use LF line endings without CRLF or mixed EOL bytes")
+            indexed_script = subprocess.run(
+                ["git", "show", f":{relative_path}"],
+                cwd=ROOT,
+                capture_output=True,
+                timeout=30,
+            )
+            if indexed_script.returncode != 0:
+                diagnostic = indexed_script.stderr.decode("utf-8", errors="replace").strip().replace("\n", " | ")
+                violations.append(f"{relative_path} could not be read from the Git index: {diagnostic}")
+            elif b"\r" in indexed_script.stdout:
+                violations.append(f"{relative_path} must be versioned with LF-only bytes")
 
             result = subprocess.run(
-                [str(bash), "-n", relative_path],
+                [bash, "-n", relative_path],
                 cwd=ROOT,
                 capture_output=True,
                 text=True,

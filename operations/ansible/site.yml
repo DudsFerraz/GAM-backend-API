@@ -47,15 +47,8 @@
           - client_age_recipient | length > 0
           - better_stack_api_url | length > 0
           - better_stack_api_token | length > 0
-          - better_stack_collector_id | length > 0
-          - better_stack_collector_secret | length > 0
           - better_stack_collector_install_url | length > 0
           - better_stack_collector_install_checksum | length > 0
-          - better_stack_dashboard_id | length > 0
-          - better_stack_proxy_chart_id | length > 0
-          - better_stack_backend_chart_id | length > 0
-          - better_stack_postgresql_chart_id | length > 0
-          - better_stack_filesystem_chart_id | length > 0
           - better_stack_proxy_target_host | length > 0
           - better_stack_proxy_target_service | length > 0
           - better_stack_proxy_target_endpoint | length > 0
@@ -66,10 +59,9 @@
           - better_stack_postgresql_target_port | int > 0
         fail_msg: >-
           AWS account, VPS public source IP, production origin, and both public
-          encryption recipients, Better Stack API token, dedicated collector
-          secret, provider resource IDs, service target connection inputs, and
-          the verified vendor installer source must be supplied outside version
-          control.
+          encryption recipients, Better Stack API token, service target
+          connection inputs, and the verified vendor installer source must be
+          supplied outside version control.
 
     - name: Install production recovery dependencies
       ansible.builtin.package:
@@ -176,79 +168,878 @@
         group: root
         mode: "0600"
 
-    - name: Download the official Better Stack collector Docker Compose installer
-      ansible.builtin.get_url:
-        url: "{{ better_stack_collector_install_url }}"
-        dest: /usr/local/libexec/better-stack-collector-install.sh
-        owner: root
-        group: root
-        mode: "0750"
-        checksum: "{{ better_stack_collector_install_checksum }}"
-
-    - name: Inspect the existing Better Stack collector Docker Compose deployment
-      ansible.builtin.command:
-        argv:
-          - docker
-          - ps
-          - --quiet
-          - --filter
-          - label=com.docker.compose.project=better-stack-collector
-          - --filter
-          - label=com.docker.compose.service={{ item }}
-          - --filter
-          - status=running
-          - --filter
-          - health=healthy
-      register: better_stack_collector_preinstall_state
-      loop: "{{ better_stack_collector_required_services }}"
-      changed_when: false
-      failed_when: better_stack_collector_preinstall_state.rc != 0
-
-    - name: Run the official Better Stack collector Docker Compose deployment
-      ansible.builtin.command:
-        argv:
-          - /bin/bash
-          - /usr/local/libexec/better-stack-collector-install.sh
-      environment:
-        COLLECTOR_SECRET: "{{ better_stack_collector_secret }}"
-      register: better_stack_collector_install
-      changed_when: true
-      when: >-
-        better_stack_collector_preinstall_state.results
-        | map(attribute='stdout')
-        | select('equalto', '')
-        | list | length > 0
+    - name: Discover Better Stack collectors by stable provider name
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors?name={{ better_stack_collector_name | urlencode }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_existing_collectors
       no_log: true
 
-    - name: Verify the Better Stack collector Docker Compose deployment
-      ansible.builtin.command:
-        argv:
-          - docker
-          - ps
-          - --quiet
-          - --filter
-          - label=com.docker.compose.project=better-stack-collector
-          - --filter
-          - label=com.docker.compose.service={{ item }}
-          - --filter
-          - status=running
-          - --filter
-          - health=healthy
-      register: better_stack_collector_status
-      loop: "{{ better_stack_collector_required_services }}"
-      changed_when: false
-      failed_when: >-
-        better_stack_collector_status.rc != 0
-        or better_stack_collector_status.stdout | trim | length == 0
-        or (
-        better_stack_collector_status.results | default([])
-        | map(attribute='stdout')
-        | select('equalto', '')
-        | list | length > 0)
+    - name: Read remaining pages from filtered Better Stack collector discovery
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors?name={{ better_stack_collector_name | urlencode }}&page={{ item }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: >-
+        {{ range(2, (
+        better_stack_existing_collectors.json.pagination.last
+        | default('page=1', true) | string
+        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+        | first | default('1', true) | int) + 1) | list }}
+      register: better_stack_existing_collector_pages
+      no_log: true
+
+    - name: Merge every filtered Better Stack collector discovery page
+      ansible.builtin.set_fact:
+        better_stack_existing_collectors:
+          json:
+            data: >-
+              {{ ([better_stack_existing_collectors.json.data | default([])]
+              + (better_stack_existing_collector_pages.results | default([])
+              | map(attribute='json.data') | list)) | flatten | list }}
+      no_log: true
+
+    - name: Create the Better Stack production metrics collector
+      ansible.builtin.uri:
+        url: "{# production default: https://telemetry.betterstack.com/api/v1/collectors #}{{ better_stack_telemetry_api_url }}/api/v1/collectors"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          name: "{{ better_stack_collector_name }}"
+          platform: docker
+          configuration:
+            components:
+              logs_docker: false
+              logs_host: false
+              logs_kubernetes: false
+              logs_collector_internals: false
+              ebpf_tracing_basic: false
+              ebpf_tracing_full: false
+              traces_opentelemetry: false
+              ebpf_metrics: true
+              ebpf_red_metrics: true
+              metrics_databases: true
+        status_code: [201]
+        return_content: true
+      register: better_stack_collector_created
+      when: >-
+        not (better_stack_existing_collectors.json.data | default([])
+        | selectattr('attributes.name', 'equalto', better_stack_collector_name)
+        | list)
+      no_log: true
+
+    - name: Stop new collector commissioning for approved external secret custody
+      ansible.builtin.fail:
+        msg: >-
+          Better Stack created the production collector. Transfer its generated
+          secret into approved external custody as BETTER_STACK_COLLECTOR_SECRET,
+          then rerun this playbook before Docker startup.
+      when: better_stack_collector_created is not skipped
+
+    - name: Require the externally restored Better Stack collector secret on replay
+      ansible.builtin.assert:
+        that:
+          - better_stack_collector_secret | length > 0
+        fail_msg: >-
+          BETTER_STACK_COLLECTOR_SECRET must be restored from approved external
+          custody before rerunning collector commissioning and Docker startup.
+      when: better_stack_collector_created is skipped
+      no_log: true
+
+    - name: Read back Better Stack collectors after creation
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors?name={{ better_stack_collector_name | urlencode }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_collectors_readback
+      no_log: true
+
+    - name: Read remaining pages from filtered Better Stack collector readback
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors?name={{ better_stack_collector_name | urlencode }}&page={{ item }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: >-
+        {{ range(2, (
+        better_stack_collectors_readback.json.pagination.last
+        | default('page=1', true) | string
+        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+        | first | default('1', true) | int) + 1) | list }}
+      register: better_stack_collector_readback_pages
+      no_log: true
+
+    - name: Merge every filtered Better Stack collector readback page
+      ansible.builtin.set_fact:
+        better_stack_collectors_readback:
+          json:
+            data: >-
+              {{ ([better_stack_collectors_readback.json.data | default([])]
+              + (better_stack_collector_readback_pages.results | default([])
+              | map(attribute='json.data') | list)) | flatten | list }}
+      no_log: true
+
+    - name: Select the Better Stack production metrics collector
+      ansible.builtin.set_fact:
+        better_stack_collector_id: >-
+          {{ (better_stack_collectors_readback.json.data | default([])
+          | selectattr('attributes.name', 'equalto', better_stack_collector_name)
+          | map(attribute='id') | first) }}
+        better_stack_collector_provider_resource: >-
+          {{ (better_stack_collectors_readback.json.data | default([])
+          | selectattr('attributes.name', 'equalto', better_stack_collector_name)
+          | first) }}
+      no_log: true
+
+    - name: Read the selected Better Stack collector identity
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_collector_identity_readback
+      no_log: true
+
+    - name: Verify one Better Stack production metrics collector was selected
+      ansible.builtin.assert:
+        that:
+          - >-
+            better_stack_collectors_readback.json.data | default([])
+            | selectattr('attributes.name', 'equalto', better_stack_collector_name)
+            | list | length == 1
+          - better_stack_collector_id | string | length > 0
+          - better_stack_collector_identity_readback.json.data.id | string == better_stack_collector_id | string
+          - >-
+            better_stack_collector_identity_readback.json.data.attributes.secret
+            | default('') == better_stack_collector_secret
+        fail_msg: >-
+          Better Stack collector discovery must resolve exactly one provider
+          resource with the declared production name and the dedicated secret
+          restored from approved external custody.
+      no_log: true
+
+    - name: Discover Better Stack dashboards by stable provider name
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards?query={{ better_stack_dashboard_name | urlencode }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_existing_dashboards
+      no_log: true
+
+    - name: Read remaining pages from filtered Better Stack dashboard discovery
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards?query={{ better_stack_dashboard_name | urlencode }}&page={{ item }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: >-
+        {{ range(2, (
+        better_stack_existing_dashboards.json.pagination.last
+        | default('page=1', true) | string
+        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+        | first | default('1', true) | int) + 1) | list }}
+      register: better_stack_existing_dashboard_pages
+      no_log: true
+
+    - name: Merge every filtered Better Stack dashboard discovery page
+      ansible.builtin.set_fact:
+        better_stack_existing_dashboards:
+          json:
+            data: >-
+              {{ ([better_stack_existing_dashboards.json.data | default([])]
+              + (better_stack_existing_dashboard_pages.results | default([])
+              | map(attribute='json.data') | list)) | flatten | list }}
+      no_log: true
+
+    - name: Verify exactly one Better Stack production dashboard candidate
+      ansible.builtin.assert:
+        that:
+          - >-
+            better_stack_existing_dashboards.json.data | default([])
+            | selectattr('attributes.name', 'equalto', better_stack_dashboard_name)
+            | list | length <= 1
+        fail_msg: >-
+          Better Stack dashboard discovery must not resolve duplicate provider
+          resources with the declared production name before mutation.
+
+    - name: Discover the Better Stack collector source for dashboard binding
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors?name={{ better_stack_collector_name | urlencode }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_dashboard_collector_sources
+      no_log: true
+
+    - name: Read remaining Better Stack collector source pages for dashboard binding
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors?name={{ better_stack_collector_name | urlencode }}&page={{ item }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: >-
+        {{ range(2, (
+        better_stack_dashboard_collector_sources.json.pagination.last
+        | default('page=1', true) | string
+        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+        | first | default('1', true) | int) + 1) | list }}
+      register: better_stack_dashboard_collector_source_pages
+      no_log: true
+
+    - name: Merge every Better Stack collector source page for dashboard binding
+      ansible.builtin.set_fact:
+        better_stack_dashboard_collector_sources:
+          json:
+            data: >-
+              {{ ([better_stack_dashboard_collector_sources.json.data | default([])]
+              + (better_stack_dashboard_collector_source_pages.results | default([])
+              | map(attribute='json.data') | list)) | flatten | list }}
+      no_log: true
+
+    - name: Select exactly one Better Stack collector source for dashboard binding
+      ansible.builtin.assert:
+        that:
+          - >-
+            better_stack_dashboard_collector_sources.json.data | default([])
+            | selectattr('attributes.name', 'equalto', better_stack_collector_name)
+            | list | length == 1
+        fail_msg: >-
+          Better Stack dashboard source binding must resolve exactly one
+          collector with the declared production name.
+
+    - name: Bind the Better Stack dashboard source to the selected collector
+      ansible.builtin.set_fact:
+        better_stack_dashboard_source_id: >-
+          {{ (better_stack_dashboard_collector_sources.json.data | default([])
+          | selectattr('attributes.name', 'equalto', better_stack_collector_name)
+          | map(attribute='attributes.source_id') | first) | string }}
+      no_log: true
+
+    - name: Create the Better Stack production dashboard
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          name: "{{ better_stack_dashboard_name }}"
+          refresh_interval: 300
+          date_range_from: now-3h
+          date_range_to: now
+          variables:
+            - name: source
+              variable_type: source
+              values:
+                - "{{ better_stack_dashboard_source_id }}"
+              default_values:
+                - "{{ better_stack_dashboard_source_id }}"
+        status_code: [201]
+      when: >-
+        not (better_stack_existing_dashboards.json.data | default([])
+        | selectattr('attributes.name', 'equalto', better_stack_dashboard_name)
+        | list)
+      no_log: true
+
+    - name: Read back Better Stack dashboards after creation
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards?query={{ better_stack_dashboard_name | urlencode }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_dashboards_readback
+      no_log: true
+
+    - name: Read remaining pages from filtered Better Stack dashboard readback
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards?query={{ better_stack_dashboard_name | urlencode }}&page={{ item }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: >-
+        {{ range(2, (
+        better_stack_dashboards_readback.json.pagination.last
+        | default('page=1', true) | string
+        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+        | first | default('1', true) | int) + 1) | list }}
+      register: better_stack_dashboard_readback_pages
+      no_log: true
+
+    - name: Merge every filtered Better Stack dashboard readback page
+      ansible.builtin.set_fact:
+        better_stack_dashboards_readback:
+          json:
+            data: >-
+              {{ ([better_stack_dashboards_readback.json.data | default([])]
+              + (better_stack_dashboard_readback_pages.results | default([])
+              | map(attribute='json.data') | list)) | flatten | list }}
+      no_log: true
+
+    - name: Verify exactly one Better Stack production dashboard candidate after creation
+      ansible.builtin.assert:
+        that:
+          - >-
+            better_stack_dashboards_readback.json.data | default([])
+            | selectattr('attributes.name', 'equalto', better_stack_dashboard_name)
+            | list | length == 1
+        fail_msg: >-
+          Better Stack dashboard discovery must resolve exactly one provider
+          resource with the declared production name before selecting its ID.
+
+    - name: Select the Better Stack production dashboard
+      ansible.builtin.set_fact:
+        better_stack_dashboard_id: >-
+          {{ (better_stack_dashboards_readback.json.data | default([])
+          | selectattr('attributes.name', 'equalto', better_stack_dashboard_name)
+          | map(attribute='id') | first) }}
+        better_stack_dashboard_provider_resource: >-
+          {{ (better_stack_dashboards_readback.json.data | default([])
+          | selectattr('attributes.name', 'equalto', better_stack_dashboard_name)
+          | first) }}
+
+    - name: Read the selected Better Stack production dashboard detail
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards/{{ better_stack_dashboard_id }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_dashboard_detail
+      no_log: true
+
+    - name: Use Better Stack dashboard detail for reconciliation decisions
+      ansible.builtin.set_fact:
+        better_stack_dashboard_provider_resource: "{{ better_stack_dashboard_detail.json.data }}"
+      no_log: true
+
+    - name: Reconcile the Better Stack production dashboard name
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards/{{ better_stack_dashboard_id }}"
+        method: PATCH
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          name: "{{ better_stack_dashboard_name }}"
+          refresh_interval: 300
+          date_range_from: now-3h
+          date_range_to: now
+          variables:
+            - name: source
+              variable_type: source
+              values:
+                - "{{ better_stack_dashboard_source_id }}"
+              default_values:
+                - "{{ better_stack_dashboard_source_id }}"
+        status_code: [200, 204]
+      when: >-
+        better_stack_dashboard_provider_resource.attributes.name | default('') != better_stack_dashboard_name
+        or better_stack_dashboard_provider_resource.attributes.refresh_interval | int != 300
+        or better_stack_dashboard_provider_resource.attributes.date_range_from | default('') != 'now-3h'
+        or better_stack_dashboard_provider_resource.attributes.date_range_to | default('') != 'now'
+        or better_stack_dashboard_provider_resource.attributes.variables | default([]) != [{
+          'name': 'source',
+          'variable_type': 'source',
+          'values': [better_stack_dashboard_source_id],
+          'default_values': [better_stack_dashboard_source_id]
+        }]
+      no_log: true
+
+    - name: Read back the reconciled Better Stack production dashboard
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards/{{ better_stack_dashboard_id }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_dashboard_readback
+      no_log: true
+
+    - name: Verify the Better Stack production dashboard provider state
+      ansible.builtin.assert:
+        that:
+          - better_stack_dashboard_readback.json.data.id | string == better_stack_dashboard_id | string
+          - better_stack_dashboard_readback.json.data.attributes.name == better_stack_dashboard_name
+          - better_stack_dashboard_readback.json.data.attributes.refresh_interval | int == 300
+          - better_stack_dashboard_readback.json.data.attributes.date_range_from == 'now-3h'
+          - better_stack_dashboard_readback.json.data.attributes.date_range_to == 'now'
+          - >-
+            better_stack_dashboard_readback.json.data.attributes.variables | default([]) == [{
+              'name': 'source',
+              'variable_type': 'source',
+              'values': [better_stack_dashboard_source_id],
+              'default_values': [better_stack_dashboard_source_id]
+            }]
+        fail_msg: >-
+          Better Stack dashboard readback must match the selected production
+          dashboard identity and declared name.
+
+    - name: Discover Better Stack charts on the production dashboard
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts?per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_existing_charts
+      no_log: true
+
+    - name: Read remaining pages from existing Better Stack chart pagination
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts?page={{ item }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: >-
+        {{ range(2, (
+        better_stack_existing_charts.json.pagination.last
+        | default('page=1', true) | string
+        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+        | first | default('1', true) | int) + 1) | list }}
+      register: better_stack_existing_chart_pages
+      no_log: true
+
+    - name: Merge every Better Stack chart discovery page
+      ansible.builtin.set_fact:
+        better_stack_existing_charts:
+          json:
+            data: >-
+              {{ ([better_stack_existing_charts.json.data | default([])]
+              + (better_stack_existing_chart_pages.results | default([])
+              | map(attribute='json.data') | list)) | flatten | list }}
+      no_log: true
+
+    - name: Reject duplicate Better Stack production charts before mutation
+      ansible.builtin.assert:
+        that:
+          - >-
+            better_stack_existing_charts.json.data | default([])
+            | selectattr('attributes.name', 'equalto', item.name)
+            | list | length <= 1
+        fail_msg: >-
+          Better Stack chart discovery must resolve at most one provider
+          resource for each declared production chart before mutation.
+      loop: "{{ better_stack_chart_contracts }}"
+      no_log: true
+
+    - name: Reconcile Better Stack metric targets before chart mutation
+      when: better_stack_collector_id is defined
+      no_log: true
+      block:
+        - name: Read Better Stack metric targets required by production charts
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?per_page=100"
+            method: GET
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+              Content-Type: application/json
+            status_code: [200]
+            return_content: true
+          register: better_stack_prechart_targets
+
+        - name: Read remaining Better Stack metric target pages required by production charts
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?page={{ item }}&per_page=100"
+            method: GET
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+              Content-Type: application/json
+            status_code: [200]
+            return_content: true
+          loop: >-
+            {{ range(2, (
+            better_stack_prechart_targets.json.pagination.last
+            | default('page=1', true) | string
+            | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+            | first | default('1', true) | int) + 1) | list }}
+          register: better_stack_prechart_target_pages
+
+        - name: Merge Better Stack metric target pages required by production charts
+          ansible.builtin.set_fact:
+            better_stack_prechart_targets:
+              json:
+                data: >-
+                  {{ ([better_stack_prechart_targets.json.data | default([])]
+                  + (better_stack_prechart_target_pages.results | default([])
+                  | map(attribute='json.data') | list)) | flatten | list }}
+
+        - name: Validate Better Stack metric target identities before chart mutation
+          ansible.builtin.assert:
+            that:
+              - better_stack_proxy_target_endpoint is match('^https?://[^/]+/.+')
+              - better_stack_backend_target_endpoint is match('^https?://[^/]+/.+')
+              - >-
+                better_stack_prechart_targets.json.data | default([])
+                | selectattr('attributes.kind', 'defined')
+                | selectattr('attributes.kind', 'equalto', 'prometheus')
+                | selectattr('attributes.service', 'equalto', better_stack_proxy_target_service)
+                | list | length <= 1
+              - >-
+                better_stack_prechart_targets.json.data | default([])
+                | selectattr('attributes.kind', 'defined')
+                | selectattr('attributes.kind', 'equalto', 'prometheus')
+                | selectattr('attributes.service', 'equalto', better_stack_backend_target_service)
+                | list | length <= 1
+              - >-
+                better_stack_prechart_targets.json.data | default([])
+                | selectattr('attributes.kind', 'defined')
+                | selectattr('attributes.kind', 'equalto', 'postgres')
+                | list | length <= 1
+            fail_msg: >-
+              Better Stack chart reconciliation requires unique provider targets
+              with valid configured service and host identities.
+
+        - name: Register the Better Stack proxy target required by production charts
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+              Content-Type: application/json
+            body_format: json
+            body:
+              kind: prometheus
+              host: "{{ better_stack_proxy_target_host }}"
+              service: "{{ better_stack_proxy_target_service }}"
+              endpoint: "{{ better_stack_proxy_target_endpoint }}"
+            status_code: [201]
+          when: >-
+            not (better_stack_prechart_targets.json.data | default([])
+            | selectattr('attributes.kind', 'defined')
+            | selectattr('attributes.kind', 'equalto', 'prometheus')
+            | selectattr('attributes.service', 'equalto', better_stack_proxy_target_service)
+            | list)
+
+        - name: Register the Better Stack backend target required by production charts
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+              Content-Type: application/json
+            body_format: json
+            body:
+              kind: prometheus
+              host: "{{ better_stack_backend_target_host }}"
+              service: "{{ better_stack_backend_target_service }}"
+              endpoint: "{{ better_stack_backend_target_endpoint }}"
+            status_code: [201]
+          when: >-
+            not (better_stack_prechart_targets.json.data | default([])
+            | selectattr('attributes.kind', 'defined')
+            | selectattr('attributes.kind', 'equalto', 'prometheus')
+            | selectattr('attributes.service', 'equalto', better_stack_backend_target_service)
+            | list)
+
+        - name: Register the Better Stack PostgreSQL target required by production charts
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+              Content-Type: application/json
+            body_format: json
+            body:
+              kind: postgres
+              host: "{{ better_stack_postgresql_target_host }}"
+              port: "{{ better_stack_postgresql_target_port }}"
+              ssl_mode: require
+            status_code: [201]
+          when: >-
+            not (better_stack_prechart_targets.json.data | default([])
+            | selectattr('attributes.kind', 'defined')
+            | selectattr('attributes.kind', 'equalto', 'postgres')
+            | list)
+
+        - name: Reconcile the Better Stack proxy target required by production charts
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
+            method: PATCH
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+              Content-Type: application/json
+            body_format: json
+            body:
+              host: "{{ better_stack_proxy_target_host }}"
+              service: "{{ better_stack_proxy_target_service }}"
+              endpoint: "{{ better_stack_proxy_target_endpoint }}"
+            status_code: [200, 204]
+          loop: "{{ better_stack_prechart_targets.json.data | default([]) }}"
+          when:
+            - item.attributes.kind | default('') == 'prometheus'
+            - item.attributes.service | default('') == better_stack_proxy_target_service
+            - >-
+              item.attributes.host | default('') != better_stack_proxy_target_host
+              or item.attributes.endpoint | default('') != better_stack_proxy_target_endpoint
+
+        - name: Reconcile the Better Stack backend target required by production charts
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
+            method: PATCH
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+              Content-Type: application/json
+            body_format: json
+            body:
+              host: "{{ better_stack_backend_target_host }}"
+              service: "{{ better_stack_backend_target_service }}"
+              endpoint: "{{ better_stack_backend_target_endpoint }}"
+            status_code: [200, 204]
+          loop: "{{ better_stack_prechart_targets.json.data | default([]) }}"
+          when:
+            - item.attributes.kind | default('') == 'prometheus'
+            - item.attributes.service | default('') == better_stack_backend_target_service
+            - >-
+              item.attributes.host | default('') != better_stack_backend_target_host
+              or item.attributes.endpoint | default('') != better_stack_backend_target_endpoint
+
+        - name: Reconcile the Better Stack PostgreSQL target required by production charts
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
+            method: PATCH
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+              Content-Type: application/json
+            body_format: json
+            body:
+              host: "{{ better_stack_postgresql_target_host }}"
+              port: "{{ better_stack_postgresql_target_port | int }}"
+              ssl_mode: require
+            status_code: [200, 204]
+          loop: "{{ better_stack_prechart_targets.json.data | default([]) }}"
+          when:
+            - item.attributes.kind | default('') == 'postgres'
+            - >-
+              item.attributes.host | default('') != better_stack_postgresql_target_host
+              or item.attributes.port | int != better_stack_postgresql_target_port | int
+              or item.attributes.ssl_mode | default('') != 'require'
+
+    - name: Create declared Better Stack proxy, backend, PostgreSQL, and filesystem charts
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          name: "{{ item.name }}"
+          chart_type: "{{ item.chart_type }}"
+          queries:
+            - query_type: sql_expression
+              source_variable: "{{ item.queries[0].source_variable }}"
+              sql_query: "{{ item.queries[0].sql_query }}"
+        status_code: [201]
+      loop: "{{ better_stack_chart_contracts }}"
+      when: >-
+        not (better_stack_existing_charts.json.data | default([])
+        | selectattr('attributes.name', 'equalto', item.name)
+        | list)
+      no_log: true
+
+    - name: Read back Better Stack charts after creation
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts?per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_charts_readback
+      no_log: true
+
+    - name: Read remaining pages from Better Stack chart selection pagination
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts?page={{ item }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: >-
+        {{ range(2, (
+        better_stack_charts_readback.json.pagination.last
+        | default('page=1', true) | string
+        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+        | first | default('1', true) | int) + 1) | list }}
+      register: better_stack_chart_selection_pages
+      no_log: true
+
+    - name: Merge every Better Stack chart selection page
+      ansible.builtin.set_fact:
+        better_stack_charts_readback:
+          json:
+            data: >-
+              {{ ([better_stack_charts_readback.json.data | default([])]
+              + (better_stack_chart_selection_pages.results | default([])
+              | map(attribute='json.data') | list)) | flatten | list }}
+      no_log: true
+
+    - name: Select Better Stack production chart identities
+      ansible.builtin.set_fact:
+        better_stack_proxy_chart_id: >-
+          {{ (better_stack_charts_readback.json.data | default([])
+          | selectattr('attributes.name', 'equalto', better_stack_proxy_chart_name)
+          | map(attribute='id') | first) }}
+        better_stack_backend_chart_id: >-
+          {{ (better_stack_charts_readback.json.data | default([])
+          | selectattr('attributes.name', 'equalto', better_stack_backend_chart_name)
+          | map(attribute='id') | first) }}
+        better_stack_postgresql_chart_id: >-
+          {{ (better_stack_charts_readback.json.data | default([])
+          | selectattr('attributes.name', 'equalto', better_stack_postgresql_chart_name)
+          | map(attribute='id') | first) }}
+        better_stack_filesystem_chart_id: >-
+          {{ (better_stack_charts_readback.json.data | default([])
+          | selectattr('attributes.name', 'equalto', better_stack_filesystem_chart_name)
+          | map(attribute='id') | first) }}
+
+    - name: Reconcile drifted Better Stack production charts
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts/{{ item.id }}"
+        method: PATCH
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          name: "{{ declared_chart.name }}"
+          chart_type: "{{ declared_chart.chart_type }}"
+          queries: "{{ declared_chart.queries }}"
+        status_code: [200, 204]
+      loop: "{{ better_stack_charts_readback.json.data | default([]) }}"
+      vars:
+        declared_chart: >-
+          {{ (better_stack_chart_contracts
+          | selectattr('name', 'equalto', item.attributes.name)
+          | first) }}
+      when:
+        - item.attributes.name | default('') in (better_stack_chart_contracts | map(attribute='name') | list)
+        - >-
+          item.attributes.chart_type | default('') != declared_chart.chart_type
+          or item.attributes.queries | default([]) | length != 1
+          or item.attributes.queries[0].query_type | default('') != declared_chart.queries[0].query_type
+          or item.attributes.queries[0].source_variable | default('') != declared_chart.queries[0].source_variable
+          or item.attributes.queries[0].sql_query | default('') != declared_chart.queries[0].sql_query
+      no_log: true
+
+    - name: Read back reconciled Better Stack production charts
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      register: better_stack_charts_final_readback
+      no_log: true
+
+    - name: Read remaining pages from Better Stack final chart pagination
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts?page={{ item }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: >-
+        {{ range(2, (
+        better_stack_charts_final_readback.json.pagination.last
+        | default('page=1', true) | string
+        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+        | first | default('1', true) | int) + 1) | list }}
+      register: better_stack_final_chart_pages
+      no_log: true
+
+    - name: Merge every Better Stack final chart readback page
+      ansible.builtin.set_fact:
+        better_stack_charts_final_readback:
+          json:
+            data: >-
+              {{ ([better_stack_charts_final_readback.json.data | default([])]
+              + (better_stack_final_chart_pages.results | default([])
+              | map(attribute='json.data') | list)) | flatten | list }}
+      no_log: true
+
+    - name: Verify Better Stack production chart provider state
+      ansible.builtin.assert:
+        that:
+          - better_stack_chart_matches | length == 1
+          - better_stack_chart_matches[0].attributes.chart_type == item.chart_type
+          - better_stack_chart_matches[0].attributes.queries | length == 1
+          - better_stack_chart_matches[0].attributes.queries[0].query_type == item.queries[0].query_type
+          - better_stack_chart_matches[0].attributes.queries[0].source_variable == item.queries[0].source_variable
+          - better_stack_chart_matches[0].attributes.queries[0].sql_query == item.queries[0].sql_query
+        fail_msg: >-
+          Better Stack chart readback must contain exactly one provider resource
+          matching the complete declared chart contract.
+      loop: "{{ better_stack_chart_contracts }}"
+      vars:
+        better_stack_chart_matches: >-
+          {{ better_stack_charts_final_readback.json.data | default([])
+          | selectattr('attributes.name', 'equalto', item.name)
+          | list }}
+      no_log: true
 
     - name: Configure the Better Stack collector source through the official API
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}"
+        url: "{# production default: https://telemetry.betterstack.com/api/v1/collectors #}{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}"
         method: PATCH
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -269,11 +1060,25 @@
               metrics_databases: true
         status_code: [200]
       register: better_stack_collector_configuration
+      when: >-
+        better_stack_collector_provider_resource.attributes.configuration.components
+        | default({}) != {
+          'logs_docker': false,
+          'logs_host': false,
+          'logs_kubernetes': false,
+          'logs_collector_internals': false,
+          'ebpf_tracing_basic': false,
+          'ebpf_tracing_full': false,
+          'traces_opentelemetry': false,
+          'ebpf_metrics': true,
+          'ebpf_red_metrics': true,
+          'metrics_databases': true
+        }
       no_log: true
 
     - name: Read back the Better Stack collector source configuration
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}"
+        url: "{# production default: https://telemetry.betterstack.com/api/v1/collectors #}{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}"
         method: GET
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -293,13 +1098,18 @@
           - better_stack_collector_source.json.data.attributes.configuration.components.ebpf_tracing_basic is sameas false
           - better_stack_collector_source.json.data.attributes.configuration.components.ebpf_tracing_full is sameas false
           - better_stack_collector_source.json.data.attributes.configuration.components.traces_opentelemetry is sameas false
+          - better_stack_collector_source.json.data.attributes.configuration.components.ebpf_metrics is sameas true
+          - better_stack_collector_source.json.data.attributes.configuration.components.ebpf_red_metrics is sameas true
+          - better_stack_collector_source.json.data.attributes.configuration.components.metrics_databases is sameas true
         fail_msg: >-
           Better Stack provider-side collector configuration must keep all
-          broad log and distributed-trace components disabled.
+          broad log and distributed-trace components disabled and all declared
+          metric components enabled before the Docker collector starts.
+      no_log: true
 
     - name: Read existing Better Stack collector metric targets
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}/targets?per_page=100"
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?per_page=100"
         method: GET
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -309,9 +1119,71 @@
       register: better_stack_existing_collector_targets
       no_log: true
 
+    - name: Read remaining pages from existing Better Stack metric target pagination
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?page={{ item }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: >-
+        {{ range(2, (
+        better_stack_existing_collector_targets.json.pagination.last
+        | default('page=1', true) | string
+        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+        | first | default('1', true) | int) + 1) | list }}
+      register: better_stack_existing_collector_target_pages
+      no_log: true
+
+    - name: Merge every Better Stack metric target discovery page
+      ansible.builtin.set_fact:
+        better_stack_existing_collector_targets:
+          json:
+            data: >-
+              {{ ([better_stack_existing_collector_targets.json.data | default([])]
+              + (better_stack_existing_collector_target_pages.results | default([])
+              | map(attribute='json.data') | list)) | flatten | list }}
+      no_log: true
+
+    - name: Reject duplicate Better Stack metric targets before mutation
+      ansible.builtin.assert:
+        that:
+          - >-
+            better_stack_existing_collector_targets.json.data | default([])
+            | selectattr('attributes.kind', 'defined')
+            | selectattr('attributes.kind', 'equalto', 'prometheus')
+            | selectattr('attributes.service', 'equalto', better_stack_proxy_target_service)
+            | list | length <= 1
+          - >-
+            better_stack_existing_collector_targets.json.data | default([])
+            | selectattr('attributes.kind', 'defined')
+            | selectattr('attributes.kind', 'equalto', 'prometheus')
+            | selectattr('attributes.service', 'equalto', better_stack_backend_target_service)
+            | list | length <= 1
+          - >-
+            better_stack_existing_collector_targets.json.data | default([])
+            | selectattr('attributes.kind', 'defined')
+            | selectattr('attributes.kind', 'equalto', 'postgres')
+            | list | length <= 1
+        fail_msg: >-
+          Better Stack metric target discovery must resolve at most one
+          provider resource for every declared target before mutation.
+      no_log: true
+
+    - name: Require absolute Better Stack Prometheus scrape endpoints
+      ansible.builtin.assert:
+        that:
+          - better_stack_proxy_target_endpoint is match('^https?://[^/]+/.+')
+          - better_stack_backend_target_endpoint is match('^https?://[^/]+/.+')
+        fail_msg: >-
+          Better Stack Prometheus target endpoints must be absolute HTTP or
+          HTTPS scrape URLs before provider resources are created or changed.
+
     - name: Register the Better Stack proxy metrics target
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}/targets"
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
         method: POST
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -326,6 +1198,7 @@
       when: >-
         not (
         better_stack_existing_collector_targets.json.data | default([])
+        | selectattr('attributes.kind', 'defined')
         | selectattr('attributes.kind', 'equalto', 'prometheus')
         | selectattr('attributes.service', 'equalto', better_stack_proxy_target_service)
         | list)
@@ -333,7 +1206,7 @@
 
     - name: Register the Better Stack backend metrics target
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}/targets"
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
         method: POST
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -348,6 +1221,7 @@
       when: >-
         not (
         better_stack_existing_collector_targets.json.data | default([])
+        | selectattr('attributes.kind', 'defined')
         | selectattr('attributes.kind', 'equalto', 'prometheus')
         | selectattr('attributes.service', 'equalto', better_stack_backend_target_service)
         | list)
@@ -355,7 +1229,7 @@
 
     - name: Register the Better Stack PostgreSQL metrics target
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}/targets"
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
         method: POST
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -370,13 +1244,14 @@
       when: >-
         not (
         better_stack_existing_collector_targets.json.data | default([])
+        | selectattr('attributes.kind', 'defined')
         | selectattr('attributes.kind', 'equalto', 'postgres')
         | list)
       no_log: true
 
     - name: Reconcile the existing Better Stack proxy metrics target
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
         method: PATCH
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -398,7 +1273,7 @@
 
     - name: Reconcile the existing Better Stack backend metrics target
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
         method: PATCH
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -420,7 +1295,7 @@
 
     - name: Reconcile the existing Better Stack PostgreSQL metrics target
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
         method: PATCH
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -442,7 +1317,7 @@
 
     - name: Read back Better Stack collector metric targets
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v1/collectors/{{ better_stack_collector_id }}/targets?per_page=100"
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?per_page=100"
         method: GET
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -452,15 +1327,45 @@
       register: better_stack_collector_targets_readback
       no_log: true
 
+    - name: Read remaining pages from Better Stack metric target readback pagination
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?page={{ item }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: >-
+        {{ range(2, (
+        better_stack_collector_targets_readback.json.pagination.last
+        | default('page=1', true) | string
+        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+        | first | default('1', true) | int) + 1) | list }}
+      register: better_stack_collector_target_readback_pages
+      no_log: true
+
+    - name: Merge every Better Stack metric target readback page
+      ansible.builtin.set_fact:
+        better_stack_collector_targets_readback:
+          json:
+            data: >-
+              {{ ([better_stack_collector_targets_readback.json.data | default([])]
+              + (better_stack_collector_target_readback_pages.results | default([])
+              | map(attribute='json.data') | list)) | flatten | list }}
+      no_log: true
+
     - name: Verify Better Stack service targets are provider-side resources
       ansible.builtin.assert:
         that:
           - >-
             better_stack_collector_targets_readback.json.data | default([])
+            | selectattr('attributes.kind', 'defined')
             | selectattr('attributes.kind', 'equalto', 'postgres')
             | list | length == 1
           - >-
             better_stack_collector_targets_readback.json.data | default([])
+            | selectattr('attributes.kind', 'defined')
             | selectattr('attributes.kind', 'equalto', 'prometheus')
             | selectattr('attributes.host', 'equalto', better_stack_proxy_target_host)
             | selectattr('attributes.service', 'equalto', better_stack_proxy_target_service)
@@ -468,6 +1373,7 @@
             | list | length == 1
           - >-
             better_stack_collector_targets_readback.json.data | default([])
+            | selectattr('attributes.kind', 'defined')
             | selectattr('attributes.kind', 'equalto', 'prometheus')
             | selectattr('attributes.host', 'equalto', better_stack_backend_target_host)
             | selectattr('attributes.service', 'equalto', better_stack_backend_target_service)
@@ -475,6 +1381,7 @@
             | list | length == 1
           - >-
             better_stack_collector_targets_readback.json.data | default([])
+            | selectattr('attributes.kind', 'defined')
             | selectattr('attributes.kind', 'equalto', 'postgres')
             | selectattr('attributes.host', 'equalto', better_stack_postgresql_target_host)
             | selectattr('attributes.port', 'equalto', better_stack_postgresql_target_port | int)
@@ -487,7 +1394,7 @@
 
     - name: Read existing Better Stack dashboard alerts
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v2/alerts?per_page=250"
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/alerts?per_page=250"
         method: GET
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -497,9 +1404,68 @@
       register: better_stack_existing_dashboard_alerts
       no_log: true
 
+    - name: Read remaining pages from existing Better Stack dashboard alert pagination
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/alerts?page={{ item }}&per_page=250"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: >-
+        {{ range(2, (
+        better_stack_existing_dashboard_alerts.json.pagination.last
+        | default('page=1', true) | string
+        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+        | first | default('1', true) | int) + 1) | list }}
+      register: better_stack_existing_dashboard_alert_pages
+      no_log: true
+
+    - name: Merge every Better Stack dashboard alert discovery page
+      ansible.builtin.set_fact:
+        better_stack_existing_dashboard_alerts:
+          json:
+            data: >-
+              {{ ([better_stack_existing_dashboard_alerts.json.data | default([])]
+              + (better_stack_existing_dashboard_alert_pages.results | default([])
+              | map(attribute='json.data') | list)) | flatten | list }}
+      no_log: true
+
+    - name: Read each existing managed Better Stack alert detail
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/alerts/{{ item.id }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: "{{ better_stack_existing_dashboard_alerts.json.data | default([]) }}"
+      when: >-
+        item.attributes.name | default('') in [
+          'GAM proxy service unhealthy',
+          'GAM backend service unhealthy',
+          'GAM postgresql service unhealthy',
+          'GAM filesystem usage warning',
+          'GAM filesystem usage critical'
+        ]
+      register: better_stack_existing_dashboard_alert_details
+      no_log: true
+
+    - name: Use Better Stack alert details for reconciliation decisions
+      ansible.builtin.set_fact:
+        better_stack_existing_dashboard_alerts:
+          json:
+            data: >-
+              {{ better_stack_existing_dashboard_alert_details.results | default([])
+              | selectattr('json', 'defined')
+              | map(attribute='json.data') | list }}
+      no_log: true
+
     - name: Register the Better Stack proxy service alert
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts/{{ better_stack_proxy_chart_id }}/alerts"
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts/{{ better_stack_proxy_chart_id }}/alerts"
         method: POST
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -531,7 +1497,7 @@
 
     - name: Register the Better Stack backend service alert
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts/{{ better_stack_backend_chart_id }}/alerts"
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts/{{ better_stack_backend_chart_id }}/alerts"
         method: POST
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -563,7 +1529,7 @@
 
     - name: Register the Better Stack PostgreSQL service alert
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts/{{ better_stack_postgresql_chart_id }}/alerts"
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts/{{ better_stack_postgresql_chart_id }}/alerts"
         method: POST
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -595,7 +1561,7 @@
 
     - name: Register the Better Stack filesystem warning alert
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts/{{ better_stack_filesystem_chart_id }}/alerts"
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts/{{ better_stack_filesystem_chart_id }}/alerts"
         method: POST
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -628,7 +1594,7 @@
 
     - name: Register the Better Stack filesystem critical alert
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts/{{ better_stack_filesystem_chart_id }}/alerts"
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/dashboards/{{ better_stack_dashboard_id }}/charts/{{ better_stack_filesystem_chart_id }}/alerts"
         method: POST
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -661,7 +1627,7 @@
 
     - name: Reconcile drifted Better Stack service and filesystem alerts
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v2/dashboards/{{ item.attributes.dashboard_id }}/charts/{{ item.attributes.chart_id }}/alerts/{{ item.id }}"
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/alerts/{{ item.id }}"
         method: PATCH
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -733,7 +1699,7 @@
 
     - name: Read back Better Stack dashboard alerts
       ansible.builtin.uri:
-        url: "https://telemetry.betterstack.com/api/v2/alerts?per_page=250"
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/alerts?per_page=250"
         method: GET
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
@@ -741,6 +1707,65 @@
         status_code: [200]
         return_content: true
       register: better_stack_dashboard_alerts_readback
+      no_log: true
+
+    - name: Read remaining pages from Better Stack dashboard alert readback pagination
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/alerts?page={{ item }}&per_page=250"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: >-
+        {{ range(2, (
+        better_stack_dashboard_alerts_readback.json.pagination.last
+        | default('page=1', true) | string
+        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+        | first | default('1', true) | int) + 1) | list }}
+      register: better_stack_dashboard_alert_readback_pages
+      no_log: true
+
+    - name: Merge every Better Stack dashboard alert readback page
+      ansible.builtin.set_fact:
+        better_stack_dashboard_alerts_readback:
+          json:
+            data: >-
+              {{ ([better_stack_dashboard_alerts_readback.json.data | default([])]
+              + (better_stack_dashboard_alert_readback_pages.results | default([])
+              | map(attribute='json.data') | list)) | flatten | list }}
+      no_log: true
+
+    - name: Read each managed Better Stack alert detail for final acceptance
+      ansible.builtin.uri:
+        url: "{{ better_stack_telemetry_api_url }}/api/v2/alerts/{{ item.id }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: "{{ better_stack_dashboard_alerts_readback.json.data | default([]) }}"
+      when: >-
+        item.attributes.name | default('') in [
+          'GAM proxy service unhealthy',
+          'GAM backend service unhealthy',
+          'GAM postgresql service unhealthy',
+          'GAM filesystem usage warning',
+          'GAM filesystem usage critical'
+        ]
+      register: better_stack_dashboard_alert_detail_readback
+      no_log: true
+
+    - name: Use Better Stack alert details for final acceptance
+      ansible.builtin.set_fact:
+        better_stack_dashboard_alerts_readback:
+          json:
+            data: >-
+              {{ better_stack_dashboard_alert_detail_readback.results | default([])
+              | selectattr('json', 'defined')
+              | map(attribute='json.data') | list }}
       no_log: true
 
     - name: Verify Better Stack service and filesystem alerts are provider-side resources
@@ -751,33 +1776,33 @@
             | selectattr('attributes.name', 'equalto', 'GAM proxy service unhealthy')
             | selectattr('attributes.dashboard_id', 'equalto', better_stack_dashboard_id | int)
             | selectattr('attributes.chart_id', 'equalto', better_stack_proxy_chart_id | int)
-            | list | length > 0
+            | list | length == 1
           - >-
             better_stack_dashboard_alerts_readback.json.data | default([])
             | selectattr('attributes.name', 'equalto', 'GAM backend service unhealthy')
             | selectattr('attributes.dashboard_id', 'equalto', better_stack_dashboard_id | int)
             | selectattr('attributes.chart_id', 'equalto', better_stack_backend_chart_id | int)
-            | list | length > 0
+            | list | length == 1
           - >-
             better_stack_dashboard_alerts_readback.json.data | default([])
             | selectattr('attributes.name', 'equalto', 'GAM postgresql service unhealthy')
             | selectattr('attributes.dashboard_id', 'equalto', better_stack_dashboard_id | int)
             | selectattr('attributes.chart_id', 'equalto', better_stack_postgresql_chart_id | int)
-            | list | length > 0
+            | list | length == 1
           - >-
             better_stack_dashboard_alerts_readback.json.data | default([])
             | selectattr('attributes.name', 'equalto', 'GAM filesystem usage warning')
             | selectattr('attributes.dashboard_id', 'equalto', better_stack_dashboard_id | int)
             | selectattr('attributes.chart_id', 'equalto', better_stack_filesystem_chart_id | int)
             | selectattr('attributes.value', 'equalto', 80)
-            | list | length > 0
+            | list | length == 1
           - >-
             better_stack_dashboard_alerts_readback.json.data | default([])
             | selectattr('attributes.name', 'equalto', 'GAM filesystem usage critical')
             | selectattr('attributes.dashboard_id', 'equalto', better_stack_dashboard_id | int)
             | selectattr('attributes.chart_id', 'equalto', better_stack_filesystem_chart_id | int)
             | selectattr('attributes.value', 'equalto', 90)
-            | list | length > 0
+            | list | length == 1
         fail_msg: >-
           Better Stack provider-side dashboard alerts must cover proxy,
           backend, PostgreSQL, and filesystem warning/critical thresholds.
@@ -840,14 +1865,66 @@
 
     - name: Read existing Better Stack monitors before reconciliation
       ansible.builtin.uri:
-        url: "{{ better_stack_api_url }}/monitors"
+        url: "{{ better_stack_api_url }}/monitors?pronounceable_name={{ item | urlencode }}&per_page=100"
         method: GET
         headers:
           Authorization: "Bearer {{ better_stack_api_token }}"
           Content-Type: application/json
         status_code: [200]
         return_content: true
-      register: better_stack_existing_monitors
+      loop:
+        - GAM production availability
+        - GAM production TLS certificate
+      register: better_stack_existing_monitor_queries
+      no_log: true
+
+    - name: Read remaining filtered Better Stack availability monitor discovery pages
+      ansible.builtin.uri:
+        url: "{{ better_stack_api_url }}/monitors?pronounceable_name={{ 'GAM production availability' | urlencode }}&page={{ item }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: >-
+        {{ range(2, (
+        better_stack_existing_monitor_queries.results[0].json.pagination.last
+        | default('page=1', true) | string
+        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+        | first | default('1', true) | int) + 1) | list }}
+      register: better_stack_existing_availability_monitor_pages
+      no_log: true
+
+    - name: Read remaining filtered Better Stack TLS monitor discovery pages
+      ansible.builtin.uri:
+        url: "{{ better_stack_api_url }}/monitors?pronounceable_name={{ 'GAM production TLS certificate' | urlencode }}&page={{ item }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: >-
+        {{ range(2, (
+        better_stack_existing_monitor_queries.results[1].json.pagination.last
+        | default('page=1', true) | string
+        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+        | first | default('1', true) | int) + 1) | list }}
+      register: better_stack_existing_tls_monitor_pages
+      no_log: true
+
+    - name: Merge filtered Better Stack monitor discovery responses
+      ansible.builtin.set_fact:
+        better_stack_existing_monitors:
+          json:
+            data: >-
+              {{ ((better_stack_existing_monitor_queries.results | default([])
+              | map(attribute='json.data') | list)
+              + (better_stack_existing_availability_monitor_pages.results | default([])
+              | map(attribute='json.data') | list)
+              + (better_stack_existing_tls_monitor_pages.results | default([])
+              | map(attribute='json.data') | list)) | flatten | list }}
       no_log: true
 
     - name: Reconcile the existing Better Stack availability monitor
@@ -870,7 +1947,18 @@
           push: true
         status_code: [200, 204]
       loop: "{{ better_stack_existing_monitors.json.data | default([]) }}"
-      when: item.attributes.pronounceable_name | default('') == 'GAM production availability'
+      when: >-
+        item.attributes.pronounceable_name | default('') == 'GAM production availability'
+        and (
+          item.attributes.url | default('') != production_origin + '/api/health'
+          or item.attributes.monitor_type | default('') != 'keyword'
+          or item.attributes.required_keyword | default('') != '{"status":"UP"}'
+          or item.attributes.http_method != 'get'
+          or item.attributes.check_frequency | int != 300
+          or item.attributes.confirmation_period | int != 600
+          or item.attributes.email is not sameas true
+          or item.attributes.push is not sameas true
+        )
       no_log: true
 
     - name: Reconcile the existing Better Stack TLS monitor
@@ -892,7 +1980,16 @@
           push: true
         status_code: [200, 204]
       loop: "{{ better_stack_existing_monitors.json.data | default([]) }}"
-      when: item.attributes.pronounceable_name | default('') == 'GAM production TLS certificate'
+      when:
+        - item.attributes.pronounceable_name | default('') == 'GAM production TLS certificate'
+        - >-
+          item.attributes.url | default('') != production_origin
+          or item.attributes.monitor_type | default('') != 'status'
+          or item.attributes.check_frequency | int != 3600
+          or item.attributes.ssl_expiration | int != 30
+          or item.attributes.verify_ssl is not sameas true
+          or item.attributes.email is not sameas true
+          or item.attributes.push is not sameas true
       no_log: true
 
     - name: Register the Better Stack external availability health check
@@ -943,4 +2040,169 @@
         | selectattr('attributes.pronounceable_name', 'equalto', 'GAM production TLS certificate')
         | list)
       no_log: true
+
+    - name: Read back Better Stack monitors after reconciliation
+      ansible.builtin.uri:
+        url: "{{ better_stack_api_url }}/monitors?pronounceable_name={{ item | urlencode }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop:
+        - GAM production availability
+        - GAM production TLS certificate
+      register: better_stack_monitor_readback_queries
+      no_log: true
+
+    - name: Read remaining filtered Better Stack availability monitor readback pages
+      ansible.builtin.uri:
+        url: "{{ better_stack_api_url }}/monitors?pronounceable_name={{ 'GAM production availability' | urlencode }}&page={{ item }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: >-
+        {{ range(2, (
+        better_stack_monitor_readback_queries.results[0].json.pagination.last
+        | default('page=1', true) | string
+        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+        | first | default('1', true) | int) + 1) | list }}
+      register: better_stack_availability_monitor_readback_pages
+      no_log: true
+
+    - name: Read remaining filtered Better Stack TLS monitor readback pages
+      ansible.builtin.uri:
+        url: "{{ better_stack_api_url }}/monitors?pronounceable_name={{ 'GAM production TLS certificate' | urlencode }}&page={{ item }}&per_page=100"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ better_stack_api_token }}"
+          Content-Type: application/json
+        status_code: [200]
+        return_content: true
+      loop: >-
+        {{ range(2, (
+        better_stack_monitor_readback_queries.results[1].json.pagination.last
+        | default('page=1', true) | string
+        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+        | first | default('1', true) | int) + 1) | list }}
+      register: better_stack_tls_monitor_readback_pages
+      no_log: true
+
+    - name: Merge filtered Better Stack monitor readback responses
+      ansible.builtin.set_fact:
+        better_stack_monitors_readback:
+          json:
+            data: >-
+              {{ ((better_stack_monitor_readback_queries.results | default([])
+              | map(attribute='json.data') | list)
+              + (better_stack_availability_monitor_readback_pages.results | default([])
+              | map(attribute='json.data') | list)
+              + (better_stack_tls_monitor_readback_pages.results | default([])
+              | map(attribute='json.data') | list)) | flatten | list }}
+      no_log: true
+
+    - name: Verify Better Stack availability and TLS monitor provider state
+      ansible.builtin.assert:
+        that:
+          - >-
+            better_stack_monitors_readback.json.data | default([])
+            | selectattr('attributes.pronounceable_name', 'equalto', 'GAM production availability')
+            | selectattr('attributes.url', 'equalto', production_origin + '/api/health')
+            | selectattr('attributes.monitor_type', 'equalto', 'keyword')
+            | selectattr('attributes.check_frequency', 'equalto', 300)
+            | selectattr('attributes.email', 'equalto', true)
+            | selectattr('attributes.push', 'equalto', true)
+            | selectattr('attributes.http_method', 'equalto', 'get')
+            | selectattr('attributes.required_keyword', 'equalto', '{"status":"UP"}')
+            | selectattr('attributes.confirmation_period', 'equalto', 600)
+            | list | length == 1
+          - >-
+            better_stack_monitors_readback.json.data | default([])
+            | selectattr('attributes.pronounceable_name', 'equalto', 'GAM production TLS certificate')
+            | selectattr('attributes.url', 'equalto', production_origin)
+            | selectattr('attributes.monitor_type', 'equalto', 'status')
+            | selectattr('attributes.check_frequency', 'equalto', 3600)
+            | selectattr('attributes.email', 'equalto', true)
+            | selectattr('attributes.push', 'equalto', true)
+            | selectattr('attributes.ssl_expiration', 'equalto', 30)
+            | selectattr('attributes.verify_ssl', 'equalto', true)
+            | list | length == 1
+        fail_msg: >-
+          Better Stack monitor readback must match exactly one declared
+          availability monitor and one declared TLS certificate monitor.
+      no_log: true
+
+    - name: Download the official Better Stack collector Docker Compose installer
+      ansible.builtin.get_url:
+        url: "{{ better_stack_collector_install_url }}"
+        dest: /usr/local/libexec/better-stack-collector-install.sh
+        owner: root
+        group: root
+        mode: "0750"
+        checksum: "{{ better_stack_collector_install_checksum }}"
+
+    - name: Inspect the existing Better Stack collector Docker Compose deployment
+      ansible.builtin.command:
+        argv:
+          - docker
+          - ps
+          - --quiet
+          - --filter
+          - label=com.docker.compose.project=better-stack-collector
+          - --filter
+          - label=com.docker.compose.service={{ item }}
+          - --filter
+          - status=running
+          - --filter
+          - health=healthy
+      register: better_stack_collector_preinstall_state
+      loop: "{{ better_stack_collector_required_services }}"
+      changed_when: false
+      failed_when: better_stack_collector_preinstall_state.rc != 0
+
+    - name: Run the official Better Stack collector Docker Compose deployment
+      ansible.builtin.command:
+        argv:
+          - /bin/bash
+          - /usr/local/libexec/better-stack-collector-install.sh
+      environment:
+        COLLECTOR_SECRET: "{{ better_stack_collector_secret }}"
+      register: better_stack_collector_install
+      changed_when: true
+      when: >-
+        better_stack_collector_preinstall_state.results
+        | map(attribute='stdout')
+        | select('equalto', '')
+        | list | length > 0
+      no_log: true
+
+    - name: Verify the Better Stack collector Docker Compose deployment
+      ansible.builtin.command:
+        argv:
+          - docker
+          - ps
+          - --quiet
+          - --filter
+          - label=com.docker.compose.project=better-stack-collector
+          - --filter
+          - label=com.docker.compose.service={{ item }}
+          - --filter
+          - status=running
+          - --filter
+          - health=healthy
+      register: better_stack_collector_status
+      loop: "{{ better_stack_collector_required_services }}"
+      changed_when: false
+      failed_when: >-
+        better_stack_collector_status.rc != 0
+        or better_stack_collector_status.stdout | trim | length == 0
+        or (
+        better_stack_collector_status.results | default([])
+        | map(attribute='stdout')
+        | select('equalto', '')
+        | list | length > 0)
 
