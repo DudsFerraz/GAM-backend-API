@@ -66,8 +66,10 @@ The proxy shall:
 - terminate public TLS;
 - serve the static SPA for frontend routes;
 - apply SPA fallback only to non-API routes;
-- forward `/api/*` requests to the privately reachable backend;
-- preserve the original public scheme, host, port, and request path through a documented trusted-forwarding contract; and
+- route `/api` and `/api/*` requests to the privately reachable backend after
+  removing exactly one complete leading `/api` path segment;
+- preserve the original public scheme, host, port, and request path as trusted
+  request metadata distinct from the transformed backend request target; and
 - avoid forwarding client-supplied trusted-proxy headers as authoritative values.
 
 The backend shall trust forwarded public-request information only from the configured proxy boundary.
@@ -76,11 +78,13 @@ Rationale:
 The proxy's GAM goal is to present one secure browser origin while separating frontend delivery from backend execution and keeping internal service addresses out of the public contract.
 
 Valid examples:
-- `/members/123` receives the SPA entry document while `/api/members/123` reaches the backend.
+- `/members/123` receives the SPA entry document while `/api/members/123`
+  reaches backend route `/members/123`.
 - Public URL generation sees the configured HTTPS origin even when the backend connection is private HTTP.
 
 Invalid examples:
 - `/api/auth/login` is handled by SPA fallback.
+- `/api/members/123` reaches backend request target `/api/members/123`.
 - A direct internet client can forge `X-Forwarded-Host` and influence generated URLs.
 
 ---
@@ -89,6 +93,10 @@ Invalid examples:
 The public API base path shall be `/api` in production and in the supported frontend development workflow.
 
 Requirement and OpenAPI path expressions such as `/auth/login` and `/accounts/{accountId}` shall be treated as API-relative unless explicitly identified as complete public paths.
+
+Backend controller routes shall be API-relative. The production and supported
+frontend development proxies shall expose those routes publicly by applying the
+single-prefix transformation defined by `REQ-WEB-014`.
 
 The generated OpenAPI contract shall declare `/api` as its public server base.
 
@@ -154,7 +162,7 @@ Invalid examples:
 ---
 
 ### REQ-WEB-007: Same-origin frontend development
-The supported local frontend workflow shall use one browser-visible development origin and shall proxy relative `/api/*` calls to the local backend.
+The supported local frontend workflow shall use one browser-visible development origin and shall proxy relative `/api/*` calls to the local backend after removing exactly one complete leading `/api` path segment.
 
 The development origin and port shall be configurable and shall not be tied to a specific frontend tool.
 
@@ -166,7 +174,8 @@ Rationale:
 The development proxy reproduces the production browser boundary without requiring locally trusted HTTPS or a fixed Vite, Node.js, or other development-server port.
 
 Valid examples:
-- A frontend dev server on a configured loopback port forwards `/api` to the backend.
+- A frontend dev server on a configured loopback port forwards public
+  `/api/accounts/me` to backend `/accounts/me`.
 - Production rejects the development insecure-cookie setting.
 
 Invalid examples:
@@ -404,6 +413,7 @@ Scenario: Prevent correlation spoofing at the production boundary
 * [ADR-0007: Use same-origin browser sessions with layered CSRF protection](../../decisions/0007-use-same-origin-browser-sessions-with-layered-csrf-protection.md)
 * [ADR-0024: Deploy production directly to Hostinger KVM 2](../../decisions/0024-deploy-production-directly-to-hostinger-kvm-2.md)
 * [ADR-0028: Complete the initial production commissioning and release contracts](../../decisions/0028-complete-initial-production-commissioning-and-release-contracts.md)
+* [ADR-0030: Remove the Public API Prefix at the Proxy Boundary](../../decisions/0030-remove-the-public-api-prefix-at-the-proxy-boundary.md)
 
 ## Related requirements
 
@@ -411,6 +421,7 @@ Scenario: Prevent correlation spoofing at the production boundary
 * [Production Operations](production-operations.md)
 * [OpenAPI and Frontend API Documentation](openapi-and-frontend-api-documentation.md)
 * [Activity Audit Log](activity-audit-log.md)
+* [Public API Prefix Routing](public-api-prefix-routing.md)
 
 ## Related documentation
 

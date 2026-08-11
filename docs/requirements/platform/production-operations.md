@@ -224,6 +224,10 @@ Invalid examples:
 ### REQ-OPS-011: Public production health contract
 The sole public production readiness endpoint shall be unauthenticated `GET /api/health`.
 
+The proxy shall remove exactly one public `/api` path segment and forward that
+request to the sole backend readiness route `GET /health`. The backend shall not
+also expose `/api/health` as a controller alias.
+
 When the application and its required database connectivity are ready, the endpoint shall return `200 OK`, `Content-Type: application/json`, and the single-property JSON response `{"status":"UP"}`. When the application can answer but readiness is unavailable, it shall return `503 Service Unavailable` and the single-property JSON response `{"status":"DOWN"}`.
 
 Both responses shall include `Cache-Control: no-store`. The endpoint shall not expose component names, dependency addresses, environment values, versions, timestamps, uptime, diagnostics, stack traces, secrets, or failure causes.
@@ -238,10 +242,13 @@ A fixed, dependency-aware readiness contract lets external monitoring verify the
 Valid examples:
 - An unauthenticated `GET /api/health` returns `200` and `{"status":"UP"}` when the application and database are ready.
 - A reachable backend with unavailable required database connectivity returns `503` and `{"status":"DOWN"}`.
+- A private health check that addresses the backend directly requests
+  `GET /health`.
 
 Invalid examples:
 - The public response lists PostgreSQL, Caddy, Hostinger, or application-version details.
 - The endpoint requires an Account session or a monitoring credential after commissioning.
+- The backend exposes both `/health` and `/api/health` controller mappings.
 
 ---
 
@@ -413,11 +420,13 @@ Scenario: Roll back a failed application pair
 * [ADR-0025: Use AWS São Paulo for immutable encrypted production backups](../../decisions/0025-use-aws-sao-paulo-for-immutable-encrypted-production-backups.md)
 * [ADR-0028: Complete the initial production commissioning and release contracts](../../decisions/0028-complete-initial-production-commissioning-and-release-contracts.md)
 * [ADR-0029: Align Better Stack monitoring with provider-supported contracts](../../decisions/0029-align-better-stack-monitoring-with-provider-supported-contracts.md)
+* [ADR-0030: Remove the Public API Prefix at the Proxy Boundary](../../decisions/0030-remove-the-public-api-prefix-at-the-proxy-boundary.md)
 
 ## Related requirements
 
 * [Web Delivery and Frontend Contract](web-delivery-and-frontend-contract.md)
 * [Production Backup and Recovery](production-backup-and-recovery.md)
+* [Public API Prefix Routing](public-api-prefix-routing.md)
 
 ## Related videos
 

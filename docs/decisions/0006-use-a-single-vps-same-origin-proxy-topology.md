@@ -21,8 +21,10 @@ Use `/` for the static SPA and `/api` as the public API base. The proxy is GAM's
 
 - redirect HTTP to HTTPS and terminate public TLS;
 - serve the static SPA and apply fallback only to non-API routes;
-- forward `/api/*` to the privately reachable backend;
-- preserve trustworthy original public request information;
+- route `/api` and `/api/*` to the privately reachable backend after removing
+  exactly one complete leading `/api` path segment;
+- preserve trustworthy original public request information as metadata distinct
+  from the transformed backend request target;
 - apply the accepted public browser-delivery policy; and
 - avoid logging credentials, session cookies, or security tokens.
 
@@ -101,6 +103,9 @@ Negative consequences:
 - `REQ-WEB-005`
 - `REQ-WEB-006`
 - `REQ-WEB-007`
+- `REQ-WEB-014`
+- `REQ-WEB-015`
+- `REQ-OPENAPI-013`
 - `REQ-OPS-001`
 - `REQ-OPS-002`
 - `REQ-OPS-003`
@@ -111,6 +116,7 @@ Negative consequences:
 - `REQ-OPS-008`
 - `REQ-OPS-009`
 - `REQ-OPS-011`
+- `REQ-OPS-015`
 - `REQ-OPS-012`
 
 ## Related diagrams
@@ -121,6 +127,7 @@ Negative consequences:
 
 - [ADR-0024: Deploy production directly to Hostinger KVM 2](0024-deploy-production-directly-to-hostinger-kvm-2.md)
 - [ADR-0028: Complete the initial production commissioning and release contracts](0028-complete-initial-production-commissioning-and-release-contracts.md)
+- [ADR-0030: Remove the Public API Prefix at the Proxy Boundary](0030-remove-the-public-api-prefix-at-the-proxy-boundary.md)
 
 ## Related videos
 

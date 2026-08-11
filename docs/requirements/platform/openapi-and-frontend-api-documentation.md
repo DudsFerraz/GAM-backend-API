@@ -399,6 +399,7 @@ Scenario: Detect removal of a contract added after the initial baseline
 * [ADR-0005: Keep Frontend and Backend in Separate Repositories](../../decisions/0005-keep-frontend-and-backend-in-separate-repositories.md)
 * [ADR-0008: Generate and Govern OpenAPI from Backend Code](../../decisions/0008-generate-and-govern-openapi-from-backend-code.md)
 * [ADR-0020: Use Shared Search Grammar with Resource-Specific Public Fields](../../decisions/0020-use-shared-search-grammar-with-resource-specific-public-fields.md)
+* [ADR-0030: Remove the Public API Prefix at the Proxy Boundary](../../decisions/0030-remove-the-public-api-prefix-at-the-proxy-boundary.md)
 
 ## Related requirements
 
@@ -407,6 +408,7 @@ Scenario: Detect removal of a contract added after the initial baseline
 * [Authentication and Account Registration](../authentication/authentication-and-registration.md)
 * [API Error and Authorization Contract](api-error-and-authorization-contract.md)
 * [Search and Filter Framework](search-and-filter-framework.md)
+* [Public API Prefix Routing](public-api-prefix-routing.md)
 
 ## Related videos
 

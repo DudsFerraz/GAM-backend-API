@@ -22,7 +22,7 @@ flowchart LR
         end
 
         Proxy -->|"frontend routes"| Static
-        Proxy -->|"/api/*"| Backend
+        Proxy -->|"public /api and /api/* to backend / and /*"| Backend
         Backend --> Database
         Database --> BackupJob
     end
@@ -39,12 +39,42 @@ flowchart LR
 The proxy is the only public GAM application ingress. It gives the browser one canonical origin while routing two different workloads:
 
 - frontend routes are served from the static SPA artifact;
-- `/api/*` routes are forwarded to the private backend;
+- `/api` and `/api/*` routes have exactly one leading `/api` segment removed
+  before they are forwarded to the private backend;
 - HTTP is redirected to HTTPS and public TLS terminates at the proxy;
 - original public scheme and host information is forwarded through a trusted boundary; and
 - backend and database application ports remain unavailable from the public internet.
 
 The proxy does not replace backend authentication, authorization, validation, or API error handling. Same-origin delivery also does not replace CSRF or XSS defenses.
+
+## API path transformation
+
+[ADR-0030](../decisions/0030-remove-the-public-api-prefix-at-the-proxy-boundary.md)
+defines the accepted transformation from the public `/api` routing boundary to
+the backend-relative route space.
+
+```mermaid
+flowchart LR
+    Client["Browser or external monitor"]
+    Proxy["Production or development proxy<br/>remove exactly one /api segment"]
+    Backend["Backend relative route space"]
+
+    Client -->|"Public /api/<relative-path>"| Proxy
+    Proxy -->|"Forward /<relative-path>"| Backend
+```
+
+Examples of the accepted mapping:
+
+| Public path | Backend-relative path |
+| --- | --- |
+| `/api/members` | `/members` |
+| `/api/auth/login` | `/auth/login` |
+| `/api/health` | `/health` |
+| `/api/docs` | `/docs` |
+| `/api/openapi.json` | `/openapi.json` |
+
+Public `Location` response headers remain application-owned and begin with
+`/api`; the proxy transformation does not rewrite them.
 
 ## Accepted limitations
 
@@ -65,3 +95,5 @@ The proxy does not replace backend authentication, authorization, validation, or
 - [ADR-0024: Deploy Production Directly to Hostinger KVM 2](../decisions/0024-deploy-production-directly-to-hostinger-kvm-2.md)
 - [ADR-0025: Use AWS São Paulo for Immutable Encrypted Production Backups](../decisions/0025-use-aws-sao-paulo-for-immutable-encrypted-production-backups.md)
 - [ADR-0028: Complete the Initial Production Commissioning and Release Contracts](../decisions/0028-complete-initial-production-commissioning-and-release-contracts.md)
+- [ADR-0030: Remove the Public API Prefix at the Proxy Boundary](../decisions/0030-remove-the-public-api-prefix-at-the-proxy-boundary.md)
+- [Public API Prefix Routing](../requirements/platform/public-api-prefix-routing.md)
