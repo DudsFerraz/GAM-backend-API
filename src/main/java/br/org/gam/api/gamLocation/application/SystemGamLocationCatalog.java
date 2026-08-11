@@ -43,6 +43,18 @@ public final class SystemGamLocationCatalog {
                     "BR",
                     null,
                     null
+            ),
+            new Entry(
+                    "REMOTE",
+                    Lifecycle.CURRENT,
+                    "Remoto",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
             )
     );
 
@@ -108,6 +120,18 @@ public final class SystemGamLocationCatalog {
         }
 
         public GamLocationNormalizer.Values normalizedValues() {
+            if ("REMOTE".equals(code)) {
+                return GamLocationNormalizer.normalizeRemoteCatalogEntry(
+                        name,
+                        street,
+                        city,
+                        state,
+                        postalCode,
+                        countryCode,
+                        latitude,
+                        longitude
+                );
+            }
             return GamLocationNormalizer.normalize(
                     name,
                     street,

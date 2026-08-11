@@ -48,6 +48,40 @@ public final class GamLocationNormalizer {
         );
     }
 
+    static Values normalizeRemoteCatalogEntry(
+            String name,
+            String street,
+            String city,
+            String state,
+            String postalCode,
+            String countryCode,
+            BigDecimal latitude,
+            BigDecimal longitude
+    ) {
+        String normalizedName = requiredText(name, "name", 255);
+        if (street != null || city != null || state != null || postalCode != null
+                || countryCode != null || latitude != null || longitude != null) {
+            invalid("The Remote GamLocation catalog entry must not contain address or coordinate values.");
+        }
+
+        return new Values(
+                normalizedName,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                canonical(normalizedName),
+                "",
+                "",
+                "",
+                "",
+                ""
+        );
+    }
+
     private static String requiredText(String value, String field, int maxLength) {
         if (value == null) {
             invalid(field + " is required.");

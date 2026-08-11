@@ -17,10 +17,10 @@ public record GamLocationRDTO(
         boolean systemManaged,
         String name,
         @Nullable @Schema(types = {"string", "null"}) String street,
-        String city,
-        String state,
+        @Nullable @Schema(types = {"string", "null"}) String city,
+        @Nullable @Schema(types = {"string", "null"}) String state,
         @Nullable @Schema(types = {"string", "null"}) String postalCode,
-        String countryCode,
+        @Nullable @Schema(types = {"string", "null"}) String countryCode,
         @Nullable @Schema(types = {"number", "null"}) BigDecimal latitude,
         @Nullable @Schema(types = {"number", "null"}) BigDecimal longitude
 ) {

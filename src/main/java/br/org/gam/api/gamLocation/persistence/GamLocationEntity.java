@@ -39,16 +39,16 @@ public class GamLocationEntity extends FullAuditableEntity {
     @Column(name = "street", length = 255)
     private String street;
 
-    @Column(name = "city", nullable = false, length = 100)
+    @Column(name = "city", length = 100)
     private String city;
 
-    @Column(name = "state", nullable = false, length = 50)
+    @Column(name = "state", length = 50)
     private String state;
 
     @Column(name = "postal_code", length = 20)
     private String postalCode;
 
-    @Column(name = "country_code", nullable = false, length = 2)
+    @Column(name = "country_code", length = 2)
     private String countryCode;
 
     @Column(name = "latitude", precision = 10, scale = 8)

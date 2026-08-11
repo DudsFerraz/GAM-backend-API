@@ -2,10 +2,10 @@ CREATE TABLE gam_locations (
     id UUID CONSTRAINT locations_id_not_null NOT NULL,
     name VARCHAR(255) CONSTRAINT locations_name_not_null NOT NULL,
     street VARCHAR(255),
-    city VARCHAR(100) CONSTRAINT locations_city_not_null NOT NULL,
-    state VARCHAR(50) CONSTRAINT locations_state_not_null NOT NULL,
+    city VARCHAR(100),
+    state VARCHAR(50),
     postal_code VARCHAR(20),
-    country_code VARCHAR(2) CONSTRAINT locations_country_code_not_null NOT NULL,
+    country_code VARCHAR(2),
     latitude NUMERIC(10, 8),
     longitude NUMERIC(11, 8),
 
@@ -40,7 +40,26 @@ CREATE TABLE gam_locations (
     CONSTRAINT check_gam_locations_catalog_current
         CHECK (NOT catalog_current OR system_managed),
     CONSTRAINT check_gam_locations_code_format
-        CHECK (code IS NULL OR code ~ '^[A-Z][A-Z0-9_]*$')
+        CHECK (code IS NULL OR code ~ '^[A-Z][A-Z0-9_]*$'),
+    CONSTRAINT check_gam_locations_physical_or_remote_address
+        CHECK (
+            (
+                code = 'REMOTE'
+                AND street IS NULL
+                AND city IS NULL
+                AND state IS NULL
+                AND postal_code IS NULL
+                AND country_code IS NULL
+                AND latitude IS NULL
+                AND longitude IS NULL
+            )
+            OR (
+                code IS DISTINCT FROM 'REMOTE'
+                AND city IS NOT NULL
+                AND state IS NOT NULL
+                AND country_code IS NOT NULL
+            )
+        )
 );
 
 CREATE UNIQUE INDEX idx_gam_location_active_duplicate_identity

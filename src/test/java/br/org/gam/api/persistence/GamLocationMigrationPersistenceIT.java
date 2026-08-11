@@ -231,10 +231,10 @@ class GamLocationMigrationPersistenceIT {
         flyway.migrate();
         List<Map<String, Object>> before = systemCatalogSnapshot(schema);
 
-        assertThat(before).hasSize(3);
+        assertThat(before).hasSize(4);
         assertThat(before)
                 .extracting(row -> row.get("code"))
-                .containsExactly("DBA", "DBCA", "DBSM");
+                .containsExactly("DBA", "DBCA", "DBSM", "REMOTE");
         assertThat(before).allSatisfy(row -> {
             assertThat(row)
                     .containsEntry("system_managed", true)
@@ -243,6 +243,19 @@ class GamLocationMigrationPersistenceIT {
                     .containsEntry("updated_by", null);
             assertThat(((UUID) row.get("id")).version()).isEqualTo(7);
         });
+        Map<String, Object> remote = before.stream()
+                .filter(row -> "REMOTE".equals(row.get("code")))
+                .findFirst()
+                .orElseThrow();
+        assertThat(remote)
+                .containsEntry("name", "Remoto")
+                .containsEntry("street", null)
+                .containsEntry("city", null)
+                .containsEntry("state", null)
+                .containsEntry("postal_code", null)
+                .containsEntry("country_code", null)
+                .containsEntry("latitude", null)
+                .containsEntry("longitude", null);
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM " + schema + ".accounts",
                 Long.class
@@ -368,9 +381,9 @@ class GamLocationMigrationPersistenceIT {
     }
 
     @ParameterizedTest(name = "configured code [{0}]")
-    @ValueSource(strings = {" ", "UNKNOWN"})
-    @DisplayName("REQ-GAM-LOCATION-CATALOG-008 - blank or unknown Oratorio location code -> startup validation failure")
-    void startupValidationShouldRejectBlankOrUnknownConfiguredLocation(String configuredCode) {
+    @ValueSource(strings = {" ", "UNKNOWN", "REMOTE"})
+    @DisplayName("REQ-GAM-LOCATION-CATALOG-008 - blank, unknown, or Remote Oratorio location code -> startup validation failure")
+    void startupValidationShouldRejectNonPhysicalConfiguredLocation(String configuredCode) {
         String schema = uniqueSchema("invalid_oratorio_location_code");
         migrateSystemCatalog(schema).migrate();
         ValidateSystemGamLocationCatalog validator = new ValidateSystemGamLocationCatalog(

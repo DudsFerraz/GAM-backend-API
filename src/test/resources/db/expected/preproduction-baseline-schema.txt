@@ -65,9 +65,9 @@ events.type | event_type_enum | NOT NULL | default=<none>
 events.updated_at | timestamp with time zone | NOT NULL | default=<none>
 events.updated_by | uuid | NULL | default=<none>
 gam_locations.catalog_current | boolean | NOT NULL | default=false
-gam_locations.city | character varying(100) | NOT NULL | default=<none>
+gam_locations.city | character varying(100) | NULL | default=<none>
 gam_locations.code | character varying(32) | NULL | default=<none>
-gam_locations.country_code | character varying(2) | NOT NULL | default=<none>
+gam_locations.country_code | character varying(2) | NULL | default=<none>
 gam_locations.created_at | timestamp with time zone | NOT NULL | default=<none>
 gam_locations.created_by | uuid | NULL | default=<none>
 gam_locations.deleted_at | timestamp with time zone | NULL | default=<none>
@@ -83,7 +83,7 @@ gam_locations.latitude | numeric(10,8) | NULL | default=<none>
 gam_locations.longitude | numeric(11,8) | NULL | default=<none>
 gam_locations.name | character varying(255) | NOT NULL | default=<none>
 gam_locations.postal_code | character varying(20) | NULL | default=<none>
-gam_locations.state | character varying(50) | NOT NULL | default=<none>
+gam_locations.state | character varying(50) | NULL | default=<none>
 gam_locations.street | character varying(255) | NULL | default=<none>
 gam_locations.system_managed | boolean | NOT NULL | default=false
 gam_locations.updated_at | timestamp with time zone | NOT NULL | default=<none>
@@ -381,6 +381,7 @@ events.fk_event_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON
 gam_locations.check_gam_locations_catalog_current | CHECK (NOT catalog_current OR system_managed)
 gam_locations.check_gam_locations_code_format | CHECK (code IS NULL OR code::text ~ '^[A-Z][A-Z0-9_]*$'::text)
 gam_locations.check_gam_locations_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
+gam_locations.check_gam_locations_physical_or_remote_address | CHECK (code::text = 'REMOTE'::text AND street IS NULL AND city IS NULL AND state IS NULL AND postal_code IS NULL AND country_code IS NULL AND latitude IS NULL AND longitude IS NULL OR code::text IS DISTINCT FROM 'REMOTE'::text AND city IS NOT NULL AND state IS NOT NULL AND country_code IS NOT NULL)
 gam_locations.check_gam_locations_system_ownership | CHECK (system_managed = (code IS NOT NULL))
 gam_locations.fk_location_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
 gam_locations.fk_location_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
@@ -393,13 +394,10 @@ gam_locations.gam_locations_identity_postal_code_not_null | NOT NULL identity_po
 gam_locations.gam_locations_identity_state_not_null | NOT NULL identity_state
 gam_locations.gam_locations_identity_street_not_null | NOT NULL identity_street
 gam_locations.gam_locations_system_managed_not_null | NOT NULL system_managed
-gam_locations.locations_city_not_null | NOT NULL city
-gam_locations.locations_country_code_not_null | NOT NULL country_code
 gam_locations.locations_created_at_not_null | NOT NULL created_at
 gam_locations.locations_id_not_null | NOT NULL id
 gam_locations.locations_name_not_null | NOT NULL name
 gam_locations.locations_pkey | PRIMARY KEY (id)
-gam_locations.locations_state_not_null | NOT NULL state
 gam_locations.locations_updated_at_not_null | NOT NULL updated_at
 member_contribution_areas.member_contribution_areas_contribution_area_not_null | NOT NULL contribution_area
 member_contribution_areas.member_contribution_areas_member_id_fkey | FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE

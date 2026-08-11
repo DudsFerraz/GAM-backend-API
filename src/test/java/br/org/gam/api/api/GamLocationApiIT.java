@@ -9,6 +9,7 @@ import io.restassured.response.Response;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -72,6 +74,15 @@ class GamLocationApiIT extends MemberApiTestSupport {
                     "SP",
                     "13419-080",
                     "BR"
+            ),
+            new SystemLocationExpectation(
+                    "REMOTE",
+                    "Remoto",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
             )
     );
 
@@ -216,7 +227,7 @@ class GamLocationApiIT extends MemberApiTestSupport {
         assertThat(systemLocations).hasSize(SYSTEM_LOCATION_CATALOG.size());
         assertThat(systemLocations)
                 .extracting(location -> location.get("code"))
-                .containsExactlyInAnyOrder("DBSM", "DBA", "DBCA");
+                .containsExactlyInAnyOrder("DBSM", "DBA", "DBCA", "REMOTE");
 
         for (SystemLocationExpectation expected : SYSTEM_LOCATION_CATALOG) {
             Map<String, Object> actual = systemLocations.stream()
@@ -238,11 +249,12 @@ class GamLocationApiIT extends MemberApiTestSupport {
         }
     }
 
-    @Test
+    @ParameterizedTest(name = "system location {0}")
+    @ValueSource(strings = {"DBSM", "REMOTE"})
     @DisplayName("REQ-GAM-LOCATION-CATALOG-004 - current system record update and removal -> forbidden, unchanged, and unaudited")
-    void productMutationShouldNotChangeOrAuditCurrentSystemLocation() {
+    void productMutationShouldNotChangeOrAuditCurrentSystemLocation(String code) {
         AuthSession caller = newSessionWithPermissions("GAM_LOCATION_GET", "GAM_LOCATION_MANAGE");
-        Map<String, Object> before = currentSystemLocation(caller, "DBSM");
+        Map<String, Object> before = currentSystemLocation(caller, code);
         UUID id = UUID.fromString(before.get("id").toString());
         clearActivities();
 
@@ -261,9 +273,84 @@ class GamLocationApiIT extends MemberApiTestSupport {
         assertThat(updateResponse.<String>path("code")).isEqualTo("FORBIDDEN_OPERATION");
         assertThat(removalResponse.statusCode()).isEqualTo(403);
         assertThat(removalResponse.<String>path("code")).isEqualTo("FORBIDDEN_OPERATION");
-        assertThat(currentSystemLocation(caller, "DBSM")).isEqualTo(before);
+        assertThat(currentSystemLocation(caller, code)).isEqualTo(before);
         assertThat(activityCount("GAM_LOCATION_UPDATED")).isZero();
         assertThat(activityCount("GAM_LOCATION_REMOVED")).isZero();
+    }
+
+    @ParameterizedTest(name = "{0} {1}")
+    @MethodSource("addressSortCases")
+    @DisplayName("REQ-GAM-LOCATION-008 - address sorting -> Remote null value last with deterministic tie-breakers")
+    void addressSortingShouldPlaceRemoteAfterPhysicalLocations(
+            String field,
+            String direction
+    ) {
+        AuthSession caller = newSessionWithPermissions(
+                "GAM_LOCATION_CREATE", "GAM_LOCATION_GET"
+        );
+        Map<String, Object> physicalPayload = validPayload("Address sort fixture");
+        physicalPayload.put("city", "Avaré");
+        physicalPayload.put("state", "RJ");
+        physicalPayload.put("countryCode", "CA");
+        createGamLocation(caller, physicalPayload);
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .queryParam("size", 100)
+                .queryParam("sort", field + "," + direction)
+                .get(GAM_LOCATION_PATH)
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        List<Map<String, Object>> locations = response.path("items");
+        Comparator<String> requestedDirection = "asc".equals(direction)
+                ? Comparator.naturalOrder()
+                : Comparator.reverseOrder();
+        Comparator<Map<String, Object>> requiredOrder = Comparator
+                .<Map<String, Object>, String>comparing(
+                        location -> (String) location.get(field),
+                        Comparator.nullsLast(requestedDirection)
+                )
+                .thenComparing(location -> (String) location.get("name"))
+                .thenComparing(location -> UUID.fromString(location.get("id").toString()));
+
+        assertThat(locations)
+                .containsExactlyElementsOf(locations.stream().sorted(requiredOrder).toList());
+        assertThat(locations)
+                .filteredOn(location -> "REMOTE".equals(location.get("code")))
+                .singleElement()
+                .satisfies(remote -> assertThat(remote.get(field)).isNull());
+        assertThat(locations.getLast().get("code")).isEqualTo("REMOTE");
+    }
+
+    @Test
+    @DisplayName("REQ-GAM-LOCATION-008 - address sort ties -> fixed name-ascending tie-breaker despite conflicting secondary sort")
+    void clientSecondarySortShouldNotOverrideAddressTieBreaker() {
+        AuthSession caller = newSessionWithPermissions(
+                "GAM_LOCATION_CREATE", "GAM_LOCATION_GET"
+        );
+        Map<String, Object> zuluPayload = validPayload("Zulu tie-breaker location");
+        zuluPayload.put("city", "Tie-breaker city");
+        Map<String, Object> alphaPayload = validPayload("Alpha tie-breaker location");
+        alphaPayload.put("city", "Tie-breaker city");
+        createGamLocation(caller, zuluPayload);
+        createGamLocation(caller, alphaPayload);
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .queryParam("size", 100)
+                .queryParam("sort", "city,asc", "name,desc")
+                .get(GAM_LOCATION_PATH)
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.<List<Map<String, Object>>>path("items"))
+                .filteredOn(location -> "Tie-breaker city".equals(location.get("city")))
+                .extracting(location -> location.get("name"))
+                .containsExactly(
+                        "Alpha tie-breaker location",
+                        "Zulu tie-breaker location"
+                );
     }
 
     @Test
@@ -1012,6 +1099,17 @@ class GamLocationApiIT extends MemberApiTestSupport {
                 Arguments.of("longitude below lower bound", withValue(validPayload("valid"), "longitude", new BigDecimal("-180.00000001"))),
                 Arguments.of("latitude with excess precision", withValue(validPayload("valid"), "latitude", new BigDecimal("1.123456789"))),
                 Arguments.of("quoted latitude string", withValue(validPayload("valid"), "latitude", "-22.9068"))
+        );
+    }
+
+    private static Stream<Arguments> addressSortCases() {
+        return Stream.of(
+                Arguments.of("city", "asc"),
+                Arguments.of("city", "desc"),
+                Arguments.of("state", "asc"),
+                Arguments.of("state", "desc"),
+                Arguments.of("countryCode", "asc"),
+                Arguments.of("countryCode", "desc")
         );
     }
 

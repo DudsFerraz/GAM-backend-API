@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OpenApiSharedSchemasApiIT extends AbstractOpenApiDocumentationApiIT {
 
     private static final Set<String> CURRENT_SYSTEM_GAM_LOCATION_CODES = Set.of(
-            "DBSM", "DBA", "DBCA"
+            "DBSM", "DBA", "DBCA", "REMOTE"
     );
     private static final int[] UNICODE_WHITE_SPACE_CODE_POINTS = {
             0x0009, 0x000A, 0x000B, 0x000C, 0x000D,
@@ -378,7 +378,10 @@ class OpenApiSharedSchemasApiIT extends AbstractOpenApiDocumentationApiIT {
         assertThat(object(gamLocationProperties, "systemManaged"))
                 .containsEntry("type", "boolean");
         assertNullType(object(gamLocationProperties, "street"));
+        assertNullType(object(gamLocationProperties, "city"));
+        assertNullType(object(gamLocationProperties, "state"));
         assertNullType(object(gamLocationProperties, "postalCode"));
+        assertNullType(object(gamLocationProperties, "countryCode"));
         assertNullType(object(gamLocationProperties, "latitude"));
         assertNullType(object(gamLocationProperties, "longitude"));
     }

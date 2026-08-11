@@ -975,6 +975,9 @@ public class OpenApiConfig {
             description += " The default is normalized name ascending, then Oratoriano UUID ascending. "
                     + "The oratorioYearAttendances sort in either direction also appends normalized name and UUID "
                     + "tie-breakers.";
+        } else if ("listGamLocations".equals(operationId)) {
+            description += " The default is name ascending, then UUID ascending. Address sorts place null values "
+                    + "after non-null values in both directions and append name and UUID ascending tie-breakers.";
         } else if ("getOratorianoFormPrintSnapshots".equals(operationId)) {
             description += " The default is generatedAt descending, then snapshot UUID descending. ";
         }

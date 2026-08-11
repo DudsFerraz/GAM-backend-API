@@ -108,6 +108,57 @@ class EventRecordsLifecycleApiIT extends MemberApiTestSupport {
     }
 
     @Test
+    @DisplayName("REQ-EVENT-004 and REQ-GAM-LOCATION-CATALOG-001/003 - Generic Event selects and embeds the singleton Remote GamLocation")
+    void genericEventShouldSelectAndEmbedTheRemoteGamLocation() {
+        AuthSession caller = newSessionWithPermissions("EVENT_CREATE", "GAM_LOCATION_GET");
+        ExtractableResponse<Response> locations = authenticatedJsonRequest(caller)
+                .queryParam("size", 100)
+                .get("/gam-locations")
+                .then()
+                .statusCode(200)
+                .extract();
+        Map<String, Object> remote = locations
+                .<List<Map<String, Object>>>path("items")
+                .stream()
+                .filter(location -> "REMOTE".equals(location.get("code")))
+                .findFirst()
+                .orElseThrow();
+        UUID remoteId = UUID.fromString(remote.get("id").toString());
+
+        ExtractableResponse<Response> response = authenticatedJsonRequest(caller)
+                .body(eventPayload(
+                        "Remote planning meeting",
+                        remoteId,
+                        null,
+                        Instant.now().plusSeconds(3_600),
+                        Instant.now().plusSeconds(7_200)
+                ))
+                .post(EVENTS)
+                .then()
+                .extract();
+
+        assertThat(response.statusCode()).isEqualTo(201);
+        UUID eventId = UUID.fromString(response.path("id"));
+        trackEvent(eventId);
+        assertThat(response.<Map<String, Object>>path("gamLocation"))
+                .containsOnlyKeys(
+                        "id", "code", "systemManaged", "name", "street", "city", "state",
+                        "postalCode", "countryCode", "latitude", "longitude"
+                )
+                .containsEntry("id", remoteId.toString())
+                .containsEntry("code", "REMOTE")
+                .containsEntry("systemManaged", true)
+                .containsEntry("name", "Remoto")
+                .containsEntry("street", null)
+                .containsEntry("city", null)
+                .containsEntry("state", null)
+                .containsEntry("postalCode", null)
+                .containsEntry("countryCode", null)
+                .containsEntry("latitude", null)
+                .containsEntry("longitude", null);
+    }
+
+    @Test
     @DisplayName("REQ-GAM-LOCATION-CATALOG-003/007 and REQ-EVENT-002/004 - retired system location -> hidden directly but embedded in historical Event")
     void retiredSystemLocationShouldRemainEmbeddedInHistoricalEvent() {
         AuthSession caller = newSessionWithPermissions("EVENT_CREATE", "GAM_LOCATION_GET");

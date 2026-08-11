@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
@@ -19,6 +20,8 @@ import org.springframework.stereotype.Component;
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class ValidateSystemGamLocationCatalog implements ApplicationRunner {
+    private static final Set<String> ORATORIO_LOCATION_CODES = Set.of("DBSM", "DBA", "DBCA");
+
     private final JdbcTemplate jdbcTemplate;
     private final String configuredOratorioLocationCode;
     private volatile UUID oratorioLocationId;
@@ -34,6 +37,7 @@ public class ValidateSystemGamLocationCatalog implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         Entry configuredEntry = SystemGamLocationCatalog.findCurrent(configuredOratorioLocationCode)
+                .filter(entry -> ORATORIO_LOCATION_CODES.contains(entry.code()))
                 .orElseThrow(() -> invalid(
                         "gam.oratorio.location-code must be one exact current system location code."
                 ));
