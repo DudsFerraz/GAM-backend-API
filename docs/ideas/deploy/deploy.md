@@ -328,6 +328,12 @@ Monitor:
 
 Use Better Stack's official Docker Compose collector with its dedicated `COLLECTOR_SECRET` for host and service signals. Configure and verify the source as metrics-only; broad application-log, request-body, and distributed-trace export remains disabled initially. The Uptime API token is a separate controller-side credential and must not be used as the collector secret. ([Better Stack collector](https://betterstack.com/docs/logs/collector/))
 
+During initial commissioning, Ansible does not require `BETTER_STACK_COLLECTOR_SECRET` until after it has discovered or created the provider-side collector. A clean-provider run creates the collector with broad log and trace components already disabled and the required metrics components enabled, then stops before Docker startup. Transfer the generated collector secret into approved external custody as `BETTER_STACK_COLLECTOR_SECRET` and rerun the playbook; the replay validates that externally restored secret before starting the Docker Compose collector. Reconciliation still reads the provider configuration back and fails closed if the source is not metrics-only.
+
+Better Stack may return the availability monitor's HTTP method as lowercase `get`. Ansible treats that provider-normalized value as equivalent to the declared `GET` request and verifies the lowercase provider value after reconciliation, avoiding a no-op patch on every replay.
+
+Production defaults target Better Stack's official Uptime and Telemetry API origins. Operational integration scenarios may override `BETTER_STACK_API_URL` and `BETTER_STACK_TELEMETRY_API_URL` with local fake-provider origins; canonical CI installs the exactly pinned Ansible runtime and collections before running those scenarios. Alert reconciliation uses list responses only to discover identities, then reads each managed alert's detail resource before comparing mutable fields and performing final acceptance.
+
 Initially, prefer metrics over broad external log or trace export. Authentication systems can accidentally place sensitive information in headers, spans or structured logs.
 
 ---
