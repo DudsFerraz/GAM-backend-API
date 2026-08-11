@@ -17,10 +17,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OpenApiRuntimeSmokeApiIT extends BaseApiIntegrationTest {
 
     @Test
-    @DisplayName("REQ-OPENAPI-001/002 - real application -> live OpenAPI contract is publicly available")
+    @DisplayName("REQ-OPENAPI-001/013 - real backend -> live OpenAPI contract is available at /openapi.json")
     void realApplicationShouldExposeTheLiveOpenApiContract() {
         Map<String, Object> contract = jsonRequest()
-                .get("/api/openapi.json")
+                .get("/openapi.json")
                 .then()
                 .statusCode(200)
                 .extract()

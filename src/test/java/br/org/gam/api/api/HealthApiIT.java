@@ -31,7 +31,7 @@ class HealthApiIT extends BaseApiIntegrationTest {
         when(healthReadiness.isReady()).thenReturn(true);
 
         ExtractableResponse<Response> response = jsonRequest()
-                .get("/api/health")
+                .get("/health")
                 .then()
                 .extract();
 
@@ -48,7 +48,7 @@ class HealthApiIT extends BaseApiIntegrationTest {
         when(healthReadiness.isReady()).thenReturn(false);
 
         ExtractableResponse<Response> response = jsonRequest()
-                .get("/api/health")
+                .get("/health")
                 .then()
                 .extract();
 
@@ -64,7 +64,7 @@ class HealthApiIT extends BaseApiIntegrationTest {
     @DisplayName("REQ-OPS-011 - non-GET health methods reach MVC and return 405 without authentication")
     void nonGetHealthMethodsShouldReturnMethodNotAllowed() {
         ExtractableResponse<Response> response = jsonRequest()
-                .post("/api/health")
+                .post("/health")
                 .then()
                 .extract();
 

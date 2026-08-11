@@ -209,11 +209,11 @@ abstract class AbstractOpenApiDocumentationApiIT {
     }
 
     protected Map<String, Object> swaggerUiConfiguration() {
-        return getJson("/api/openapi.json/swagger-config");
+        return getJson("/openapi.json/swagger-config");
     }
 
     protected OpenApiResponse openApiContract() {
-        return new OpenApiResponse(getJson("/api/openapi.json"));
+        return new OpenApiResponse(getJson("/openapi.json"));
     }
 
     private Map<String, Object> getJson(String path) {

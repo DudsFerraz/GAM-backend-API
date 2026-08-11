@@ -50,7 +50,7 @@
     @maintenance_enabled {
         expression `"{$GAM_MAINTENANCE_ENABLED}" == "true"`
     }
-    @api path /api/*
+    @api path /api/* /api
     @fingerprinted path_regexp fingerprint \.(?:css|js|mjs|map|woff2?|png|jpg|jpeg|svg|webp)$
     @entry path / /index.html
 
@@ -68,6 +68,7 @@
         }
 
         handle @api {
+            uri strip_prefix /api
             reverse_proxy backend:8080 {
                 # Remove client-provided forwarding values before setting the
                 # values accepted by the backend's TRUSTED_PROXY mode.
@@ -75,11 +76,13 @@
                 header_up -X-Forwarded-Host
                 header_up -X-Forwarded-Port
                 header_up -X-Forwarded-Proto
+                header_up -X-Forwarded-Uri
                 header_up -X-Request-Id
                 header_up X-Forwarded-For {http.request.remote.host}
                 header_up X-Forwarded-Host {http.request.host}
                 header_up X-Forwarded-Port {http.request.port}
                 header_up X-Forwarded-Proto {http.request.scheme}
+                header_up X-Forwarded-Uri {http.request.orig_uri}
                 header_up X-Request-Id {http.request.uuid}
             }
         }

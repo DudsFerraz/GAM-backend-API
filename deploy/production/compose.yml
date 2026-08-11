@@ -68,7 +68,7 @@ services:
       SPRING_PROFILES_ACTIVE: production
       SPRING_FLYWAY_LOCATIONS: classpath:db/migration
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/health | grep -q '\"status\":\"UP\"'"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health | grep -q '\"status\":\"UP\"'"]
       interval: 10s
       timeout: 5s
       retries: 12

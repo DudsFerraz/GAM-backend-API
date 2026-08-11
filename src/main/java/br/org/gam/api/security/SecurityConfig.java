@@ -86,12 +86,12 @@ public class SecurityConfig {
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
                         .requireCsrfProtectionMatcher(this::requiresCsrfProof))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
-                        .requestMatchers("/api/health").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/health").permitAll()
+                        .requestMatchers("/health").permitAll()
                         .requestMatchers(
-                                "/api/docs", "/api/docs/**",
-                                "/api/openapi.json", "/api/openapi.json/**", "/api/openapi.json.yaml",
-                                "/api/swagger-ui/**", "/swagger-ui/**", "/webjars/**"
+                                "/docs", "/docs/**",
+                                "/openapi.json", "/openapi.json/**", "/openapi.json.yaml",
+                                "/swagger-ui/**", "/webjars/**"
                         ).permitAll()
                         .requestMatchers(
                                 "/auth/csrf", "/auth/login", "/auth/register", "/auth/refresh", "/auth/logout"

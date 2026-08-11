@@ -373,7 +373,7 @@
 							</execution>
 						</executions>
 						<configuration>
-							<apiDocsUrl>http://localhost:8085/api/openapi.json.yaml</apiDocsUrl>
+							<apiDocsUrl>http://localhost:8085/openapi.json.yaml</apiDocsUrl>
 							<outputDir>${project.build.directory}/openapi</outputDir>
 							<outputFileName>openapi.yaml</outputFileName>
 							<failOnError>true</failOnError>

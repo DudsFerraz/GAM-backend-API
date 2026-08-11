@@ -27,7 +27,7 @@
     developer_approval: "{{ lookup('env', 'GAM_DEPLOYMENT_APPROVAL') | default('', true) }}"
     developer_approval_record: "{{ lookup('env', 'GAM_DEPLOYMENT_APPROVAL_RECORD') | default('', true) }}"
     backend_private_health_command: >-
-      wget -qO- http://127.0.0.1:8080/api/health
+      wget -qO- http://127.0.0.1:8080/health
 
   pre_tasks:
     - name: Load the release-manifest model

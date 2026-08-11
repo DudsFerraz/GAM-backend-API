@@ -24,7 +24,8 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/health")
+@RequestMapping("/health")
+@Hidden
 @Tag(name = "Health")
 public class HealthController {
 

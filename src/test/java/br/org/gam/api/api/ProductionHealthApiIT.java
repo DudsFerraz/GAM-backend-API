@@ -24,17 +24,17 @@ import static org.mockito.Mockito.reset;
 @FunctionalTest
 @IntegrationTest
 @SecurityTest
-@DisplayName("API - Public production health")
+@DisplayName("API - Backend production readiness")
 class ProductionHealthApiIT extends BaseApiIntegrationTest {
 
     @MockitoSpyBean
     private DataSource dataSource;
 
     @Test
-    @DisplayName("REQ-OPS-011/ADR-0028 - ready unauthenticated public health -> non-cacheable minimal UP")
+    @DisplayName("REQ-OPS-011/015 - ready unauthenticated backend health -> non-cacheable minimal UP")
     void readyHealthShouldReturnOnlyUpStatusWithoutAuthentication() {
         ExtractableResponse<Response> response = jsonRequest()
-                .get("/api/health")
+                .get("/health")
                 .then()
                 .statusCode(200)
                 .extract();
@@ -50,7 +50,7 @@ class ProductionHealthApiIT extends BaseApiIntegrationTest {
     @DisplayName("REQ-OPS-011 - non-GET health request without credentials -> 405")
     void nonGetHealthRequestShouldReturnMethodNotAllowedWithoutAuthentication() {
         assertMethodNotAllowedResponse(jsonRequest()
-                .post("/api/health")
+                .post("/health")
                 .then()
                 .extract());
     }
@@ -59,7 +59,7 @@ class ProductionHealthApiIT extends BaseApiIntegrationTest {
     @DisplayName("REQ-OPS-011 - HEAD health request without credentials -> 405")
     void headHealthRequestShouldReturnMethodNotAllowedWithoutAuthentication() {
         assertMethodNotAllowedResponse(jsonRequest()
-                .head("/api/health")
+                .head("/health")
                 .then()
                 .extract());
     }
@@ -68,16 +68,16 @@ class ProductionHealthApiIT extends BaseApiIntegrationTest {
     @DisplayName("REQ-OPS-011 - OPTIONS health request without credentials -> 405")
     void optionsHealthRequestShouldReturnMethodNotAllowedWithoutAuthentication() {
         assertMethodNotAllowedResponse(jsonRequest()
-                .options("/api/health")
+                .options("/health")
                 .then()
                 .extract());
     }
 
     @Test
-    @DisplayName("REQ-OPS-011/REQ-OPENAPI-003/005/012 - public /api/health operation -> UP and DOWN JSON contract")
-    void openApiShouldDocumentThePublicHealthContract() {
+    @DisplayName("REQ-OPENAPI-002/013 - readiness routes -> excluded from the OpenAPI Paths Object")
+    void openApiShouldExcludeHealthRoutes() {
         Map<String, Object> contract = jsonRequest()
-                .get("/api/openapi.json")
+                .get("/openapi.json")
                 .then()
                 .statusCode(200)
                 .extract()
@@ -85,39 +85,25 @@ class ProductionHealthApiIT extends BaseApiIntegrationTest {
                 .getMap("$");
 
         Map<String, Object> paths = object(contract, "paths");
-        assertThat(paths).containsKey("/api/health");
-
-        Map<String, Object> healthPath = object(paths, "/api/health");
-        Map<String, Object> operation = object(healthPath, "get");
-        assertThat(operation)
-                .containsEntry("security", List.of())
-                .containsKey("responses");
-
-        Map<String, Object> responses = object(operation, "responses");
-        assertThat(responses).containsOnlyKeys("200", "503");
-        assertHealthResponse(contract, responses, "200", "UP");
-        assertHealthResponse(contract, responses, "503", "DOWN");
+        assertThat(paths).doesNotContainKeys("/health", "/api/health");
     }
 
     @Test
-    @DisplayName("REQ-OPENAPI-003 - public health operation -> stable id and semantic Health tag")
-    void openApiShouldDocumentPublicHealthOperationMetadata() {
+    @DisplayName("REQ-OPENAPI-013 - OpenAPI server and paths -> compose the public prefix exactly once")
+    void openApiShouldComposeEveryApplicationPathWithOnePublicPrefix() {
         Map<String, Object> contract = jsonRequest()
-                .get("/api/openapi.json")
+                .get("/openapi.json")
                 .then()
                 .statusCode(200)
                 .extract()
                 .jsonPath()
                 .getMap("$");
 
-        Map<String, Object> operation = object(
-                object(object(contract, "paths"), "/api/health"),
-                "get"
-        );
-
-        assertThat(operation)
-                .containsEntry("operationId", "getProductionHealth")
-                .containsEntry("tags", List.of("Health"));
+        assertThat(objects(contract, "servers"))
+                .extracting(server -> server.get("url"))
+                .containsExactly("/api");
+        assertThat(object(contract, "paths").keySet())
+                .allSatisfy(path -> assertThat(path).doesNotMatch("^/api(?:/|$).*$"));
     }
 
     @Test
@@ -125,7 +111,7 @@ class ProductionHealthApiIT extends BaseApiIntegrationTest {
     void unavailableDatabaseShouldReturnOnlyDownStatus() {
         withDatabaseConnectionUnavailable(() -> {
             ExtractableResponse<Response> response = jsonRequest()
-                    .get("/api/health")
+                    .get("/health")
                     .then()
                     .statusCode(503)
                     .extract();
@@ -140,49 +126,6 @@ class ProductionHealthApiIT extends BaseApiIntegrationTest {
 
     private void assertMethodNotAllowedResponse(ExtractableResponse<Response> response) {
         assertThat(response.statusCode()).isEqualTo(405);
-    }
-
-    private void assertHealthResponse(
-            Map<String, Object> contract,
-            Map<String, Object> responses,
-            String statusCode,
-            String expectedStatus
-    ) {
-        Map<String, Object> response = object(responses, statusCode);
-        assertThat(response).isNotNull();
-        Map<String, Object> headers = object(response, "headers");
-        assertThat(headers).containsKey("Cache-Control");
-        Map<String, Object> cacheControl = object(headers, "Cache-Control");
-        assertThat(object(cacheControl, "schema"))
-                .containsEntry("type", "string")
-                .containsEntry("example", "no-store");
-
-        Map<String, Object> content = object(response, "content");
-        assertThat(content).containsOnlyKeys("application/json");
-
-        Map<String, Object> mediaType = object(content, "application/json");
-        Map<String, Object> schema = resolveSchema(contract, object(mediaType, "schema"));
-        assertThat(schema).containsEntry("type", "object");
-        assertThat(strings(schema, "required")).containsExactly("status");
-
-        Map<String, Object> properties = object(schema, "properties");
-        assertThat(properties).containsOnlyKeys("status");
-        Map<String, Object> statusSchema = resolveSchema(contract, object(properties, "status"));
-        assertThat(statusSchema)
-                .as("health status schema for %s", statusCode)
-                .containsEntry("type", "string");
-        assertThat(statusSchema.get("enum")).as("health status enum for %s", statusCode)
-                .asList()
-                .containsExactly(expectedStatus);
-
-        assertThat(jsonExample(mediaType))
-                .containsOnlyKeys("status")
-                .containsEntry("status", expectedStatus);
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> jsonExample(Map<String, Object> mediaType) {
-        return (Map<String, Object>) mediaType.get("example");
     }
 
     private void withDatabaseConnectionUnavailable(Runnable assertion) {
@@ -204,21 +147,8 @@ class ProductionHealthApiIT extends BaseApiIntegrationTest {
     }
 
     @SuppressWarnings("unchecked")
-    private List<String> strings(Map<String, Object> source, String property) {
-        return (List<String>) source.get(property);
-    }
-
-    private Map<String, Object> resolveSchema(Map<String, Object> contract, Map<String, Object> schema) {
-        assertThat(schema).isNotNull();
-        Object reference = schema.get("$ref");
-        if (!(reference instanceof String referenceValue)
-                || !referenceValue.startsWith("#/components/schemas/")) {
-            return schema;
-        }
-
-        Map<String, Object> components = object(contract, "components");
-        Map<String, Object> schemas = object(components, "schemas");
-        return object(schemas, referenceValue.substring("#/components/schemas/".length()));
+    private List<Map<String, Object>> objects(Map<String, Object> source, String property) {
+        return (List<Map<String, Object>>) source.get(property);
     }
 
 }
