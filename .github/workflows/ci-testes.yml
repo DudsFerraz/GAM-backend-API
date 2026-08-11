@@ -39,6 +39,25 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      - name: Configurar Python para contratos operacionais
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: operations/ansible/requirements-test.txt
+
+      - name: Instalar dependencias dos contratos operacionais
+        run: python -m pip install --requirement operations/ansible/requirements-test.txt
+
+      - name: Instalar colecoes Ansible fixadas para os cenarios operacionais
+        run: ansible-galaxy collection install --requirements-file operations/ansible/collections/requirements.yml
+
+      - name: Executar contratos operacionais de producao
+        run: python operations/ansible/test_production_backup_aws_contracts.py
+
+      - name: Executar cenarios do provedor Better Stack com Ansible
+        run: python operations/ansible/test_better_stack_provider_scenarios.py
+
       # 2. Executamos os testes injetando as variáveis de ambiente
       #dasjhdsaid
       - name: Executar testes com Maven
