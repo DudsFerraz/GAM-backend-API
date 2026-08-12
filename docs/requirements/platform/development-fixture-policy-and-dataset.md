@@ -324,8 +324,9 @@ The dataset shall include distinct examples of:
 - Member Presences with and without observations; and
 - Oratoriano attendance spanning multiple months and years.
 
-The fixture shall not invent a specialized `MISSA` dataset until an Accepted
-Missa Requirement Specification defines its source data and lifecycle.
+The fixture shall not include a specialized `MISSA` dataset in the current
+scope. The accepted Missa workflow deliberately defers that dataset to a
+separate fixture-planning task.
 
 ---
 
@@ -694,8 +695,8 @@ Scenario: Existing local database uses the clean replacement path
   race, or error response.
 * Replacing automated tests with the manual endpoint-readiness dataset.
 * Fabricated product activity history for infrastructure-created records.
-* A specialized Missa fixture before an Accepted Missa Requirement
-  Specification exists.
+* A specialized Missa fixture; the accepted Missa workflow defers it to a
+  separate fixture-planning task.
 * Product behavior changes owned by the related Requirement Specifications,
   except correction of the already-Accepted Oratorio location-code contract.
 
@@ -714,6 +715,7 @@ Scenario: Existing local database uses the clean replacement path
 * [System GamLocation Catalog](../gam-locations/system-gam-location-catalog.md)
 * [Event Records and Generic Event Lifecycle](../events/event-records-and-generic-lifecycle.md)
 * [Member Event Presences](../presences/member-event-presences.md)
+* [Missa Workflow and Liturgical Assignments](../missa/missa-workflow-and-liturgical-assignments.md)
 * [Oratorio Occurrences and Planning](../oratorio/oratorio-occurrences-and-planning.md)
 * [Oratorio Attendance Tracker](../oratorio/oratorio-attendance-tracker.md)
 * [Oratorio Coordinator Designation](../oratorio/oratorio-coordinator-designation.md)

@@ -261,6 +261,10 @@ An unauthenticated removal shall return `401 Unauthorized`. An authenticated cal
 
 An active Presence may be removed while the Event is `SCHEDULED`, `COMPLETED`, or `CANCELLED`, regardless of the Event's current `beginDate`. Removal while the Event is `LOCKED` or `FINALIZED` shall return `409 Conflict` with code `PRESENCE_REMOVAL_NOT_ALLOWED`; structured details shall include `eventId`, `presenceId`, and effective Event `status`.
 
+For a Missa, removal shall additionally follow the assignment-dependency and
+cancelled-state exception in `REQ-PRESENCE-018`. That specialization shall not
+add `MISSA_GET` or `MISSA_MANAGE` as common Presence-removal permissions.
+
 After Event visibility succeeds, a missing or already removed Presence shall return `404 RESOURCE_NOT_FOUND` for resource `Presence` with identifier `{eventId}:{memberId}`.
 
 Successful removal shall return `204 No Content`. The removed Presence shall disappear from individual lookup, Event rosters, Member history, and active duplicate detection. The same Event and Member may then receive a new Presence with a new UUID.
@@ -277,7 +281,10 @@ Presence removal and activity persistence shall commit in one transaction. Activ
 
 ### REQ-PRESENCE-015: Cross-workflow concurrency safety
 
-Registration, observation editing, and removal shall serialize through the Event transaction boundary established by ADR-0012 and shall re-evaluate the latest committed Event and active Presence state before mutation.
+Registration, observation editing, and removal shall serialize through the
+Event transaction boundary established by ADR-0032 and shall re-evaluate the
+latest committed Event, active Presence state, and any Missa assignment
+dependency before mutation.
 
 The following guarantees shall hold:
 
@@ -299,6 +306,33 @@ The common Presence resource shall remain the persisted attendance fact for a Me
 Specialized tracker mutation shall require `ORATORIO_ATTENDANCE_MANAGE`; it shall not additionally require `PRESENCE_REGISTER`, `PRESENCE_REMOVE`, or `PRESENCE_EDIT`. Combined tracker read shall require `ORATORIO_ATTENDANCE_GET`; it shall not be implied by `EVENT_GET_PRESENCES`.
 
 The common Presence routes and permissions in this specification shall remain available with their existing contracts. The specialization shall not create a second Member-attendance resource.
+
+---
+
+### REQ-PRESENCE-018: Specialized Missa assignment coordination
+
+Creating a Missa assignment may create or reuse the common Presence resource
+under `REQ-MISSA-007`. That combined workflow shall require `MISSA_MANAGE`
+rather than `PRESENCE_REGISTER` and shall emit only the high-level
+`MISSA_MEMBER_ASSIGNED` activity. It shall not create a second attendance
+resource or emit a duplicate `PRESENCE_REGISTERED` activity.
+
+While the Missa is `SCHEDULED` or `COMPLETED`, common Presence removal shall
+reject a Member whose active Presence is required by one or more current Missa
+assignments. It shall return
+`409 MISSA_ASSIGNMENT_REQUIRES_PRESENCE` with only `missaId` and `memberId` in
+structured details. It shall not disclose responsibility codes because the
+caller may lack `MISSA_GET`.
+
+While the Missa is `CANCELLED`, common Presence removal shall remain allowed
+with the required reason from `REQ-PRESENCE-013`, even when frozen Missa
+assignments remain. `LOCKED` and `FINALIZED` shall retain the common removal
+rejection in `REQ-PRESENCE-013`.
+
+Missa assignment mutation and common Presence removal shall serialize through
+the Event boundary in ADR-0032. Assignment removal shall not remove Presence;
+outside the cancelled-state exception, the coordinator must remove all Missa
+assignments for the Member before removing the Presence.
 
 ## Acceptance scenarios
 
@@ -403,6 +437,22 @@ Scenario: Locked Event rejects attendance correction
   Then the matching mutation returns its intent-specific 409 conflict code
   And the Presence and activity log remain unchanged
 
+Scenario: Missa assignment blocks Presence removal while open
+  Given a Member has an active Presence required by an assignment in a SCHEDULED or COMPLETED Missa
+  And the caller has PRESENCE_REMOVE and Event audience visibility
+  When the caller removes the Presence through the common route
+  Then the response is 409 MISSA_ASSIGNMENT_REQUIRES_PRESENCE
+  And structured details contain only missaId and memberId
+  And the Presence and assignment remain active
+
+Scenario: Cancelled Missa permits mistaken Presence removal
+  Given a CANCELLED Missa retains a frozen assignment and active Presence for one Member
+  And the caller has PRESENCE_REMOVE and Event audience visibility
+  When the caller removes the Presence with a valid reason
+  Then the Presence is removed
+  And the frozen assignment remains
+  And one PRESENCE_REMOVED activity commits
+
 Scenario: Removed Presences allow duplicate Event cleanup
   Given a duplicate Generic Event has only removed Presence references
   And the Event otherwise satisfies its deletion requirements
@@ -448,7 +498,7 @@ The diagram represents active identity for one Event and Member pair. Re-registr
 
 ## Related ADRs
 
-* [ADR-0012: Serialize Event and Presence Mutations](../../decisions/0012-serialize-event-and-presence-mutations.md)
+* [ADR-0032: Serialize Event, Presence, and Missa Assignment Mutations](../../decisions/0032-serialize-event-presence-and-missa-assignment-mutations.md)
 * [ADR-0017: Serialize Oratorio and Oratoriano mutations](../../decisions/0017-serialize-oratorio-and-oratoriano-mutations.md)
 
 ## Related requirements
@@ -459,6 +509,7 @@ The diagram represents active identity for one Event and Member pair. Re-registr
 * [RBAC Catalog](../rbac/rbac-catalog.md)
 * [OpenAPI and Frontend API Documentation](../platform/openapi-and-frontend-api-documentation.md)
 * [Oratorio Attendance Tracker](../oratorio/oratorio-attendance-tracker.md)
+* [Missa Workflow and Liturgical Assignments](../missa/missa-workflow-and-liturgical-assignments.md)
 * [Activity Audit Log](../platform/activity-audit-log.md)
 
 ## Related videos

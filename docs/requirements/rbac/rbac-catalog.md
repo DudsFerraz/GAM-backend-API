@@ -65,6 +65,7 @@ The RBAC catalog shall maintain a code-defined registry of system permissions. T
 | Events | `EVENT_CREATE`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `EVENT_GET_COORD`, `EVENT_MANAGE` |
 | GamLocations | `GAM_LOCATION_GET`, `GAM_LOCATION_CREATE`, `GAM_LOCATION_MANAGE` |
 | Presences | `PRESENCES_SEARCH`, `PRESENCE_REGISTER`, `PRESENCE_EDIT`, `PRESENCE_REMOVE` |
+| Missa | `MISSA_GET`, `MISSA_CREATE`, `MISSA_MANAGE` |
 | Oratorio | `ORATORIO_GET`, `ORATORIO_CREATE`, `ORATORIO_MANAGE`, `ORATORIO_ATTENDANCE_GET`, `ORATORIO_ATTENDANCE_MANAGE`, `ORATORIO_COORD_MANAGE` |
 | Oratorianos | `ORATORIANO_GET`, `ORATORIANO_REGISTER`, `ORATORIANO_MANAGE` |
 | Oratoriano forms | `ORATORIANO_FORM_GET`, `ORATORIANO_FORM_MANAGE`, `ORATORIANO_FORM_PDF_GENERATE`, `ORATORIANO_FORM_ATTACHMENT_GET` |
@@ -102,6 +103,9 @@ The accepted display metadata for every system permission is:
 | `PRESENCE_REGISTER` | `Register presences` | `Allows recording Member attendance at Events` |
 | `PRESENCE_EDIT` | `Edit presences` | `Allows editing observations on Member attendance records` |
 | `PRESENCE_REMOVE` | `Remove presences` | `Allows removing mistaken Member attendance records` |
+| `MISSA_GET` | `View Missas` | `Allows viewing specialized Missa details` |
+| `MISSA_CREATE` | `Create Missas` | `Allows creating Missas` |
+| `MISSA_MANAGE` | `Manage Missas` | `Allows managing Missa details, assignments, lifecycle, and deletion` |
 | `ORATORIO_GET` | `View Oratorios` | `Allows viewing specialized Oratorio details` |
 | `ORATORIO_CREATE` | `Create Oratorios` | `Allows creating Oratorio occurrences` |
 | `ORATORIO_MANAGE` | `Manage Oratorios` | `Allows managing Oratorio planning and lifecycle` |
@@ -140,12 +144,16 @@ The current baseline shall seed these active permission bundles:
 | Role | Permissions |
 | --- | --- |
 | `SUDO` | Every permission in the accepted system permission registry. |
-| `COORD` | `MEMBER_GET`, `MEMBER_SEARCH`, `MEMBER_ACTIVATION`, `MEMBER_GET_NON_ACTIVE`, `MEMBER_MANAGE`, `MEMBER_INFORMATION_GET`, `MEMBER_ACCOUNT_LINK`, `COORDINATOR_MANAGE`, `ACCOUNT_GET`, `ACCOUNT_SEARCH`, `ACCOUNT_ROLE_MANAGE`, `EVENT_CREATE`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `EVENT_GET_COORD`, `EVENT_MANAGE`, `GAM_LOCATION_GET`, `GAM_LOCATION_CREATE`, `GAM_LOCATION_MANAGE`, `PRESENCES_SEARCH`, `PRESENCE_REGISTER`, `PRESENCE_EDIT`, `PRESENCE_REMOVE`, `ROLE_GET`, `PERMISSION_GET`, `ORATORIO_GET`, `ORATORIO_CREATE`, `ORATORIO_MANAGE`, `ORATORIO_ATTENDANCE_GET`, `ORATORIO_ATTENDANCE_MANAGE`, `ORATORIO_COORD_MANAGE`, `ORATORIANO_GET`, `ORATORIANO_REGISTER`, `ORATORIANO_MANAGE`, `ORATORIANO_FORM_GET`, `ORATORIANO_FORM_MANAGE`, `ORATORIANO_FORM_PDF_GENERATE`, and `ORATORIANO_FORM_ATTACHMENT_GET`. |
+| `COORD` | `MEMBER_GET`, `MEMBER_SEARCH`, `MEMBER_ACTIVATION`, `MEMBER_GET_NON_ACTIVE`, `MEMBER_MANAGE`, `MEMBER_INFORMATION_GET`, `MEMBER_ACCOUNT_LINK`, `COORDINATOR_MANAGE`, `ACCOUNT_GET`, `ACCOUNT_SEARCH`, `ACCOUNT_ROLE_MANAGE`, `EVENT_CREATE`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `EVENT_GET_COORD`, `EVENT_MANAGE`, `GAM_LOCATION_GET`, `GAM_LOCATION_CREATE`, `GAM_LOCATION_MANAGE`, `PRESENCES_SEARCH`, `PRESENCE_REGISTER`, `PRESENCE_EDIT`, `PRESENCE_REMOVE`, `MISSA_GET`, `MISSA_CREATE`, `MISSA_MANAGE`, `ROLE_GET`, `PERMISSION_GET`, `ORATORIO_GET`, `ORATORIO_CREATE`, `ORATORIO_MANAGE`, `ORATORIO_ATTENDANCE_GET`, `ORATORIO_ATTENDANCE_MANAGE`, `ORATORIO_COORD_MANAGE`, `ORATORIANO_GET`, `ORATORIANO_REGISTER`, `ORATORIANO_MANAGE`, `ORATORIANO_FORM_GET`, `ORATORIANO_FORM_MANAGE`, `ORATORIANO_FORM_PDF_GENERATE`, and `ORATORIANO_FORM_ATTACHMENT_GET`. |
 | `ORATORIO_COORD` | `ORATORIO_GET`, `ORATORIO_CREATE`, `ORATORIO_MANAGE`, `ORATORIO_ATTENDANCE_GET`, `ORATORIO_ATTENDANCE_MANAGE`, `ORATORIANO_GET`, `ORATORIANO_REGISTER`, `ORATORIANO_MANAGE`, `ORATORIANO_FORM_GET`, `ORATORIANO_FORM_MANAGE`, `ORATORIANO_FORM_PDF_GENERATE`, and `ORATORIANO_FORM_ATTACHMENT_GET`. |
-| `MEMBER` | `MEMBER_GET`, `ACCOUNT_GET`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `GAM_LOCATION_GET`, and `ORATORIO_GET`. |
+| `MEMBER` | `MEMBER_GET`, `ACCOUNT_GET`, `EVENT_SEARCH`, `EVENT_GET_PRESENCES`, `EVENT_GET_MEMBER`, `GAM_LOCATION_GET`, `MISSA_GET`, and `ORATORIO_GET`. |
 | `VISITOR` | No permissions. |
 
 `SUDO` shall receive a newly accepted system permission automatically. `COORD` shall receive only the permissions explicitly listed above; a future permission shall not be added to `COORD` unless this requirement is deliberately updated. `ACCOUNT_ROLE_MANAGE` is explicitly included in `COORD` and is not included in `ORATORIO_COORD`, `MEMBER`, or `VISITOR`.
+
+The `ORATORIO_COORD` bundle shall receive no Missa permission directly. An
+active Member that also holds `ORATORIO_COORD` receives `MISSA_GET` through the
+independent `MEMBER` bundle; runtime Role inheritance shall not be introduced.
 
 The source registry shall compose `ORATORIO_READ` from `ORATORIO_GET` and shall compose `ORATORIO_OPERATIONS` from `ORATORIO_READ` plus every accepted Oratorio, Oratoriano, and Oratoriano-form permission except `ORATORIO_COORD_MANAGE`. Repeatable seeding shall flatten those source groups into the direct links listed above. The groups shall not be persisted as Roles or create runtime inheritance.
 
@@ -496,6 +504,14 @@ Scenario: Baseline Coordinator receives Presence mutation permissions
   Then COORD receives all three Presence mutation permissions
   And MEMBER and VISITOR receive none of them through their baseline bundles
 
+Scenario: Baseline bundles receive deliberate Missa permissions
+  Given MISSA_GET, MISSA_CREATE, and MISSA_MANAGE are in the accepted permission registry
+  When the repeatable RBAC seed synchronizes the baseline bundles
+  Then MEMBER receives MISSA_GET
+  And COORD receives MISSA_GET, MISSA_CREATE, and MISSA_MANAGE
+  And SUDO receives all three permissions
+  And ORATORIO_COORD and VISITOR receive no Missa permission directly
+
 Scenario: Baseline Coordinator receives Coordinator-management permission
   Given COORDINATOR_MANAGE is in the accepted permission registry
   When the repeatable RBAC seed synchronizes the baseline bundles
@@ -683,6 +699,7 @@ flowchart LR
 * [Member Information](../members/member-information.md)
 * [Member Information Import and Account Linking](../members/member-information-import-and-account-linking.md)
 * [Member Event Presences](../presences/member-event-presences.md)
+* [Missa Workflow and Liturgical Assignments](../missa/missa-workflow-and-liturgical-assignments.md)
 * [Oratorio Coordinator Designation](../oratorio/oratorio-coordinator-designation.md)
 * [Oratorio Occurrences and Planning](../oratorio/oratorio-occurrences-and-planning.md)
 * [Oratorio Attendance Tracker](../oratorio/oratorio-attendance-tracker.md)

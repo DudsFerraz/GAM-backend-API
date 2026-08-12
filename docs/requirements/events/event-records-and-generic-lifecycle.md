@@ -330,7 +330,8 @@ Presence creation and Event deletion shall not both commit when racing for the s
 - Presence creation may commit first, after which deletion fails with `EVENT_HAS_PRESENCES`; or
 - deletion may commit first, after which Presence creation fails because the Event is no longer active.
 
-A committed active Presence shall never reference a soft-deleted Event. The coordination strategy is documented in ADR-0012.
+A committed active Presence shall never reference a soft-deleted Event. The
+coordination strategy is documented in ADR-0032.
 
 Event creation and GamLocation relinking shall also retain the concurrency guarantees of `REQ-GAM-LOCATION-013` and ADR-0010.
 
@@ -587,7 +588,7 @@ The command transitions in this diagram apply to Generic Events. `SCHEDULED -> C
 
 * [ADR-0010: Serialize GamLocation Mutation and Event Linking](../../decisions/0010-serialize-gam-location-mutation-and-event-linking.md)
 * [ADR-0011: Serialize Event Mutation and Presence Linking](../../decisions/0011-serialize-event-mutation-and-presence-linking.md) (Superseded)
-* [ADR-0012: Serialize Event and Presence Mutations](../../decisions/0012-serialize-event-and-presence-mutations.md)
+* [ADR-0032: Serialize Event, Presence, and Missa Assignment Mutations](../../decisions/0032-serialize-event-presence-and-missa-assignment-mutations.md)
 * [ADR-0017: Serialize Oratorio and Oratoriano mutations](../../decisions/0017-serialize-oratorio-and-oratoriano-mutations.md)
 * [ADR-0031: Model remote attendance as a single system GamLocation](../../decisions/0031-model-remote-attendance-as-a-single-system-gam-location.md)
 
@@ -600,6 +601,7 @@ The command transitions in this diagram apply to Generic Events. `SCHEDULED -> C
 * [RBAC Catalog](../rbac/rbac-catalog.md)
 * [OpenAPI and Frontend API Documentation](../platform/openapi-and-frontend-api-documentation.md)
 * [Member Event Presences](../presences/member-event-presences.md)
+* [Missa Workflow and Liturgical Assignments](../missa/missa-workflow-and-liturgical-assignments.md)
 * [Oratorio Occurrences and Planning](../oratorio/oratorio-occurrences-and-planning.md)
 * [Oratorio Attendance Tracker](../oratorio/oratorio-attendance-tracker.md)
 * [Activity Audit Log](../platform/activity-audit-log.md)

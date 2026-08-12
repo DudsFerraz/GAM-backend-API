@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR-0032: Serialize Event, Presence, and Missa Assignment Mutations](0032-serialize-event-presence-and-missa-assignment-mutations.md)
 
 ## Context
 

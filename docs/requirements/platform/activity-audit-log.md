@@ -285,6 +285,7 @@ All identifiers below have status `Registered`. Action-to-target assignment, rea
 | `ACCOUNT_REGISTERED` | `ANONYMOUS` | [Authentication and Registration](../authentication/authentication-and-registration.md) |
 | `ACCOUNT_ROLE_ADDED`, `ACCOUNT_ROLE_REMOVED` | `ACCOUNT` for direct Account-role workflows; `DEVELOPER` for SUDO maintenance | [Account Role Management](../rbac/account-role-management.md) |
 | `EVENT_CREATED`, `EVENT_UPDATED`, `EVENT_CANCELLED`, `EVENT_LOCKED`, `EVENT_FINALIZED`, `EVENT_REOPENED`, `EVENT_DELETED` | `ACCOUNT` | [Event Records and Generic Lifecycle](../events/event-records-and-generic-lifecycle.md) |
+| `MISSA_CREATED`, `MISSA_UPDATED`, `MISSA_MEMBER_ASSIGNED`, `MISSA_MEMBER_REMOVED`, `MISSA_CANCELLED`, `MISSA_LOCKED`, `MISSA_FINALIZED`, `MISSA_REOPENED`, `MISSA_DELETED` | `ACCOUNT` | [Missa Workflow and Liturgical Assignments](../missa/missa-workflow-and-liturgical-assignments.md) |
 | `GAM_LOCATION_CREATED`, `GAM_LOCATION_UPDATED`, `GAM_LOCATION_REMOVED` | `ACCOUNT` | [GamLocation Records](../gam-locations/gam-location-records.md) |
 | `MEMBER_REGISTERED`, `MEMBER_ACTIVATED`, `MEMBER_DEACTIVATED`, `COORDINATOR_GRANTED`, `COORDINATOR_REVOKED` | `ACCOUNT` | [Member Records and Lifecycle](../members/member-records-and-lifecycle.md) |
 | `MEMBER_PROFILE_UPDATED`, `MEMBER_GAM_ENTRY_DATE_UPDATED`, `MEMBER_DIETARY_RESTRICTION_UPDATED`, `MEMBER_EXPERIENCES_UPDATED`, `MEMBER_SACRAMENTS_UPDATED`, `MEMBER_CONTRIBUTION_PROFILE_UPDATED`, `MEMBER_ANNUAL_INFORMATION_READ` | `ACCOUNT` | [Member Information](../members/member-information.md) |
@@ -298,8 +299,6 @@ All identifiers below have status `Registered`. Action-to-target assignment, rea
 | `ORATORIANO_FORM_DRAFT_CREATED`, `ORATORIANO_FORM_DRAFT_UPDATED`, `ORATORIANO_FORM_DRAFT_DELETED`, `ORATORIANO_FORM_COMPLETED`, `ORATORIANO_FORM_REVOKED`, `ORATORIANO_FORM_PRINT_SNAPSHOT_CREATED`, `ORATORIANO_FORM_PDF_RENDERED`, `ORATORIANO_FORM_DETAIL_READ`, `ORATORIANO_FORM_ATTACHMENTS_REPLACED`, `ORATORIANO_FORM_ATTACHMENT_DOWNLOADED` | `ACCOUNT` | [Oratoriano Additional Forms](../oratorianos/oratoriano-additional-forms.md) |
 | `PRESENCE_REGISTERED`, `PRESENCE_UPDATED`, `PRESENCE_REMOVED` | `ACCOUNT` | [Member Event Presences](../presences/member-event-presences.md) |
 | `DEVELOPER_RESTORE_EXECUTED`, `DEVELOPER_HARD_DELETE_EXECUTED`, `DEVELOPER_VIEWED_SOFT_DELETED_RECORDS` | `DEVELOPER` | [Persistence Auditing and Soft Delete](persistence-auditing-and-soft-delete.md) |
-
-`MISSA_CREATED` is not registered. Specialized Missa creation and its auditing remain deferred until a Missa owning Requirement Specification is planned.
 
 No ordinary Role, Permission, or Role-Permission mutation action is registered because no accepted owning product mutation workflow currently requires one.
 
@@ -317,6 +316,7 @@ All identifiers below have status `Registered`. Registration does not assign any
 | `MEMBER_ANNUAL_INFORMATION_RESPONSE` | An immutable Annual Member Information Response resource. |
 | `MEMBER_INFORMATION_IMPORT_BATCH` | An immutable Member Information Import Batch resource. |
 | `MEMBERSHIP_SOLICITATION` | A Membership Solicitation resource. |
+| `MISSA` | A specialized Missa and its shared Event identity. |
 | `ORATORIO` | An Oratorio occurrence resource. |
 | `ORATORIANO` | An Oratoriano resource. |
 | `ORATORIANO_ATTENDANCE` | An Oratoriano attendance resource. |
@@ -327,7 +327,8 @@ All identifiers below have status `Registered`. Registration does not assign any
 | `PERMISSION` | A Permission resource, available for typed Developer maintenance. |
 | `ROLE_PERMISSION_ASSIGNMENT` | One Role-to-Permission assignment resource, available for typed Developer maintenance. |
 
-`MISSA` and `MAINTENANCE_RECORD` are not registered target types. Missa is deferred, and Developer maintenance shall identify the real affected resource or resource scope.
+`MAINTENANCE_RECORD` is not a registered target type. Developer maintenance
+shall identify the real affected resource or resource scope.
 
 ## Acceptance scenarios
 
@@ -348,6 +349,13 @@ Scenario: Do not audit a normalized no-op
   When the workflow returns its documented no-op response
   Then no business mutation occurs
   And no activity is committed
+
+Scenario: Register one high-level Missa assignment activity
+  Given an authorized coordinator assigns a Member to a Missa responsibility
+  And the workflow must create the Member Presence
+  When the assignment and Presence commit
+  Then one MISSA_MEMBER_ASSIGNED activity targets the Missa
+  And no duplicate PRESENCE_REGISTERED activity commits
 
 Scenario: Attribute public Account registration anonymously
   Given a visitor submits a valid public Account registration
@@ -430,7 +438,6 @@ flowchart TD
 * Activity retention periods, legal erasure, archive tiers, or export policy.
 * Cryptographic hash chaining, immutable external storage, or tamper notarization.
 * Operational security-log schemas and retention.
-* Specialized Missa workflows and `MISSA_CREATED`.
 * Ordinary Role, Permission, or Role-Permission mutation workflows.
 * Feature-specific Oratorio or Oratoriano action-to-target allocations not already owned by their Requirement Specifications.
 * Developer maintenance command, endpoint, or user-interface design.
@@ -451,6 +458,7 @@ flowchart TD
 * [Member Records and Lifecycle](../members/member-records-and-lifecycle.md)
 * [Membership Solicitations](../members/membership-solicitations.md)
 * [Member Event Presences](../presences/member-event-presences.md)
+* [Missa Workflow and Liturgical Assignments](../missa/missa-workflow-and-liturgical-assignments.md)
 
 ## Related documentation
 

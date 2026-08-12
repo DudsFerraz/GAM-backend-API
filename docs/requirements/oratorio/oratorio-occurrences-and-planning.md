@@ -262,7 +262,7 @@ Scenario: Removed attendance does not block deletion
 ## Related ADRs
 
 * [ADR-0015: Compose Oratorio permission bundles in code](../../decisions/0015-compose-oratorio-permission-bundles-in-code.md)
-* [ADR-0012: Serialize Event and Presence mutations](../../decisions/0012-serialize-event-and-presence-mutations.md)
+* [ADR-0032: Serialize Event, Presence, and Missa Assignment Mutations](../../decisions/0032-serialize-event-presence-and-missa-assignment-mutations.md)
 * [ADR-0017: Serialize Oratorio and Oratoriano mutations](../../decisions/0017-serialize-oratorio-and-oratoriano-mutations.md)
 * [ADR-0031: Model remote attendance as a single system GamLocation](../../decisions/0031-model-remote-attendance-as-a-single-system-gam-location.md)
 

@@ -250,7 +250,7 @@ Legacy spreadsheet import should be planned as a separate feature. It must resol
 
 ## Related ADRs
 
-* [ADR-0012: Serialize Event and Presence mutations](../../decisions/0012-serialize-event-and-presence-mutations.md)
+* [ADR-0032: Serialize Event, Presence, and Missa Assignment Mutations](../../decisions/0032-serialize-event-presence-and-missa-assignment-mutations.md)
 * [ADR-0017: Serialize Oratorio and Oratoriano mutations](../../decisions/0017-serialize-oratorio-and-oratoriano-mutations.md)
 
 ## Related requirements
