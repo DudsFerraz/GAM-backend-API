@@ -1,3 +1,8 @@
+{
+    admin 0.0.0.0:2019
+    metrics
+}
+
 # Keep HTTP-to-HTTPS redirect active while commissioning and maintenance are enabled.
 :80 {
     redir https://{http.request.host}{http.request.uri} 308
@@ -51,6 +56,7 @@
         expression `"{$GAM_MAINTENANCE_ENABLED}" == "true"`
     }
     @api path /api/* /api
+    @management path /api/actuator /api/actuator/*
     @fingerprinted path_regexp fingerprint \.(?:css|js|mjs|map|woff2?|png|jpg|jpeg|svg|webp)$
     @entry path / /index.html
 
@@ -65,6 +71,11 @@
             header Cache-Control "no-store"
             header Content-Type "text/plain; charset=utf-8"
             respond "Service Unavailable" 503
+        }
+
+        # Actuator is reachable only from the private production network.
+        handle @management {
+            respond 404
         }
 
         handle @api {

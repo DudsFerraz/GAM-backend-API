@@ -88,6 +88,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/health").permitAll()
                         .requestMatchers("/health").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/prometheus").permitAll()
                         .requestMatchers(
                                 "/docs", "/docs/**",
                                 "/openapi.json", "/openapi.json/**", "/openapi.json.yaml",
