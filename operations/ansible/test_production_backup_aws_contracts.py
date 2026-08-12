@@ -4302,7 +4302,12 @@ exit 0
         for service, required_kind, required_fields, forbidden_fields in (
             ("proxy", "prometheus", {"host", "service", "endpoint"}, {"port"}),
             ("backend", "prometheus", {"host", "service", "endpoint"}, {"port"}),
-            ("postgresql", "postgres", {"host", "port", "ssl_mode"}, set()),
+            (
+                "postgresql",
+                "postgres",
+                {"host", "port", "username", "password", "ssl_mode"},
+                set(),
+            ),
         ):
             matching = [
                 (task, body)
@@ -4588,11 +4593,10 @@ exit 0
                 continue
 
             kind = "postgres" if service == "postgresql" else "prometheus"
-            mutable_fields = (
-                {"host", "port", "ssl_mode"}
-                if kind == "postgres"
-                else {"host", "service", "endpoint"}
-            )
+            if kind == "postgres":
+                mutable_fields = {"host", "port", "username", "password", "ssl_mode"}
+            else:
+                mutable_fields = {"host", "service", "endpoint"}
             expected_fields = mutable_fields | ({"kind"} if method == "POST" else set())
             if set(body) != expected_fields:
                 violations.append(
@@ -4624,8 +4628,279 @@ exit 0
                 )
             if provider_payload.get("ssl_mode") != "require":
                 violations.append("PostgreSQL target must send the provider-supported ssl_mode=require field")
+            if method in {"POST", "PATCH"}:
+                expected_credentials = {
+                    "username": "{{ better_stack_postgresql_target_username }}",
+                    "password": "{{ better_stack_postgresql_target_password }}",
+                }
+                for field, expected in expected_credentials.items():
+                    if str(body.get(field, "")) != expected:
+                        violations.append(
+                            f"PostgreSQL target {field} must bind to {expected}"
+                        )
+                if task.get("no_log") is not True:
+                    violations.append(
+                        f"PostgreSQL target {method} must be no_log because its password is write-only"
+                    )
 
         self.assertEqual([], violations, "Better Stack collector target schema violations: " + "; ".join(violations))
+
+    def test_better_stack_postgresql_password_only_rotation_patches_write_only_credentials_safely(self):
+        """Require in-place PATCH when only externally custodied credentials change."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        target_mutations = [
+            task
+            for task in tasks
+            if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
+            and "/api/v1/collectors/" in str(
+                module_payload(task, "ansible.builtin.uri", "uri").get("url", "")
+            )
+            and "/targets" in str(
+                module_payload(task, "ansible.builtin.uri", "uri").get("url", "")
+            )
+            and str(
+                module_payload(task, "ansible.builtin.uri", "uri").get("method", "")
+            ).upper() in {"POST", "PATCH", "DELETE"}
+        ]
+        postgresql_creations = [
+            task
+            for task in target_mutations
+            if str(
+                module_payload(task, "ansible.builtin.uri", "uri").get("method", "")
+            ).upper() == "POST"
+            and module_payload(task, "ansible.builtin.uri", "uri").get("body", {}).get("kind")
+            == "postgres"
+        ]
+        postgresql_credential_patches = [
+            task
+            for task in target_mutations
+            if str(
+                module_payload(task, "ansible.builtin.uri", "uri").get("method", "")
+            ).upper() == "PATCH"
+            and "postgres" in task_text(task).casefold()
+            and "better_stack_postgresql_target_password" in task_text(task)
+        ]
+        credential_rotation_deletions = [
+            task
+            for task in target_mutations
+            if str(
+                module_payload(task, "ansible.builtin.uri", "uri").get("method", "")
+            ).upper() == "DELETE"
+            and "credential" in task_text(task).casefold()
+        ]
+
+        self.assertTrue(
+            postgresql_creations,
+            "credential rotation must retain a provider-supported PostgreSQL POST payload",
+        )
+        self.assertTrue(
+            postgresql_credential_patches,
+            "password rotation must PATCH the existing PostgreSQL target through its provider item.id",
+        )
+        self.assertFalse(
+            credential_rotation_deletions,
+            "credential rotation must not delete a functioning PostgreSQL target before its replacement is known to succeed",
+        )
+        self.assertTrue(
+            all(
+                task.get("no_log") is True
+                and task.get("ignore_errors") is not True
+                and task.get("failed_when") is not False
+                and module_payload(task, "ansible.builtin.uri", "uri").get("status_code") in ([200], 200)
+                and "item.id" in str(
+                    module_payload(task, "ansible.builtin.uri", "uri").get("url", "")
+                )
+                for task in postgresql_credential_patches
+            ),
+            "credential PATCH must fail closed, address provider item.id, and remain no_log",
+        )
+
+        fingerprint_directories = [
+            task
+            for task in tasks
+            if isinstance(module_payload(task, "ansible.builtin.file", "file"), dict)
+            and "better_stack_postgresql_target_credentials_fingerprint_file | dirname"
+            in str(module_payload(task, "ansible.builtin.file", "file").get("path", ""))
+        ]
+        self.assertTrue(fingerprint_directories)
+        self.assertTrue(all(
+            str(module_payload(task, "ansible.builtin.file", "file").get("mode")) == "0700"
+            for task in fingerprint_directories
+        ), "the credential-state directory must remain restricted to its owner")
+
+        fingerprint_derivations = [
+            task
+            for task in tasks
+            if isinstance(
+                module_payload(task, "ansible.builtin.set_fact", "set_fact"), dict
+            )
+            and "better_stack_postgresql_target_credentials_desired_fingerprint"
+            in module_payload(task, "ansible.builtin.set_fact", "set_fact")
+        ]
+        self.assertTrue(fingerprint_derivations)
+        self.assertTrue(all(
+            task.get("no_log") is True
+            and "better_stack_postgresql_target_password" in task_text(task)
+            and "hash('sha256')" in task_text(task)
+            for task in fingerprint_derivations
+        ), "credential fingerprints must hash the external password under no_log")
+
+        fingerprint_persistence = [
+            task
+            for task in tasks
+            if isinstance(module_payload(task, "ansible.builtin.copy", "copy"), dict)
+            and module_payload(task, "ansible.builtin.copy", "copy").get("dest")
+            == "{{ better_stack_postgresql_target_credentials_fingerprint_file }}"
+        ]
+        self.assertTrue(fingerprint_persistence)
+        self.assertTrue(all(
+            any(
+                tasks.index(patch_task) < tasks.index(state_task)
+                for state_task in fingerprint_persistence
+            )
+            for patch_task in postgresql_credential_patches
+        ), "protected state may be advanced only after the credential PATCH succeeds")
+        persisted_contents = [
+            str(module_payload(task, "ansible.builtin.copy", "copy").get("content", ""))
+            for task in fingerprint_persistence
+        ]
+        self.assertTrue(all(
+            str(module_payload(task, "ansible.builtin.copy", "copy").get("mode")) == "0600"
+            and task.get("no_log") is True
+            for task in fingerprint_persistence
+        ), "credential state must remain mode 0600 and its writes must remain no_log")
+        self.assertTrue(all(
+            "better_stack_postgresql_target_credentials_desired_fingerprint" in content
+            for content in persisted_contents
+        ), "protected credential state must retain the one-way credential digest")
+        self.assertTrue(all(
+            "better_stack_postgresql_target_username" not in content
+            and "better_stack_postgresql_target_password" not in content
+            for content in persisted_contents
+        ), "protected credential state must never persist plaintext credential expressions")
+
+        fingerprint_reads = [
+            task
+            for task in tasks
+            if any(
+                isinstance(module_payload(task, module, module.rsplit(".", 1)[-1]), dict)
+                and module_payload(task, module, module.rsplit(".", 1)[-1]).get("path")
+                == "{{ better_stack_postgresql_target_credentials_fingerprint_file }}"
+                or isinstance(module_payload(task, module, module.rsplit(".", 1)[-1]), dict)
+                and module_payload(task, module, module.rsplit(".", 1)[-1]).get("src")
+                == "{{ better_stack_postgresql_target_credentials_fingerprint_file }}"
+                for module in ("ansible.builtin.stat", "ansible.builtin.slurp")
+            )
+        ]
+        self.assertTrue(fingerprint_reads)
+        self.assertTrue(all(
+            task.get("no_log") is True for task in fingerprint_reads
+        ), "credential-state inspection must not disclose the persisted digest")
+
+    def test_better_stack_postgresql_credential_state_binds_the_provider_target_identity(self):
+        """Reject a matching credential digest that belongs to a replaced provider target."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        state_writes = [
+            task
+            for task in tasks
+            if isinstance(module_payload(task, "ansible.builtin.copy", "copy"), dict)
+            and module_payload(task, "ansible.builtin.copy", "copy").get("dest")
+            == "{{ better_stack_postgresql_target_credentials_fingerprint_file }}"
+        ]
+        currentness_decisions = [
+            task
+            for task in tasks
+            if isinstance(
+                module_payload(task, "ansible.builtin.set_fact", "set_fact"), dict
+            )
+            and any(
+                str(name).endswith("postgresql_target_credentials_current")
+                for name in module_payload(
+                    task, "ansible.builtin.set_fact", "set_fact"
+                )
+            )
+        ]
+
+        self.assertTrue(state_writes, "the protected credential state must be persisted")
+        self.assertTrue(currentness_decisions, "credential currentness must be derived before mutation")
+        provider_identity_pattern = re.compile(
+            r"(?:postgresql[^\n]*target[^\n]*(?:id|identity)"
+            r"|(?:id|identity)[^\n]*postgresql[^\n]*target)",
+            re.IGNORECASE,
+        )
+        persisted_state_text = "\n".join(
+            str(module_payload(task, "ansible.builtin.copy", "copy").get("content", ""))
+            for task in state_writes
+        )
+        currentness_text = "\n".join(task_text(task) for task in currentness_decisions)
+        self.assertIn(
+            "better_stack_postgresql_target_credentials_desired_fingerprint",
+            persisted_state_text,
+            "protected state must bind provider identity alongside the one-way credential digest",
+        )
+        self.assertNotIn(
+            "better_stack_postgresql_target_username",
+            persisted_state_text,
+            "provider-identity state must not persist the plaintext username expression",
+        )
+        self.assertNotIn(
+            "better_stack_postgresql_target_password",
+            persisted_state_text,
+            "provider-identity state must not persist the plaintext password expression",
+        )
+        self.assertRegex(
+            persisted_state_text,
+            provider_identity_pattern,
+            "protected local credential state must bind the digest to the applied PostgreSQL provider target identity",
+        )
+        self.assertRegex(
+            currentness_text,
+            provider_identity_pattern,
+            "credential currentness must compare the persisted provider identity with the discovered PostgreSQL target",
+        )
+        self.assertTrue(all(
+            task.get("no_log") is True for task in state_writes + currentness_decisions
+        ), "provider-identity credential state must remain redacted")
+
+    def test_better_stack_postgresql_state_binds_exact_mutation_response_across_paginated_readback(self):
+        """Bind protected state to the exact POST/PATCH result, not a same-shaped target."""
+
+        tasks = list(task_nodes(load_yaml("operations/ansible/site.yml")))
+        postgresql_mutations = [
+            task for task in tasks
+            if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
+            and "postgresql" in str(task.get("name", "")).casefold()
+            and str(module_payload(task, "ansible.builtin.uri", "uri").get("method", "")).upper()
+            in {"POST", "PATCH"}
+        ]
+        state_writes = [
+            task for task in tasks
+            if isinstance(module_payload(task, "ansible.builtin.copy", "copy"), dict)
+            and module_payload(task, "ansible.builtin.copy", "copy").get("dest")
+            == "{{ better_stack_postgresql_target_credentials_fingerprint_file }}"
+        ]
+        post_mutation_reads = [
+            task for task in tasks
+            if isinstance(module_payload(task, "ansible.builtin.uri", "uri"), dict)
+            and "postgresql" in str(task.get("name", "")).casefold()
+            and "read back" in str(task.get("name", "")).casefold()
+        ]
+
+        self.assertTrue(postgresql_mutations)
+        self.assertTrue(all(task.get("register") for task in postgresql_mutations),
+                        "every POST/PATCH must retain its exact provider response identity")
+        mutation_registers = {str(task.get("register")) for task in postgresql_mutations}
+        state_text = "\n".join(task_text(task) for task in state_writes)
+        self.assertTrue(any(register in state_text for register in mutation_registers),
+                        "protected state must bind the exact successful mutation response ID")
+        self.assertTrue(post_mutation_reads)
+        readback_text = "\n".join(task_text(task) for task in post_mutation_reads)
+        self.assertRegex(readback_text, r"(?i)(?:next_page|total_pages|pagination|page=\{\{)",
+                         "post-mutation verification must consume every provider page")
+        self.assertTrue(all(task.get("no_log") is True for task in postgresql_mutations + state_writes),
+                        "mutation identity and protected-state handling must remain redacted")
 
     def test_better_stack_collector_targets_reconcile_provider_drift_with_official_patch_endpoint(self):
         """Require readback-driven PATCH reconciliation for target connection drift."""
@@ -4774,14 +5049,42 @@ exit 0
         scenarios = {
             "postgresql stale port": {
                 "service": "postgresql",
-                "desired": {"kind": "postgres", "host": "postgres", "port": 5432, "ssl_mode": "require"},
-                "existing": {"id": "target-db", "kind": "postgres", "host": "postgres", "port": 5433, "ssl_mode": "require"},
+                "desired": {
+                    "kind": "postgres",
+                    "host": "postgres",
+                    "port": 5432,
+                    "username": "betterstack_metrics",
+                    "password": "rotated-postgresql-metrics-secret",
+                    "ssl_mode": "require",
+                },
+                "existing": {
+                    "id": "target-db",
+                    "kind": "postgres",
+                    "host": "postgres",
+                    "port": 5433,
+                    "username": "betterstack_metrics",
+                    "ssl_mode": "require",
+                },
                 "provider_identity": {"kind", "host"},
             },
             "postgresql stale host": {
                 "service": "postgresql",
-                "desired": {"kind": "postgres", "host": "postgres", "port": 5432, "ssl_mode": "require"},
-                "existing": {"id": "target-db", "kind": "postgres", "host": "old-postgres", "port": 5432, "ssl_mode": "require"},
+                "desired": {
+                    "kind": "postgres",
+                    "host": "postgres",
+                    "port": 5432,
+                    "username": "betterstack_metrics",
+                    "password": "rotated-postgresql-metrics-secret",
+                    "ssl_mode": "require",
+                },
+                "existing": {
+                    "id": "target-db",
+                    "kind": "postgres",
+                    "host": "old-postgres",
+                    "port": 5432,
+                    "username": "betterstack_metrics",
+                    "ssl_mode": "require",
+                },
                 "provider_identity": {"kind"},
             },
             "proxy stale host": {
@@ -4827,26 +5130,56 @@ exit 0
                         for target in provider_targets
                     )
                     if not duplicate_post_rejected:
-                        provider_targets.append({"id": "unexpected-created-target", **desired})
+                        provider_targets.append({
+                            "id": "unexpected-created-target",
+                            **{
+                                field: value
+                                for field, value in desired.items()
+                                if field != "password"
+                            },
+                        })
 
                 if not duplicate_post_rejected:
                     patch_body = module_payload(patch_task, "ansible.builtin.uri", "uri").get("body", {})
+                    if service == "postgresql":
+                        self.assertEqual(
+                            "{{ better_stack_postgresql_target_username }}",
+                            patch_body.get("username"),
+                        )
+                        self.assertEqual(
+                            "{{ better_stack_postgresql_target_password }}",
+                            patch_body.get("password"),
+                        )
+                        self.assertTrue(
+                            patch_task.get("no_log") is True,
+                            "write-only PostgreSQL credentials must remain redacted during PATCH",
+                        )
                     for target in provider_targets:
                         if all(target.get(field) == desired.get(field) for field in patch_fields):
                             for field in patch_body:
-                                target[field] = desired[field]
+                                if field != "password":
+                                    target[field] = desired[field]
 
                 self.assertFalse(
                     duplicate_post_rejected,
                     "reconciliation must identify and PATCH a drifted logical target before attempting duplicate POST",
                 )
+                readable_desired = {
+                    field: value
+                    for field, value in desired.items()
+                    if field != "password"
+                }
                 desired_targets = [
                     target
                     for target in provider_targets
-                    if all(target.get(field) == value for field, value in desired.items())
+                    if all(target.get(field) == value for field, value in readable_desired.items())
                 ]
                 self.assertEqual(1, len(desired_targets), "reconciliation must converge to exactly one desired target")
                 self.assertEqual(1, len(provider_targets), "reconciliation must leave no stale or created duplicate target")
+                self.assertTrue(
+                    all("password" not in target for target in provider_targets),
+                    "provider readback must never expose the write-only PostgreSQL password",
+                )
 
         readback_index = next(
             index
@@ -5635,6 +5968,275 @@ exit 0
             any(is_durable_better_stack_collector_probe(task) for task in tasks),
             "clean-host provisioning must verify collector status through durable container identity",
         )
+
+    def test_better_stack_post_network_readiness_consumes_every_target_page(self):
+        production_play = next(
+            play for play in load_yaml("operations/ansible/site.yml")
+            if play.get("hosts") == "production"
+        )
+        tasks = production_play["tasks"]
+        names = [task.get("name") for task in tasks]
+        connect_index = names.index(
+            "Connect the Better Stack collector to the private production network"
+        )
+        readiness_tasks = tasks[connect_index + 1:]
+        readiness_contract = json.dumps(readiness_tasks)
+        page_one_index = next(
+            index for index, task in enumerate(readiness_tasks)
+            if task.get("name")
+            == "Wait for every Better Stack service target to collect after network attachment"
+        )
+        remaining_pages_index = next(
+            index for index, task in enumerate(readiness_tasks)
+            if "remaining Better Stack post-network readiness target pages"
+            in str(task.get("name", ""))
+        )
+        merge_index = next(
+            index for index, task in enumerate(readiness_tasks)
+            if "Merge every Better Stack post-network readiness target page"
+            in str(task.get("name", ""))
+        )
+        evaluation_index = next(
+            index for index, task in enumerate(readiness_tasks)
+            if "collecting across all pages" in str(task.get("name", ""))
+        )
+
+        self.assertNotIn(
+            "until",
+            readiness_tasks[page_one_index],
+            "page-one acquisition must not evaluate managed readiness before later pages are available",
+        )
+        self.assertLess(page_one_index, remaining_pages_index)
+        self.assertLess(remaining_pages_index, merge_index)
+        self.assertLess(
+            merge_index,
+            evaluation_index,
+            "managed target health must be evaluated only after every provider page is accumulated",
+        )
+        self.assertIn("attributes.status", json.dumps(readiness_tasks[evaluation_index]))
+
+        self.assertIn(
+            "pagination",
+            readiness_contract,
+            "post-network readiness must follow Better Stack target pagination metadata",
+        )
+        self.assertRegex(
+            readiness_contract,
+            r"page=.*item",
+            "post-network readiness must request target pages after page one",
+        )
+        self.assertIn(
+            "results",
+            readiness_contract,
+            "readiness must combine the paginated target responses before evaluating health",
+        )
+        self.assertIn(
+            "flatten",
+            readiness_contract,
+            "readiness must evaluate one flattened all-page target collection",
+        )
+        self.assertIn("attributes.status", readiness_contract)
+        for service in ("proxy", "backend", "postgresql"):
+            self.assertIn(
+                f"better_stack_{service}_target_",
+                readiness_contract,
+                f"all-page readiness must retain the managed {service} identity",
+            )
+
+    def test_better_stack_target_reconciliation_holds_one_exclusive_failure_safe_lock(self):
+        production_play = next(
+            play for play in load_yaml("operations/ansible/site.yml")
+            if play.get("hosts") == "production"
+        )
+        persisted_state_names = {
+            "Persist the applied PostgreSQL target credential fingerprint before chart mutation",
+            "Persist the applied PostgreSQL target credential fingerprint",
+        }
+        protected_sections = []
+        unprotected_persistence = []
+
+        def inspect(items, ancestors=()):
+            for task in items:
+                name = task.get("name")
+                if name in persisted_state_names:
+                    matching_section = None
+                    for ancestor in reversed(ancestors):
+                        block = ancestor.get("block", [])
+                        always = ancestor.get("always", [])
+                        if not block or not always:
+                            continue
+                        block_names = [str(item.get("name", "")) for item in block]
+                        persistence_index = next(
+                            (
+                                index for index, item in enumerate(block)
+                                if item.get("name") == name
+                            ),
+                            None,
+                        )
+                        acquisition_index = next(
+                            (
+                                index for index, item in enumerate(block)
+                                if "Acquire the exclusive reconciliation lock"
+                                in str(item.get("name", ""))
+                            ),
+                            None,
+                        )
+                        mutation_indices = [
+                            index for index, item in enumerate(block)
+                            if str(
+                                (module_payload(item, "ansible.builtin.uri", "uri") or {})
+                                .get("method", "")
+                            ).upper() in {"POST", "PATCH"}
+                            and "/targets" in str(
+                                (module_payload(item, "ansible.builtin.uri", "uri") or {})
+                                .get("url", "")
+                            )
+                        ]
+                        readback_indices = [
+                            index for index, item_name in enumerate(block_names)
+                            if "read back" in item_name.casefold()
+                            and "target" in item_name.casefold()
+                        ]
+                        cleanup_contract = json.dumps(always).casefold()
+                        if (
+                            acquisition_index is not None
+                            and persistence_index is not None
+                            and acquisition_index < persistence_index
+                            and mutation_indices
+                            and all(
+                                acquisition_index < index < persistence_index
+                                for index in mutation_indices
+                            )
+                            and readback_indices
+                            and any(
+                                acquisition_index < index < persistence_index
+                                for index in readback_indices
+                            )
+                            and "lock" in cleanup_contract
+                            and any(
+                                cleanup in cleanup_contract
+                                for cleanup in ("absent", "rmdir", "remove", "unlink")
+                            )
+                        ):
+                            matching_section = ancestor
+                            break
+                    if matching_section is None:
+                        unprotected_persistence.append(name)
+                    else:
+                        protected_sections.append(matching_section)
+                for section in ("block", "rescue", "always"):
+                    nested = task.get(section)
+                    if isinstance(nested, list):
+                        inspect(nested, ancestors + (task,))
+
+        inspect(production_play["tasks"])
+
+        self.assertEqual(
+            [],
+            unprotected_persistence,
+            "each target discovery/mutation/readback/state sequence must run inside an "
+            "exclusive lock with unconditional cleanup",
+        )
+        self.assertEqual(
+            len(persisted_state_names),
+            len(protected_sections),
+            "both pre-chart and final target reconciliation must be concurrency-safe",
+        )
+        for section in protected_sections:
+            block = section["block"]
+            names = [str(task.get("name", "")) for task in block]
+            acquisition_index = next(
+                index for index, name in enumerate(names)
+                if "Acquire the exclusive reconciliation lock" in name
+            )
+            persistence_index = next(
+                index for index, name in enumerate(names)
+                if name in persisted_state_names
+            )
+            self.assertLess(acquisition_index, persistence_index)
+            self.assertTrue(any(
+                acquisition_index < index < persistence_index
+                and str((module_payload(task, "ansible.builtin.uri", "uri") or {}).get("method", "")).upper()
+                in {"POST", "PATCH"}
+                and "/targets" in str((module_payload(task, "ansible.builtin.uri", "uri") or {}).get("url", ""))
+                for index, task in enumerate(block)
+            ))
+            self.assertTrue(any(
+                acquisition_index < index < persistence_index
+                and "read back" in name.casefold()
+                and "target" in name.casefold()
+                for index, name in enumerate(names)
+            ))
+
+    def test_better_stack_target_lock_recovers_only_an_abandoned_owner_or_expired_lease(self):
+        production_play = next(
+            play for play in load_yaml("operations/ansible/site.yml")
+            if play.get("hosts") == "production"
+        )
+        lock_sections = []
+
+        def inspect(items):
+            for task in items:
+                block = task.get("block")
+                always = task.get("always")
+                if isinstance(block, list) and isinstance(always, list):
+                    block_contract = json.dumps(block).casefold()
+                    cleanup_contract = json.dumps(always).casefold()
+                    if (
+                        "exclusive reconciliation lock" in block_contract
+                        and "target" in block_contract
+                        and "lock" in cleanup_contract
+                    ):
+                        lock_sections.append((block, always))
+                for section in ("block", "rescue", "always"):
+                    nested = task.get(section)
+                    if isinstance(nested, list):
+                        inspect(nested)
+
+        inspect(production_play["tasks"])
+        self.assertEqual(2, len(lock_sections))
+
+        for block, always in lock_sections:
+            acquisition_index = next(
+                index for index, task in enumerate(block)
+                if "Acquire the exclusive reconciliation lock"
+                in str(task.get("name", ""))
+            )
+            recovery_contract = json.dumps(block[:acquisition_index]).casefold()
+            cleanup_contract = json.dumps(always).casefold()
+            self.assertTrue(
+                any(signal in recovery_contract for signal in (
+                    "owner", "pid", "kill -0", "/proc/", "lease", "mtime", "stale"
+                )),
+                "lock recovery must inspect owner liveness or an expiry lease before acquisition",
+            )
+            self.assertTrue(
+                any(removal in recovery_contract for removal in (
+                    '"state": "absent"', "rmdir", "remove", "unlink"
+                )),
+                "an abandoned owner or expired lease must be recoverable before acquisition",
+            )
+            self.assertTrue(
+                any(guard in recovery_contract for guard in (
+                    "not alive", "not running", "stale", "expired", "age", "mtime"
+                )),
+                "recovery must not preempt a live owner or unexpired lease",
+            )
+            self.assertIn(
+                "owner_token",
+                cleanup_contract,
+                "cleanup must read and compare the persisted owner_token, not rely only on mkdir success",
+            )
+            self.assertTrue(
+                "slurp" in cleanup_contract or "lookup" in cleanup_contract,
+                "cleanup must read the current lock owner immediately before removal",
+            )
+            self.assertTrue(
+                any(comparison in cleanup_contract for comparison in (
+                    "equalto", "==", "match"
+                )),
+                "cleanup may remove the lock only when its current owner_token matches this apply",
+            )
 
     def test_writer_key_bootstrap_does_not_require_a_preexisting_machine_credential(self):
         plays = load_yaml("operations/ansible/site.yml")

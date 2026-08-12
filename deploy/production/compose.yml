@@ -28,12 +28,22 @@ services:
     # are unhealthy. Backend readiness condition: service_healthy is enforced
     # by the backend dependency and deployment verification instead.
     networks:
-      - edge
-      - private
+      edge:
+      private:
+        aliases:
+          - proxy.internal
 
   postgres:
     image: postgres:18-alpine
     restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/run/gam-postgres-tls/server.crt
+      - -c
+      - ssl_key_file=/run/gam-postgres-tls/server.key
     env_file:
       - ./secrets/postgres.env
     environment:
@@ -41,6 +51,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-gam}
     volumes:
       - postgres-data:/var/lib/postgresql
+      - ./secrets/postgres-tls/server.crt:/run/gam-postgres-tls/server.crt:ro
+      - ./secrets/postgres-tls/server.key:/run/gam-postgres-tls/server.key:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -50,7 +62,9 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - private
+      private:
+        aliases:
+          - postgres.internal
 
   backend:
     image: ghcr.io/gam-example/gam-api@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
@@ -77,7 +91,9 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - private
+      private:
+        aliases:
+          - backend.internal
 
 volumes:
   caddy-data:

@@ -12,6 +12,8 @@ attempt to run the file there fails if the Ansible CLI cannot start.
 
 from __future__ import annotations
 
+import base64
+import concurrent.futures
 import copy
 import json
 import os
@@ -60,6 +62,8 @@ ALERTS = (
 )
 PROXY_ENDPOINT = "http://proxy.internal:2019/metrics"
 BACKEND_ENDPOINT = "http://backend.internal:8080/actuator/prometheus"
+POSTGRES_USERNAME = "betterstack_metrics"
+POSTGRES_PASSWORD = "generated-postgresql-metrics-secret"
 AVAILABILITY_MONITOR_NAME = "GAM production availability"
 TLS_MONITOR_NAME = "GAM production TLS certificate"
 
@@ -173,6 +177,16 @@ class ProviderState:
         self.monitors: list[dict[str, Any]] = []
         self.paginated_filtered_paths: set[str] = set()
         self.filtered_page_one: dict[str, list[dict[str, Any]]] = {}
+        self.reject_postgresql_target_patch = False
+        self.target_discovery_barrier: threading.Barrier | None = None
+        self.target_discovery_barrier_uses = 0
+        self.target_discovery_barrier_lock = threading.Lock()
+        self.target_readiness_snapshots: list[list[dict[str, Any]]] = []
+        self.active_target_readiness_snapshot: list[dict[str, Any]] | None = None
+        self.target_readiness_snapshot_lock = threading.Lock()
+        self.stale_recovery_barrier: threading.Barrier | None = None
+        self.cleanup_replacement_lock_path: Path | None = None
+        self.cleanup_replacement_owner_token = "successor-owner"
         self.enforced_chart_bindings = {
             "GAM proxy health",
             "GAM backend health",
@@ -203,7 +217,13 @@ class ProviderState:
         self.targets = [
             resource("401", {"kind": "prometheus", "host": "proxy.internal", "service": "proxy", "endpoint": PROXY_ENDPOINT}),
             resource("402", {"kind": "prometheus", "host": "backend.internal", "service": "backend", "endpoint": BACKEND_ENDPOINT}),
-            resource("403", {"kind": "postgres", "host": "postgres.internal", "port": 5432, "ssl_mode": "require"}),
+            resource("403", {
+                "kind": "postgres",
+                "host": "postgres.internal",
+                "port": 5432,
+                "username": POSTGRES_USERNAME,
+                "ssl_mode": "require",
+            }),
         ]
         self.alerts = [alert_resource(*definition) for definition in ALERTS]
         self.monitors = [
@@ -410,7 +430,10 @@ class FakeBetterStackHandler(BaseHTTPRequestHandler):
                 and re.match(r"^https?://[^/]+/", body.get("endpoint", "")) is not None
             )
         if kind == "postgres" or not creation:
-            allowed = {"kind", "host", "port", "ssl_mode"} if creation else {"host", "port", "ssl_mode"}
+            allowed = (
+                {"kind", "host", "port", "username", "password", "ssl_mode"}
+                if creation else {"host", "port", "username", "password", "ssl_mode"}
+            )
             return cls._has_only(body, allowed, allowed) and body.get("ssl_mode") == "require"
         return False
 
@@ -502,6 +525,31 @@ class FakeBetterStackHandler(BaseHTTPRequestHandler):
         path = parsed.path
         page = int(parse_qs(parsed.query).get("page", ["1"])[0])
 
+        if path == "/test/stale-recovery-barrier":
+            barrier = state.stale_recovery_barrier
+            if barrier is not None:
+                try:
+                    barrier.wait(timeout=5)
+                except threading.BrokenBarrierError:
+                    pass
+            self._send(200, {"data": {"released": True}})
+            return
+        if path == "/test/replace-lock-owner":
+            lock_path = state.cleanup_replacement_lock_path
+            if lock_path is None:
+                self._send(500, {"error": "cleanup replacement lock is not configured"})
+                return
+            lock_path.mkdir(parents=True, exist_ok=True)
+            (lock_path / "owner.json").write_text(
+                json.dumps({
+                    "owner_token": state.cleanup_replacement_owner_token,
+                    "lease_expires_epoch": 4102444800,
+                }),
+                encoding="utf-8",
+            )
+            self._send(200, {"data": {"owner_token": state.cleanup_replacement_owner_token}})
+            return
+
         if path == "/api/v1/collectors":
             self._send(200, self._list_response(path, state.collectors, page))
             return
@@ -509,8 +557,31 @@ class FakeBetterStackHandler(BaseHTTPRequestHandler):
             self._send(200, {"data": state.collectors[0]})
             return
         if re.fullmatch(r"/api/v1/collectors/[^/]+/targets", path):
+            with state.target_readiness_snapshot_lock:
+                if state.target_readiness_snapshots and page == 1:
+                    if len(state.target_readiness_snapshots) > 1:
+                        snapshot = state.target_readiness_snapshots.pop(0)
+                    else:
+                        snapshot = state.target_readiness_snapshots[0]
+                    state.active_target_readiness_snapshot = copy.deepcopy(snapshot)
+                targets = copy.deepcopy(
+                    state.active_target_readiness_snapshot
+                    if state.target_readiness_snapshots
+                    and state.active_target_readiness_snapshot is not None
+                    else state.targets
+                )
+            barrier = None
+            with state.target_discovery_barrier_lock:
+                if state.target_discovery_barrier_uses > 0:
+                    barrier = state.target_discovery_barrier
+                    state.target_discovery_barrier_uses -= 1
+            if barrier is not None:
+                try:
+                    barrier.wait(timeout=1)
+                except threading.BrokenBarrierError:
+                    pass
             self._send(200, self._paged(
-                state.targets,
+                targets,
                 page,
                 page_one=state.filtered_page_one.get(path),
             ))
@@ -626,7 +697,12 @@ class FakeBetterStackHandler(BaseHTTPRequestHandler):
                 self._schema_error("invalid metric target payload")
                 return
             target_id = str(401 + len(state.targets))
-            created = resource(target_id, body)
+            attributes = {
+                key: copy.deepcopy(value)
+                for key, value in body.items()
+                if key != "password"
+            }
+            created = resource(target_id, attributes)
             state.targets.append(created)
             self._send(201, {"data": created})
             return
@@ -697,11 +773,18 @@ class FakeBetterStackHandler(BaseHTTPRequestHandler):
             if not self._valid_target(body, creation=False):
                 self._schema_error("invalid target patch")
                 return
+            if "password" in body and state.reject_postgresql_target_patch:
+                self._send(503, {"error": "injected PostgreSQL target update failure"})
+                return
             target_candidates = state.targets + state.filtered_page_one.get(
                 "/api/v1/collectors/collector-1/targets", []
             )
             selected = next(item for item in target_candidates if item["id"] == target_match.group(1))
-            selected["attributes"].update(body)
+            selected["attributes"].update({
+                key: copy.deepcopy(value)
+                for key, value in body.items()
+                if key != "password"
+            })
             self._send(200, {"data": selected})
             return
         alert_match = re.fullmatch(r"/api/v2/alerts/([^/]+)", path)
@@ -730,6 +813,28 @@ class FakeBetterStackHandler(BaseHTTPRequestHandler):
             return
         self._send(500, {"error": f"unexpected reconciliation {self.path}"})
 
+    def do_DELETE(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+        state = self.server.state
+        state.record("DELETE", self.path, None)
+        path = urlparse(self.path).path
+        target_match = re.fullmatch(
+            r"/api/v1/collectors/[^/]+/targets/([^/]+)",
+            path,
+        )
+        if target_match:
+            target_id = target_match.group(1)
+            selected = next(
+                (item for item in state.targets if item["id"] == target_id),
+                None,
+            )
+            if selected is None:
+                self._send(404, {"error": "metric target not found"})
+                return
+            state.targets.remove(selected)
+            self._send(204, {})
+            return
+        self._send(500, {"error": f"unexpected deletion {self.path}"})
+
 
 class FakeBetterStackServer(ThreadingHTTPServer):
     def __init__(self, state: ProviderState) -> None:
@@ -747,9 +852,413 @@ def production_tasks() -> list[dict[str, Any]]:
 def task_slice(first_name: str, last_name: str) -> list[dict[str, Any]]:
     tasks = production_tasks()
     names = [task.get("name") for task in tasks]
+    if first_name not in names or last_name not in names:
+        def nested_names(task: dict[str, Any]) -> set[str]:
+            discovered = {str(task.get("name", ""))}
+            for section in ("block", "rescue", "always"):
+                nested = task.get(section)
+                if isinstance(nested, list):
+                    for child in nested:
+                        discovered.update(nested_names(child))
+            return discovered
+
+        containing_tasks = [
+            task for task in tasks
+            if {first_name, last_name}.issubset(nested_names(task))
+        ]
+        if len(containing_tasks) == 1:
+            return copy.deepcopy(containing_tasks)
+
+        flattened: list[dict[str, Any]] = []
+
+        def append_tasks(items: list[dict[str, Any]]) -> None:
+            for item in items:
+                flattened.append(item)
+                for section in ("block", "rescue", "always"):
+                    nested = item.get(section)
+                    if isinstance(nested, list):
+                        append_tasks(nested)
+
+        append_tasks(tasks)
+        tasks = flattened
+        names = [task.get("name") for task in tasks]
     first = names.index(first_name)
     last = names.index(last_name)
     return copy.deepcopy(tasks[first:last + 1])
+
+
+def post_network_target_readiness_tasks() -> list[dict[str, Any]]:
+    tasks = production_tasks()
+    names = [task.get("name") for task in tasks]
+    start = names.index(
+        "Connect the Better Stack collector to the private production network"
+    ) + 1
+    selected = copy.deepcopy(tasks[start:])
+    def make_fast(items: list[dict[str, Any]]) -> None:
+        for task in items:
+            if "delay" in task:
+                task["delay"] = 0
+            for section in ("block", "rescue", "always"):
+                nested = task.get(section)
+                if isinstance(nested, list):
+                    make_fast(nested)
+
+    make_fast(selected)
+    return selected
+
+
+def concurrent_stale_recovery_tasks_with_lock(lock_path: Path) -> list[dict[str, Any]]:
+    section = task_slice(
+        "Hold one exclusive lock while reconciling the Better Stack PostgreSQL target",
+        "Hold one exclusive lock while reconciling the Better Stack PostgreSQL target",
+    )[0]
+    block = section["block"]
+    start = next(
+        index for index, task in enumerate(block)
+        if task.get("name") == "Inspect the exclusive reconciliation lock clock"
+    )
+    end = next(
+        index for index, task in enumerate(block)
+        if task.get("name") == "Record the reconciliation lock owner and lease"
+    )
+    selected = copy.deepcopy(block[start:end + 1])
+    stale_index = next(
+        index for index, task in enumerate(selected)
+        if task.get("name")
+        == "Determine whether the prior reconciliation lock owner is abandoned or its lease expired"
+    )
+    selected[stale_index + 1:stale_index + 1] = [
+        {
+            "name": "Synchronize concurrent stale-lock recovery contenders",
+            "ansible.builtin.uri": {
+                "url": "{{ better_stack_telemetry_api_url }}/test/stale-recovery-barrier",
+                "method": "GET",
+                "status_code": [200],
+            },
+        },
+        {
+            "name": "Apply deterministic stale-lock contender delay",
+            "ansible.builtin.command": {
+                "argv": [
+                    sys.executable,
+                    "-c",
+                    "import time; time.sleep(float('{{ scenario_recovery_delay_seconds }}'))",
+                ],
+            },
+            "changed_when": False,
+        },
+    ]
+    acquisition = next(
+        task for task in selected
+        if "Acquire the exclusive reconciliation lock" in str(task.get("name", ""))
+    )
+    acquisition["retries"] = 10
+    acquisition["delay"] = 1
+    selected.extend([
+        {
+            "name": "Hold the acquired lock for the concurrent stale-recovery scenario",
+            "ansible.builtin.command": {
+                "argv": [
+                    sys.executable,
+                    "-c",
+                    "import time; time.sleep(float('{{ scenario_lock_hold_seconds }}'))",
+                ],
+            },
+            "changed_when": False,
+        },
+        {
+            "name": "Read the lock owner before this contender cleans up",
+            "ansible.builtin.slurp": {"src": str(lock_path / "owner.json")},
+            "register": "scenario_lock_owner_before_cleanup",
+        },
+        {
+            "name": "Verify this contender still owns the lock before cleanup",
+            "ansible.builtin.assert": {
+                "that": [
+                    "(scenario_lock_owner_before_cleanup.content | b64decode | from_json).owner_token == inventory_hostname ~ ':' ~ better_stack_lock_clock.stdout ~ ':final'"
+                ],
+            },
+        },
+    ])
+    wrapped = [{
+        "name": "Exercise concurrent stale-lock recovery and token-checked cleanup",
+        "block": selected,
+        "always": copy.deepcopy(section["always"]),
+    }]
+
+    def adapt(value: Any) -> Any:
+        if isinstance(value, str):
+            return value.replace(
+                "/tmp/gam-better-stack-target-reconciliation.lock",
+                str(lock_path),
+            )
+        if isinstance(value, list):
+            return [adapt(item) for item in value]
+        if isinstance(value, dict):
+            return {key: adapt(item) for key, item in value.items()}
+        return value
+
+    return adapt(wrapped)
+
+
+def same_observation_stale_recovery_tasks_with_lock(lock_path: Path) -> list[dict[str, Any]]:
+    section = task_slice(
+        "Hold one exclusive lock while reconciling the Better Stack PostgreSQL target",
+        "Hold one exclusive lock while reconciling the Better Stack PostgreSQL target",
+    )[0]
+    block = section["block"]
+    start = next(
+        index for index, task in enumerate(block)
+        if task.get("name") == "Inspect the exclusive reconciliation lock clock"
+    )
+    end = next(
+        index for index, task in enumerate(block)
+        if task.get("name") == "Record the reconciliation lock owner and lease"
+    )
+    selected = copy.deepcopy(block[start:end + 1])
+    confirm_index = next(
+        index for index, task in enumerate(selected)
+        if task.get("name") == "Confirm the same stale owner remains before removal"
+    )
+    selected[confirm_index + 1:confirm_index + 1] = [
+        {
+            "name": "Synchronize contenders after both revalidate the same stale owner",
+            "ansible.builtin.uri": {
+                "url": "{{ better_stack_telemetry_api_url }}/test/stale-recovery-barrier",
+                "method": "GET",
+                "status_code": [200],
+            },
+        },
+        {
+            "name": "Apply deterministic post-revalidation contender delay",
+            "ansible.builtin.command": {
+                "argv": [
+                    sys.executable,
+                    "-c",
+                    "import time; time.sleep(float('{{ scenario_recovery_delay_seconds }}'))",
+                ],
+            },
+            "changed_when": False,
+        },
+    ]
+    acquisition = next(
+        task for task in selected
+        if "Acquire the exclusive reconciliation lock" in str(task.get("name", ""))
+    )
+    acquisition["retries"] = 10
+    acquisition["delay"] = 1
+    selected.extend([
+        {
+            "name": "Hold successor lock during delayed stale deletion",
+            "ansible.builtin.command": {
+                "argv": [sys.executable, "-c", "import time; time.sleep(3)"],
+            },
+            "changed_when": False,
+        },
+        {
+            "name": "Require this successor lock to remain owned",
+            "ansible.builtin.slurp": {"src": str(lock_path / "owner.json")},
+            "register": "scenario_successor_owner",
+        },
+        {
+            "name": "Verify the successor still owns the lock",
+            "ansible.builtin.assert": {
+                "that": [
+                    "(scenario_successor_owner.content | b64decode | from_json).owner_token == inventory_hostname ~ ':' ~ better_stack_lock_clock.stdout ~ ':final'"
+                ],
+            },
+        },
+    ])
+
+    def adapt(value: Any) -> Any:
+        if isinstance(value, str):
+            return value.replace(
+                "/tmp/gam-better-stack-target-reconciliation.lock",
+                str(lock_path),
+            )
+        if isinstance(value, list):
+            return [adapt(item) for item in value]
+        if isinstance(value, dict):
+            return {key: adapt(item) for key, item in value.items()}
+        return value
+
+    return adapt([{
+        "name": "Exercise same-observation stale-lock contenders",
+        "block": selected,
+        "always": copy.deepcopy(section["always"]),
+    }])
+
+
+def cleanup_compare_then_delete_tasks_with_lock(lock_path: Path) -> list[dict[str, Any]]:
+    section = task_slice(
+        "Hold one exclusive lock while reconciling the Better Stack PostgreSQL target",
+        "Hold one exclusive lock while reconciling the Better Stack PostgreSQL target",
+    )[0]
+    cleanup = copy.deepcopy(section["always"])
+    cleanup.insert(1, {
+        "name": "Replace lock ownership after cleanup comparison but before removal",
+        "ansible.builtin.uri": {
+            "url": "{{ better_stack_telemetry_api_url }}/test/replace-lock-owner",
+            "method": "GET",
+            "status_code": [200],
+        },
+    })
+
+    def adapt(value: Any) -> Any:
+        if isinstance(value, str):
+            return value.replace(
+                "/tmp/gam-better-stack-target-reconciliation.lock",
+                str(lock_path),
+            )
+        if isinstance(value, list):
+            return [adapt(item) for item in value]
+        if isinstance(value, dict):
+            return {key: adapt(item) for key, item in value.items()}
+        return value
+
+    return adapt(cleanup)
+
+
+def lock_helper_with_post_validation_successor(
+    lock_path: Path,
+    *,
+    helper_name: str,
+) -> dict[str, Any]:
+    section = task_slice(
+        "Hold one exclusive lock while reconciling the Better Stack PostgreSQL target",
+        "Hold one exclusive lock while reconciling the Better Stack PostgreSQL target",
+    )[0]
+    candidates = section["block"] + section["always"]
+    helper = copy.deepcopy(next(
+        task for task in candidates if task.get("name") == helper_name
+    ))
+    command = helper["ansible.builtin.command"]
+    script = command["argv"][2]
+    rename = "os.rename(path, quarantine);"
+    replacement = (
+        "predecessor = path + '.validated-predecessor'; "
+        "os.rename(path, predecessor); "
+        "os.mkdir(path); "
+        "json.dump({'owner_token': 'post-validation-successor', "
+        "'lease_expires_epoch': 4102444800}, "
+        "open(owner_path, 'w', encoding='utf-8')); "
+        + rename
+    )
+    if script.count(rename) != 1:
+        raise AssertionError(
+            f"{helper_name} must expose exactly one ownership-checked rename"
+        )
+    command["argv"][2] = script.replace(rename, replacement)
+
+    def adapt(value: Any) -> Any:
+        if isinstance(value, str):
+            return value.replace(
+                "/tmp/gam-better-stack-target-reconciliation.lock",
+                str(lock_path),
+            )
+        if isinstance(value, list):
+            return [adapt(item) for item in value]
+        if isinstance(value, dict):
+            return {key: adapt(item) for key, item in value.items()}
+        return value
+
+    return adapt(helper)
+
+
+def lock_helper_with_third_contender_in_restore_gap(
+    lock_path: Path,
+    *,
+    helper_name: str,
+) -> dict[str, Any]:
+    helper = lock_helper_with_post_validation_successor(
+        lock_path,
+        helper_name=helper_name,
+    )
+    command = helper["ansible.builtin.command"]
+    script = command["argv"][2]
+    quarantine_rename = "os.rename(path, quarantine);"
+    third_contender = (
+        quarantine_rename
+        + " os.mkdir(path); "
+        "json.dump({'owner_token': 'gap-third-contender', "
+        "'lease_expires_epoch': 4102444800}, "
+        "open(owner_path, 'w', encoding='utf-8'));"
+    )
+    if script.count(quarantine_rename) != 1:
+        raise AssertionError(
+            f"{helper_name} must expose exactly one quarantine rename"
+        )
+    command["argv"][2] = script.replace(quarantine_rename, third_contender)
+    return helper
+
+
+def owner_token_creation_tasks_with_lock(lock_path: Path) -> list[dict[str, Any]]:
+    section = task_slice(
+        "Hold one exclusive lock while reconciling the Better Stack PostgreSQL target",
+        "Hold one exclusive lock while reconciling the Better Stack PostgreSQL target",
+    )[0]
+    block = section["block"]
+    start = next(
+        index for index, task in enumerate(block)
+        if task.get("name") == "Inspect the exclusive reconciliation lock clock"
+    )
+    end = next(
+        index for index, task in enumerate(block)
+        if task.get("name") == "Record the reconciliation lock owner and lease"
+    )
+    selected = copy.deepcopy(block[start:end + 1])
+    selected[0] = {
+        "name": "Use the shared clock observation for this concurrent invocation",
+        "ansible.builtin.set_fact": {
+            "better_stack_lock_clock": {"stdout": "{{ scenario_lock_clock }}"},
+        },
+    }
+
+    def adapt(value: Any) -> Any:
+        if isinstance(value, str):
+            return value.replace(
+                "/tmp/gam-better-stack-target-reconciliation.lock",
+                str(lock_path),
+            )
+        if isinstance(value, list):
+            return [adapt(item) for item in value]
+        if isinstance(value, dict):
+            return {key: adapt(item) for key, item in value.items()}
+        return value
+
+    return adapt(selected)
+
+
+def target_reconciliation_tasks_with_lock(
+    lock_path: Path,
+) -> list[dict[str, Any]]:
+    tasks = task_slice(
+        "Reconcile Better Stack metric targets before chart mutation",
+        "Reconcile Better Stack metric targets before chart mutation",
+    ) + task_slice(
+        "Read existing Better Stack collector metric targets",
+        "Verify Better Stack service targets are provider-side resources",
+    )
+
+    def adapt(value: Any) -> Any:
+        if isinstance(value, str):
+            return value.replace(
+                "/tmp/gam-better-stack-target-reconciliation.lock",
+                str(lock_path),
+            )
+        if isinstance(value, list):
+            return [adapt(item) for item in value]
+        if isinstance(value, dict):
+            adapted = {key: adapt(item) for key, item in value.items()}
+            if "Acquire the exclusive reconciliation lock" in str(
+                adapted.get("name", "")
+            ):
+                adapted["retries"] = 1
+                adapted["delay"] = 0
+            return adapted
+        return value
+
+    return adapt(tasks)
 
 
 def provider_reconciliation_tasks() -> list[dict[str, Any]]:
@@ -833,6 +1342,8 @@ def scenario_environment(
         "BETTER_STACK_BACKEND_TARGET_ENDPOINT": BACKEND_ENDPOINT,
         "BETTER_STACK_POSTGRESQL_TARGET_HOST": "postgres.internal",
         "BETTER_STACK_POSTGRESQL_TARGET_PORT": "5432",
+        "BETTER_STACK_POSTGRESQL_TARGET_USERNAME": POSTGRES_USERNAME,
+        "BETTER_STACK_POSTGRESQL_TARGET_PASSWORD": POSTGRES_PASSWORD,
         "GAM_PRODUCTION_ORIGIN": "https://gam.example.org",
         "NO_PROXY": "127.0.0.1,localhost",
         "no_proxy": "127.0.0.1,localhost",
@@ -1328,6 +1839,14 @@ class BetterStackProviderScenarioTest(unittest.TestCase):
             "service": "proxy",
             "endpoint": PROXY_ENDPOINT,
         }
+        postgres_target_create = {
+            "kind": "postgres",
+            "host": "postgres.internal",
+            "port": 5432,
+            "username": POSTGRES_USERNAME,
+            "password": POSTGRES_PASSWORD,
+            "ssl_mode": "require",
+        }
         alert = alert_resource(*ALERTS[0])["attributes"]
         alert_payload = {
             key: value for key, value in alert.items()
@@ -1339,6 +1858,7 @@ class BetterStackProviderScenarioTest(unittest.TestCase):
             ("/api/v2/dashboards", dashboard),
             ("/api/v2/dashboards/100/charts", chart),
             ("/api/v1/collectors/collector-1/targets", target_create),
+            ("/api/v1/collectors/collector-1/targets", postgres_target_create),
             ("/api/v2/dashboards/100/charts/201/alerts", alert_payload),
             ("/api/v2/monitors", monitor),
         )
@@ -1349,8 +1869,12 @@ class BetterStackProviderScenarioTest(unittest.TestCase):
                     state.seed_converged_resources()
                     state.charts = []
                 self.replace_state(state)
-                status, _payload = self.provider_request("POST", path, valid)
+                status, payload = self.provider_request("POST", path, valid)
                 self.assertEqual(201, status)
+                if valid.get("kind") == "postgres":
+                    attributes = payload["data"]["attributes"]
+                    self.assertEqual(POSTGRES_USERNAME, attributes.get("username"))
+                    self.assertNotIn("password", attributes)
                 invalid = {**valid, "unsupported_provider_field": True}
                 rejected, _payload = self.provider_request("POST", path, invalid)
                 self.assertEqual(422, rejected)
@@ -1360,6 +1884,7 @@ class BetterStackProviderScenarioTest(unittest.TestCase):
             ("/api/v2/dashboards/100", dashboard),
             ("/api/v2/dashboards/100/charts/201", chart),
             ("/api/v1/collectors/collector-1/targets/401", {key: value for key, value in target_create.items() if key != "kind"}),
+            ("/api/v1/collectors/collector-1/targets/403", {key: value for key, value in postgres_target_create.items() if key != "kind"}),
             ("/api/v2/alerts/301", alert_payload),
             ("/api/v2/monitors/501", monitor),
         )
@@ -1413,6 +1938,22 @@ class BetterStackProviderScenarioTest(unittest.TestCase):
             or re.match(r"^https?://[^/]+/", target["attributes"]["endpoint"])
             for target in self.state.targets
         ))
+        postgres_target = next(
+            target for target in self.state.targets
+            if target["attributes"].get("kind") == "postgres"
+        )
+        self.assertEqual(POSTGRES_USERNAME, postgres_target["attributes"].get("username"))
+        self.assertNotIn("password", postgres_target["attributes"])
+        postgresql_target_requests = [
+            body for method, path, body in self.state.requests
+            if method == "POST"
+            and path.endswith("/targets")
+            and isinstance(body, dict)
+            and body.get("kind") == "postgres"
+        ]
+        self.assertEqual(1, len(postgresql_target_requests))
+        self.assertEqual(POSTGRES_PASSWORD, postgresql_target_requests[0].get("password"))
+        self.assertNotIn(POSTGRES_PASSWORD, commissioned.stdout)
 
         self.state.clear_requests()
         replay = run_tasks(
@@ -1423,6 +1964,995 @@ class BetterStackProviderScenarioTest(unittest.TestCase):
         self.assertEqual(0, replay.returncode, replay.stdout)
         self.assertRegex(replay.stdout, r"changed=0\s+unreachable=0\s+failed=0")
         self.assertFalse(any(method in {"POST", "PATCH"} for method, _path, _body in self.state.requests))
+
+    def test_postgresql_password_rotates_with_the_same_username_without_duplicates(self) -> None:
+        previous_password = "previous-postgresql-metrics-secret"
+        target_tasks = task_slice(
+            "Read existing Better Stack collector metric targets",
+            "Verify Better Stack service targets are provider-side resources",
+        )
+        credential_state = tempfile.TemporaryDirectory(
+            prefix="gam-postgresql-target-credentials-"
+        )
+        self.addCleanup(credential_state.cleanup)
+        variables = {
+            "better_stack_collector_id": "collector-1",
+            "better_stack_postgresql_target_credentials_fingerprint_file": str(
+                Path(credential_state.name) / "fingerprint"
+            ),
+        }
+        self.state.seed_converged_resources()
+        self.state.targets = []
+
+        provisioned = run_tasks(
+            target_tasks,
+            self.server.origin,
+            variables=variables,
+            environment_overrides={
+                "BETTER_STACK_POSTGRESQL_TARGET_USERNAME": POSTGRES_USERNAME,
+                "BETTER_STACK_POSTGRESQL_TARGET_PASSWORD": previous_password,
+            },
+        )
+
+        self.assertEqual(0, provisioned.returncode, provisioned.stdout)
+        self.assertNotIn(previous_password, provisioned.stdout)
+        previous_postgres_targets = [
+            target for target in self.state.targets
+            if target["attributes"].get("kind") == "postgres"
+        ]
+        self.assertEqual(1, len(previous_postgres_targets))
+        self.assertEqual(
+            POSTGRES_USERNAME,
+            previous_postgres_targets[0]["attributes"].get("username"),
+        )
+        self.assertNotIn("password", previous_postgres_targets[0]["attributes"])
+
+        self.state.clear_requests()
+        rotated = run_tasks(
+            target_tasks,
+            self.server.origin,
+            variables=variables,
+            environment_overrides={
+                "BETTER_STACK_POSTGRESQL_TARGET_USERNAME": POSTGRES_USERNAME,
+                "BETTER_STACK_POSTGRESQL_TARGET_PASSWORD": POSTGRES_PASSWORD,
+            },
+        )
+
+        self.assertEqual(0, rotated.returncode, rotated.stdout)
+        self.assertNotIn(previous_password, rotated.stdout)
+        self.assertNotIn(POSTGRES_PASSWORD, rotated.stdout)
+        self.assertEqual(3, len(self.state.targets))
+        rotated_postgres_targets = [
+            target for target in self.state.targets
+            if target["attributes"].get("kind") == "postgres"
+        ]
+        self.assertEqual(1, len(rotated_postgres_targets))
+        self.assertEqual(
+            POSTGRES_USERNAME,
+            rotated_postgres_targets[0]["attributes"].get("username"),
+        )
+        self.assertNotIn("password", rotated_postgres_targets[0]["attributes"])
+        rotated_postgres_patches = [
+            body for method, path, body in self.state.requests
+            if method == "PATCH"
+            and path == f"/api/v1/collectors/collector-1/targets/{previous_postgres_targets[0]['id']}"
+            and isinstance(body, dict)
+        ]
+        self.assertEqual(1, len(rotated_postgres_patches))
+        self.assertEqual(
+            {
+                "host": "postgres.internal",
+                "port": 5432,
+                "username": POSTGRES_USERNAME,
+                "password": POSTGRES_PASSWORD,
+                "ssl_mode": "require",
+            },
+            rotated_postgres_patches[0],
+        )
+        self.assertEqual(
+            0,
+            sum(
+                method in {"POST", "DELETE"} and "/targets" in path
+                for method, path, _body in self.state.requests
+            ),
+        )
+        self.assertEqual(previous_postgres_targets[0]["id"], rotated_postgres_targets[0]["id"])
+
+        self.state.clear_requests()
+        replay = run_tasks(
+            target_tasks,
+            self.server.origin,
+            variables=variables,
+        )
+
+        self.assertEqual(0, replay.returncode, replay.stdout)
+        self.assertRegex(replay.stdout, r"changed=0\s+unreachable=0\s+failed=0")
+        self.assertNotIn(POSTGRES_PASSWORD, replay.stdout)
+        self.assertFalse(any(
+            method in {"POST", "PATCH", "DELETE"}
+            for method, _path, _body in self.state.requests
+        ))
+
+    def test_stale_credential_state_replaces_an_externally_recreated_postgresql_target(self) -> None:
+        externally_managed_password = "externally-replaced-postgresql-secret"
+        target_tasks = task_slice(
+            "Read existing Better Stack collector metric targets",
+            "Verify Better Stack service targets are provider-side resources",
+        )
+        credential_state = tempfile.TemporaryDirectory(
+            prefix="gam-postgresql-target-identity-"
+        )
+        self.addCleanup(credential_state.cleanup)
+        credential_state_file = Path(credential_state.name) / "fingerprint"
+        variables = {
+            "better_stack_collector_id": "collector-1",
+            "better_stack_postgresql_target_credentials_fingerprint_file": str(
+                credential_state_file
+            ),
+        }
+        self.state.seed_converged_resources()
+        self.state.targets = []
+
+        provisioned = run_tasks(
+            target_tasks,
+            self.server.origin,
+            variables=variables,
+        )
+
+        self.assertEqual(0, provisioned.returncode, provisioned.stdout)
+        self.assertTrue(credential_state_file.is_file())
+        persisted_credential_state = credential_state_file.read_text(encoding="utf-8")
+        self.assertNotIn(POSTGRES_PASSWORD, persisted_credential_state)
+        self.assertNotIn(POSTGRES_USERNAME, persisted_credential_state)
+        provisioned_postgres = next(
+            target for target in self.state.targets
+            if target["attributes"].get("kind") == "postgres"
+        )
+        self.assertIn(
+            provisioned_postgres["id"],
+            persisted_credential_state,
+            "protected credential state must bind its digest to the provisioned provider target",
+        )
+        externally_replaced_target_id = "externally-replaced-postgresql-target"
+        self.state.targets = [
+            target for target in self.state.targets
+            if target["attributes"].get("kind") != "postgres"
+        ] + [resource(
+            externally_replaced_target_id,
+            copy.deepcopy(provisioned_postgres["attributes"]),
+        )]
+        self.assertEqual(
+            POSTGRES_USERNAME,
+            self.state.targets[-1]["attributes"].get("username"),
+        )
+        self.assertNotEqual(provisioned_postgres["id"], self.state.targets[-1]["id"])
+        self.assertEqual(
+            persisted_credential_state,
+            credential_state_file.read_text(encoding="utf-8"),
+            "out-of-band provider replacement must leave the matching local credential digest stale",
+        )
+
+        self.state.clear_requests()
+        reconciled = run_tasks(
+            target_tasks,
+            self.server.origin,
+            variables=variables,
+        )
+
+        self.assertEqual(0, reconciled.returncode, reconciled.stdout)
+        self.assertNotIn(POSTGRES_PASSWORD, reconciled.stdout)
+        self.assertNotIn(externally_managed_password, reconciled.stdout)
+        postgres_targets = [
+            target for target in self.state.targets
+            if target["attributes"].get("kind") == "postgres"
+        ]
+        self.assertEqual(1, len(postgres_targets))
+        self.assertEqual(externally_replaced_target_id, postgres_targets[0]["id"])
+        postgres_patches = [
+            body for method, path, body in self.state.requests
+            if method == "PATCH"
+            and path == f"/api/v1/collectors/collector-1/targets/{externally_replaced_target_id}"
+            and isinstance(body, dict)
+        ]
+        self.assertEqual(1, len(postgres_patches))
+        self.assertEqual(POSTGRES_PASSWORD, postgres_patches[0].get("password"))
+        self.assertFalse(any(
+            method in {"POST", "DELETE"} and "/targets" in path
+            for method, path, _body in self.state.requests
+        ))
+        reconciled_credential_state = credential_state_file.read_text(encoding="utf-8")
+        self.assertIn(postgres_targets[0]["id"], reconciled_credential_state)
+        self.assertNotIn(POSTGRES_USERNAME, reconciled_credential_state)
+        self.assertNotIn(POSTGRES_PASSWORD, reconciled_credential_state)
+
+        self.state.clear_requests()
+        replay = run_tasks(
+            target_tasks,
+            self.server.origin,
+            variables=variables,
+        )
+
+        self.assertEqual(0, replay.returncode, replay.stdout)
+        self.assertRegex(replay.stdout, r"changed=0\s+unreachable=0\s+failed=0")
+        self.assertNotIn(POSTGRES_PASSWORD, replay.stdout)
+        self.assertFalse(any(
+            method in {"POST", "PATCH", "DELETE"}
+            for method, _path, _body in self.state.requests
+        ))
+
+    def test_failed_postgresql_password_patch_preserves_target_and_protected_state(self) -> None:
+        previous_password = "previous-postgresql-metrics-secret"
+        target_tasks = task_slice(
+            "Read existing Better Stack collector metric targets",
+            "Verify Better Stack service targets are provider-side resources",
+        )
+        credential_state = tempfile.TemporaryDirectory(
+            prefix="gam-postgresql-target-patch-failure-"
+        )
+        self.addCleanup(credential_state.cleanup)
+        credential_state_file = Path(credential_state.name) / "fingerprint"
+        variables = {
+            "better_stack_collector_id": "collector-1",
+            "better_stack_postgresql_target_credentials_fingerprint_file": str(
+                credential_state_file
+            ),
+        }
+        self.state.seed_converged_resources()
+        self.state.targets = []
+
+        provisioned = run_tasks(
+            target_tasks,
+            self.server.origin,
+            variables=variables,
+            environment_overrides={
+                "BETTER_STACK_POSTGRESQL_TARGET_USERNAME": POSTGRES_USERNAME,
+                "BETTER_STACK_POSTGRESQL_TARGET_PASSWORD": previous_password,
+            },
+        )
+        self.assertEqual(0, provisioned.returncode, provisioned.stdout)
+        original_target = copy.deepcopy(next(
+            target for target in self.state.targets
+            if target["attributes"].get("kind") == "postgres"
+        ))
+        original_state = credential_state_file.read_text(encoding="utf-8")
+
+        self.state.clear_requests()
+        self.state.reject_postgresql_target_patch = True
+        failed_rotation = run_tasks(
+            target_tasks,
+            self.server.origin,
+            variables=variables,
+            environment_overrides={
+                "BETTER_STACK_POSTGRESQL_TARGET_USERNAME": POSTGRES_USERNAME,
+                "BETTER_STACK_POSTGRESQL_TARGET_PASSWORD": POSTGRES_PASSWORD,
+            },
+        )
+
+        self.assertNotEqual(0, failed_rotation.returncode, failed_rotation.stdout)
+        self.assertNotIn(previous_password, failed_rotation.stdout)
+        self.assertNotIn(POSTGRES_PASSWORD, failed_rotation.stdout)
+        postgres_targets = [
+            target for target in self.state.targets
+            if target["attributes"].get("kind") == "postgres"
+        ]
+        self.assertEqual([original_target], postgres_targets)
+        self.assertEqual(original_state, credential_state_file.read_text(encoding="utf-8"))
+        self.assertEqual(1, sum(
+            method == "PATCH"
+            and path.endswith(f"/targets/{original_target['id']}")
+            and isinstance(body, dict)
+            and body.get("password") == POSTGRES_PASSWORD
+            for method, path, body in self.state.requests
+        ))
+        self.assertFalse(any(
+            method in {"POST", "DELETE"} and "/targets" in path
+            for method, path, _body in self.state.requests
+        ))
+
+        self.state.reject_postgresql_target_patch = False
+        self.state.clear_requests()
+        recovered = run_tasks(
+            target_tasks,
+            self.server.origin,
+            variables=variables,
+            environment_overrides={
+                "BETTER_STACK_POSTGRESQL_TARGET_USERNAME": POSTGRES_USERNAME,
+                "BETTER_STACK_POSTGRESQL_TARGET_PASSWORD": POSTGRES_PASSWORD,
+            },
+        )
+        self.assertEqual(0, recovered.returncode, recovered.stdout)
+        self.assertEqual(1, len([
+            target for target in self.state.targets
+            if target["attributes"].get("kind") == "postgres"
+        ]))
+        self.assertNotEqual(
+            original_state,
+            credential_state_file.read_text(encoding="utf-8"),
+            "a failed mutation must release reconciliation ownership so a later apply can converge",
+        )
+
+        self.state.clear_requests()
+        replay = run_tasks(target_tasks, self.server.origin, variables=variables)
+        self.assertEqual(0, replay.returncode, replay.stdout)
+        self.assertRegex(replay.stdout, r"changed=0\s+unreachable=0\s+failed=0")
+        self.assertFalse(any(
+            method in {"POST", "PATCH", "DELETE"}
+            for method, _path, _body in self.state.requests
+        ))
+
+    def test_concurrent_first_run_reconciliation_is_exclusive_and_idempotent(self) -> None:
+        target_tasks = task_slice(
+            "Reconcile Better Stack metric targets before chart mutation",
+            "Reconcile Better Stack metric targets before chart mutation",
+        ) + task_slice(
+            "Read existing Better Stack collector metric targets",
+            "Verify Better Stack service targets are provider-side resources",
+        )
+        credential_state = tempfile.TemporaryDirectory(
+            prefix="gam-postgresql-target-concurrent-first-run-"
+        )
+        self.addCleanup(credential_state.cleanup)
+        credential_state_file = Path(credential_state.name) / "fingerprint"
+        variables = {
+            "better_stack_collector_id": "collector-1",
+            "better_stack_postgresql_target_credentials_fingerprint_file": str(
+                credential_state_file
+            ),
+        }
+        self.state.seed_converged_resources()
+        self.state.targets = []
+        self.state.target_discovery_barrier = threading.Barrier(2)
+        self.state.target_discovery_barrier_uses = 2
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(
+                    run_tasks,
+                    target_tasks,
+                    self.server.origin,
+                    variables=variables,
+                )
+                for _ in range(2)
+            ]
+            concurrent_results = [future.result(timeout=190) for future in futures]
+
+        self.assertTrue(
+            all(result.returncode == 0 for result in concurrent_results),
+            "both concurrent applies must serialize and converge:\n"
+            + "\n".join(result.stdout for result in concurrent_results),
+        )
+        self.assertTrue(credential_state_file.is_file())
+        protected_state = credential_state_file.read_text(encoding="utf-8")
+        self.assertNotIn(POSTGRES_USERNAME, protected_state)
+        self.assertNotIn(POSTGRES_PASSWORD, protected_state)
+        self.assertEqual(1, sum(
+            target["attributes"].get("kind") == "prometheus"
+            and target["attributes"].get("service") == "proxy"
+            for target in self.state.targets
+        ))
+        self.assertEqual(1, sum(
+            target["attributes"].get("kind") == "prometheus"
+            and target["attributes"].get("service") == "backend"
+            for target in self.state.targets
+        ))
+        self.assertEqual(1, sum(
+            target["attributes"].get("kind") == "postgres"
+            for target in self.state.targets
+        ))
+        self.assertEqual(3, sum(
+            method == "POST" and path.endswith("/targets")
+            for method, path, _body in self.state.requests
+        ))
+        self.assertTrue(all(
+            POSTGRES_PASSWORD not in result.stdout
+            for result in concurrent_results
+        ))
+
+        self.state.clear_requests()
+        replay = run_tasks(target_tasks, self.server.origin, variables=variables)
+        self.assertEqual(0, replay.returncode, replay.stdout)
+        self.assertRegex(replay.stdout, r"changed=0\s+unreachable=0\s+failed=0")
+        self.assertFalse(any(
+            method in {"POST", "PATCH", "DELETE"}
+            for method, _path, _body in self.state.requests
+        ))
+
+    def test_abrupt_termination_lock_recovers_without_preempting_a_live_owner(self) -> None:
+        reconciliation_state = tempfile.TemporaryDirectory(
+            prefix="gam-better-stack-abandoned-lock-"
+        )
+        self.addCleanup(reconciliation_state.cleanup)
+        state_root = Path(reconciliation_state.name)
+        lock_path = state_root / "target-reconciliation.lock"
+        credential_state_file = state_root / "fingerprint"
+        variables = {
+            "better_stack_collector_id": "collector-1",
+            "better_stack_postgresql_target_credentials_fingerprint_file": str(
+                credential_state_file
+            ),
+            "better_stack_target_reconciliation_lock_path": str(lock_path),
+        }
+        target_tasks = target_reconciliation_tasks_with_lock(lock_path)
+        self.state.seed_converged_resources()
+        self.state.targets = []
+
+        lock_path.mkdir()
+        live_owner = run_tasks(
+            target_tasks,
+            self.server.origin,
+            variables=variables,
+        )
+        self.assertNotEqual(
+            0,
+            live_owner.returncode,
+            "a fresh lock lease must not be preempted by another apply",
+        )
+        self.assertTrue(lock_path.is_dir())
+        self.assertFalse(any(
+            method in {"POST", "PATCH", "DELETE"} and "/targets" in path
+            for method, path, _body in self.state.requests
+        ))
+
+        os.utime(lock_path, (1, 1))
+        self.state.clear_requests()
+        recovered = run_tasks(
+            target_tasks,
+            self.server.origin,
+            variables=variables,
+        )
+
+        self.assertEqual(0, recovered.returncode, recovered.stdout)
+        self.assertFalse(lock_path.exists(), "the recovered apply must clean up its own lock")
+        self.assertNotIn(POSTGRES_USERNAME, recovered.stdout)
+        self.assertNotIn(POSTGRES_PASSWORD, recovered.stdout)
+        self.assertEqual(1, sum(
+            target["attributes"].get("kind") == "prometheus"
+            and target["attributes"].get("service") == "proxy"
+            for target in self.state.targets
+        ))
+        self.assertEqual(1, sum(
+            target["attributes"].get("kind") == "prometheus"
+            and target["attributes"].get("service") == "backend"
+            for target in self.state.targets
+        ))
+        self.assertEqual(1, sum(
+            target["attributes"].get("kind") == "postgres"
+            for target in self.state.targets
+        ))
+
+        self.state.clear_requests()
+        replay = run_tasks(
+            target_tasks,
+            self.server.origin,
+            variables=variables,
+        )
+        self.assertEqual(0, replay.returncode, replay.stdout)
+        self.assertRegex(replay.stdout, r"changed=0\s+unreachable=0\s+failed=0")
+        self.assertFalse(lock_path.exists())
+        self.assertFalse(any(
+            method in {"POST", "PATCH", "DELETE"}
+            for method, _path, _body in self.state.requests
+        ))
+
+    def test_concurrent_stale_lock_recovery_preserves_a_successor_owner(self) -> None:
+        reconciliation_state = tempfile.TemporaryDirectory(
+            prefix="gam-better-stack-concurrent-stale-lock-"
+        )
+        self.addCleanup(reconciliation_state.cleanup)
+        lock_path = Path(reconciliation_state.name) / "target-reconciliation.lock"
+        lock_path.mkdir()
+        (lock_path / "owner.json").write_text(
+            json.dumps({
+                "owner_token": "abandoned-owner",
+                "lease_expires_epoch": 1,
+            }),
+            encoding="utf-8",
+        )
+        self.state.stale_recovery_barrier = threading.Barrier(2)
+        tasks = concurrent_stale_recovery_tasks_with_lock(lock_path)
+
+        contender_variables = (
+            {"scenario_recovery_delay_seconds": 0, "scenario_lock_hold_seconds": 2},
+            {"scenario_recovery_delay_seconds": 1, "scenario_lock_hold_seconds": 4},
+        )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(
+                    run_tasks,
+                    tasks,
+                    self.server.origin,
+                    variables=variables,
+                )
+                for variables in contender_variables
+            ]
+            results = [future.result(timeout=30) for future in futures]
+
+        self.assertTrue(
+            all(result.returncode == 0 for result in results),
+            "a stale-lock contender must revalidate owner_token before removal, and "
+            "cleanup must preserve a successor's newly acquired lock:\n"
+            + "\n".join(result.stdout for result in results),
+        )
+        self.assertFalse(lock_path.exists(), "each successful owner must clean up only its own lock")
+
+    def test_simultaneous_stale_observers_cannot_delete_a_successor_lock(self) -> None:
+        reconciliation_state = tempfile.TemporaryDirectory(
+            prefix="gam-better-stack-same-observation-stale-lock-"
+        )
+        self.addCleanup(reconciliation_state.cleanup)
+        lock_path = Path(reconciliation_state.name) / "target-reconciliation.lock"
+        lock_path.mkdir()
+        (lock_path / "owner.json").write_text(
+            json.dumps({
+                "owner_token": "same-abandoned-owner",
+                "lease_expires_epoch": 1,
+            }),
+            encoding="utf-8",
+        )
+        self.state.stale_recovery_barrier = threading.Barrier(2)
+        tasks = same_observation_stale_recovery_tasks_with_lock(lock_path)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(
+                    run_tasks,
+                    tasks,
+                    self.server.origin,
+                    variables={"scenario_recovery_delay_seconds": delay},
+                )
+                for delay in (0, 1)
+            ]
+            results = [future.result(timeout=30) for future in futures]
+
+        self.assertTrue(
+            all(result.returncode == 0 for result in results),
+            "once both contenders observe the same stale owner, a delayed contender "
+            "must atomically revalidate before deletion and preserve the first "
+            "contender's successor lock:\n"
+            + "\n".join(result.stdout for result in results),
+        )
+        self.assertFalse(lock_path.exists(), "each successful owner must clean up only its own lock")
+
+    def test_cleanup_cannot_delete_a_successor_acquired_after_owner_read(self) -> None:
+        reconciliation_state = tempfile.TemporaryDirectory(
+            prefix="gam-better-stack-cleanup-owner-swap-"
+        )
+        self.addCleanup(reconciliation_state.cleanup)
+        lock_path = Path(reconciliation_state.name) / "target-reconciliation.lock"
+        lock_path.mkdir()
+        clock = "1700000000000000000"
+        (lock_path / "owner.json").write_text(
+            json.dumps({
+                "owner_token": f"localhost:{clock}:final",
+                "lease_expires_epoch": 4102444800,
+            }),
+            encoding="utf-8",
+        )
+        self.state.cleanup_replacement_lock_path = lock_path
+
+        cleanup = run_tasks(
+            cleanup_compare_then_delete_tasks_with_lock(lock_path),
+            self.server.origin,
+            variables={
+                "better_stack_lock_clock": {"stdout": clock},
+                "better_stack_target_lock": {"rc": 0},
+            },
+        )
+
+        self.assertEqual(0, cleanup.returncode, cleanup.stdout)
+        self.assertTrue(
+            lock_path.is_dir(),
+            "cleanup must compare and remove atomically so a successor acquired "
+            "after the owner read cannot be deleted",
+        )
+        owner = json.loads((lock_path / "owner.json").read_text(encoding="utf-8"))
+        self.assertEqual(self.state.cleanup_replacement_owner_token, owner["owner_token"])
+
+    def test_stale_takeover_helper_cannot_rename_a_successor_installed_after_validation(self) -> None:
+        reconciliation_state = tempfile.TemporaryDirectory(
+            prefix="gam-better-stack-stale-helper-owner-swap-"
+        )
+        self.addCleanup(reconciliation_state.cleanup)
+        lock_path = Path(reconciliation_state.name) / "target-reconciliation.lock"
+        lock_path.mkdir()
+        predecessor = {
+            "owner_token": "validated-stale-predecessor",
+            "lease_expires_epoch": 1,
+        }
+        (lock_path / "owner.json").write_text(
+            json.dumps(predecessor),
+            encoding="utf-8",
+        )
+        helper = lock_helper_with_post_validation_successor(
+            lock_path,
+            helper_name=(
+                "Atomically claim and remove only the observed stale reconciliation lock"
+            ),
+        )
+
+        takeover = run_tasks(
+            [helper],
+            self.server.origin,
+            variables={
+                "better_stack_lock_stale": True,
+                "better_stack_lock_still_owned_by_observed_stale_owner": True,
+                "better_stack_lock_owner_file": {"stat": {"exists": True}},
+                "better_stack_lock_owner_content": {
+                    "content": base64.b64encode(
+                        json.dumps(predecessor).encode("utf-8")
+                    ).decode("ascii"),
+                },
+                "better_stack_lock_nonce": {"stdout": "stale-helper-race"},
+            },
+        )
+
+        self.assertEqual(0, takeover.returncode, takeover.stdout)
+        self.assertTrue(
+            lock_path.is_dir(),
+            "stale takeover must not rename or delete a successor installed after "
+            "the helper internally validates the predecessor owner",
+        )
+        owner = json.loads((lock_path / "owner.json").read_text(encoding="utf-8"))
+        self.assertEqual("post-validation-successor", owner["owner_token"])
+
+    def test_cleanup_helper_cannot_rename_a_successor_installed_after_validation(self) -> None:
+        reconciliation_state = tempfile.TemporaryDirectory(
+            prefix="gam-better-stack-cleanup-helper-owner-swap-"
+        )
+        self.addCleanup(reconciliation_state.cleanup)
+        lock_path = Path(reconciliation_state.name) / "target-reconciliation.lock"
+        lock_path.mkdir()
+        clock = "1700000000000000000-unique-cleanup-nonce"
+        predecessor_token = f"localhost:{clock}:final"
+        (lock_path / "owner.json").write_text(
+            json.dumps({
+                "owner_token": predecessor_token,
+                "lease_expires_epoch": 4102444800,
+            }),
+            encoding="utf-8",
+        )
+        helper = lock_helper_with_post_validation_successor(
+            lock_path,
+            helper_name=(
+                "Atomically release only this apply's Better Stack target "
+                "reconciliation lock"
+            ),
+        )
+
+        cleanup = run_tasks(
+            [helper],
+            self.server.origin,
+            variables={
+                "better_stack_target_lock": {"rc": 0},
+                "better_stack_lock_clock": {"stdout": clock},
+            },
+        )
+
+        self.assertEqual(0, cleanup.returncode, cleanup.stdout)
+        self.assertTrue(
+            lock_path.is_dir(),
+            "cleanup must not rename or delete a successor installed after the "
+            "helper internally validates the predecessor owner",
+        )
+        owner = json.loads((lock_path / "owner.json").read_text(encoding="utf-8"))
+        self.assertEqual("post-validation-successor", owner["owner_token"])
+
+    def test_stale_takeover_preserves_exclusivity_when_a_third_owner_acquires_restore_gap(self) -> None:
+        reconciliation_state = tempfile.TemporaryDirectory(
+            prefix="gam-better-stack-stale-three-party-lock-"
+        )
+        self.addCleanup(reconciliation_state.cleanup)
+        lock_path = Path(reconciliation_state.name) / "target-reconciliation.lock"
+        lock_path.mkdir()
+        predecessor = {
+            "owner_token": "validated-stale-predecessor",
+            "lease_expires_epoch": 1,
+        }
+        (lock_path / "owner.json").write_text(
+            json.dumps(predecessor),
+            encoding="utf-8",
+        )
+        helper = lock_helper_with_third_contender_in_restore_gap(
+            lock_path,
+            helper_name=(
+                "Atomically claim and remove only the observed stale reconciliation lock"
+            ),
+        )
+        takeover = run_tasks(
+            [helper],
+            self.server.origin,
+            variables={
+                "better_stack_lock_stale": True,
+                "better_stack_lock_still_owned_by_observed_stale_owner": True,
+                "better_stack_lock_owner_file": {"stat": {"exists": True}},
+                "better_stack_lock_owner_content": {
+                    "content": base64.b64encode(
+                        json.dumps(predecessor).encode("utf-8")
+                    ).decode("ascii"),
+                },
+                "better_stack_lock_nonce": {"stdout": "stale-three-party-race"},
+            },
+        )
+
+        canonical_owner = json.loads(
+            (lock_path / "owner.json").read_text(encoding="utf-8")
+        )["owner_token"]
+        displaced_owners = [
+            json.loads((candidate / "owner.json").read_text(encoding="utf-8"))[
+                "owner_token"
+            ]
+            for candidate in lock_path.parent.iterdir()
+            if candidate.is_dir()
+            and candidate != lock_path
+            and not candidate.name.endswith(".validated-predecessor")
+            and (candidate / "owner.json").is_file()
+        ]
+        self.assertTrue(
+            takeover.returncode == 0
+            and canonical_owner == "gap-third-contender"
+            and displaced_owners == [],
+            "stale takeover must maintain continuous exclusivity when a third "
+            "contender acquires the temporary canonical gap; observed "
+            f"returncode={takeover.returncode}, canonical_owner={canonical_owner!r}, "
+            f"displaced_owners={displaced_owners!r}\n{takeover.stdout}",
+        )
+
+    def test_cleanup_preserves_exclusivity_when_a_third_owner_acquires_restore_gap(self) -> None:
+        reconciliation_state = tempfile.TemporaryDirectory(
+            prefix="gam-better-stack-cleanup-three-party-lock-"
+        )
+        self.addCleanup(reconciliation_state.cleanup)
+        lock_path = Path(reconciliation_state.name) / "target-reconciliation.lock"
+        lock_path.mkdir()
+        clock = "1700000000000000000-unique-cleanup-nonce"
+        predecessor_token = f"localhost:{clock}:final"
+        (lock_path / "owner.json").write_text(
+            json.dumps({
+                "owner_token": predecessor_token,
+                "lease_expires_epoch": 4102444800,
+            }),
+            encoding="utf-8",
+        )
+        helper = lock_helper_with_third_contender_in_restore_gap(
+            lock_path,
+            helper_name=(
+                "Atomically release only this apply's Better Stack target "
+                "reconciliation lock"
+            ),
+        )
+        cleanup = run_tasks(
+            [helper],
+            self.server.origin,
+            variables={
+                "better_stack_target_lock": {"rc": 0},
+                "better_stack_lock_clock": {"stdout": clock},
+            },
+        )
+
+        canonical_owner = json.loads(
+            (lock_path / "owner.json").read_text(encoding="utf-8")
+        )["owner_token"]
+        displaced_owners = [
+            json.loads((candidate / "owner.json").read_text(encoding="utf-8"))[
+                "owner_token"
+            ]
+            for candidate in lock_path.parent.iterdir()
+            if candidate.is_dir()
+            and candidate != lock_path
+            and not candidate.name.endswith(".validated-predecessor")
+            and (candidate / "owner.json").is_file()
+        ]
+        self.assertTrue(
+            cleanup.returncode == 0
+            and canonical_owner == "gap-third-contender"
+            and displaced_owners == [],
+            "cleanup must maintain continuous exclusivity when a third contender "
+            "acquires the temporary canonical gap; observed "
+            f"returncode={cleanup.returncode}, canonical_owner={canonical_owner!r}, "
+            f"displaced_owners={displaced_owners!r}\n{cleanup.stdout}",
+        )
+
+    def test_same_clock_concurrent_invocations_receive_unique_owner_tokens(self) -> None:
+        reconciliation_state = tempfile.TemporaryDirectory(
+            prefix="gam-better-stack-owner-token-uniqueness-"
+        )
+        self.addCleanup(reconciliation_state.cleanup)
+        root = Path(reconciliation_state.name)
+        lock_paths = (root / "first.lock", root / "second.lock")
+        clock = "1700000000000000000"
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(
+                    run_tasks,
+                    owner_token_creation_tasks_with_lock(lock_path),
+                    self.server.origin,
+                    variables={"scenario_lock_clock": clock},
+                )
+                for lock_path in lock_paths
+            ]
+            results = [future.result(timeout=30) for future in futures]
+
+        self.assertTrue(
+            all(result.returncode == 0 for result in results),
+            "the owner-token creation scenarios must both execute:\n"
+            + "\n".join(result.stdout for result in results),
+        )
+        owner_tokens = [
+            json.loads((lock_path / "owner.json").read_text(encoding="utf-8"))["owner_token"]
+            for lock_path in lock_paths
+        ]
+        self.assertEqual(
+            len(owner_tokens),
+            len(set(owner_tokens)),
+            "same-host invocations with the same clock observation require "
+            "per-invocation entropy in owner_token",
+        )
+
+    def test_post_network_readiness_retries_merged_snapshots_until_all_targets_are_up(self) -> None:
+        self.state.seed_converged_resources()
+        transient = copy.deepcopy(self.state.targets)
+        transient[0]["attributes"]["status"] = "down"
+        transient[1]["attributes"]["status"] = "up"
+        transient[2]["attributes"]["status"] = "pending"
+        converged = copy.deepcopy(self.state.targets)
+        for target in converged:
+            target["attributes"]["status"] = "up"
+        self.state.target_readiness_snapshots = [transient, converged]
+
+        readiness = run_tasks(
+            post_network_target_readiness_tasks(),
+            self.server.origin,
+            variables={
+                "better_stack_collector_id": "collector-1",
+                "better_stack_target_readiness_retries": 3,
+                "better_stack_target_readiness_delay_seconds": 0,
+            },
+        )
+
+        self.assertEqual(0, readiness.returncode, readiness.stdout)
+        page_one_reads = [
+            path for method, path, _body in self.state.requests
+            if method == "GET"
+            and "/targets" in path
+            and parse_qs(urlparse(path).query).get("page", ["1"])[0] == "1"
+        ]
+        page_two_reads = [
+            path for method, path, _body in self.state.requests
+            if method == "GET"
+            and "/targets" in path
+            and parse_qs(urlparse(path).query).get("page", ["1"])[0] == "2"
+        ]
+        self.assertEqual(2, len(page_one_reads))
+        self.assertEqual(2, len(page_two_reads))
+
+    def test_post_network_readiness_fails_after_bounded_all_page_attempts(self) -> None:
+        self.state.seed_converged_resources()
+        never_ready = copy.deepcopy(self.state.targets)
+        for target in never_ready:
+            target["attributes"]["status"] = "down"
+        self.state.target_readiness_snapshots = [
+            copy.deepcopy(never_ready) for _ in range(3)
+        ]
+
+        readiness = run_tasks(
+            post_network_target_readiness_tasks(),
+            self.server.origin,
+            variables={
+                "better_stack_collector_id": "collector-1",
+                "better_stack_target_readiness_retries": 3,
+                "better_stack_target_readiness_delay_seconds": 0,
+            },
+        )
+
+        self.assertNotEqual(0, readiness.returncode, readiness.stdout)
+        page_one_reads = [
+            path for method, path, _body in self.state.requests
+            if method == "GET"
+            and "/targets" in path
+            and parse_qs(urlparse(path).query).get("page", ["1"])[0] == "1"
+        ]
+        page_two_reads = [
+            path for method, path, _body in self.state.requests
+            if method == "GET"
+            and "/targets" in path
+            and parse_qs(urlparse(path).query).get("page", ["1"])[0] == "2"
+        ]
+        self.assertEqual(3, len(page_one_reads))
+        self.assertEqual(3, len(page_two_reads))
+
+    def test_post_network_readiness_finds_managed_targets_after_page_one(self) -> None:
+        self.state.seed_converged_resources()
+        for target in self.state.targets:
+            target["attributes"]["status"] = "up"
+
+        readiness = run_tasks(
+            post_network_target_readiness_tasks(),
+            self.server.origin,
+            variables={"better_stack_collector_id": "collector-1"},
+        )
+
+        self.assertEqual(0, readiness.returncode, readiness.stdout)
+        target_reads = [
+            path for method, path, _body in self.state.requests
+            if method == "GET" and "/targets" in path
+        ]
+        self.assertTrue(any("page=2" in path for path in target_reads))
+        self.assertNotIn(POSTGRES_PASSWORD, readiness.stdout)
+
+        self.state.clear_requests()
+        replay = run_tasks(
+            post_network_target_readiness_tasks(),
+            self.server.origin,
+            variables={"better_stack_collector_id": "collector-1"},
+        )
+        self.assertEqual(0, replay.returncode, replay.stdout)
+        self.assertRegex(replay.stdout, r"changed=0\s+unreachable=0\s+failed=0")
+        self.assertTrue(any(
+            method == "GET" and "page=2" in path
+            for method, path, _body in self.state.requests
+        ))
+
+    def test_legacy_malformed_and_missing_target_credential_state_recovers_safely(self) -> None:
+        target_tasks = task_slice(
+            "Read existing Better Stack collector metric targets",
+            "Verify Better Stack service targets are provider-side resources",
+        )
+        for state_kind in ("legacy scalar", "malformed", "missing target id"):
+            with self.subTest(protected_state=state_kind):
+                credential_state = tempfile.TemporaryDirectory(
+                    prefix="gam-postgresql-target-state-recovery-"
+                )
+                self.addCleanup(credential_state.cleanup)
+                credential_state_file = Path(credential_state.name) / "fingerprint"
+                variables = {
+                    "better_stack_collector_id": "collector-1",
+                    "better_stack_postgresql_target_credentials_fingerprint_file": str(
+                        credential_state_file
+                    ),
+                }
+                self.state.seed_converged_resources()
+                self.state.targets = []
+                provisioned = run_tasks(target_tasks, self.server.origin, variables=variables)
+                self.assertEqual(0, provisioned.returncode, provisioned.stdout)
+                target_id = next(
+                    target["id"] for target in self.state.targets
+                    if target["attributes"].get("kind") == "postgres"
+                )
+                protected = json.loads(credential_state_file.read_text(encoding="utf-8"))
+                replacement = {
+                    "legacy scalar": protected["credential_fingerprint"],
+                    "malformed": "{not-valid-protected-state",
+                    "missing target id": json.dumps({
+                        "credential_fingerprint": protected["credential_fingerprint"],
+                        "postgresql_target_id": "missing-provider-target",
+                    }),
+                }[state_kind]
+                credential_state_file.write_text(replacement, encoding="utf-8")
+
+                self.state.clear_requests()
+                recovered = run_tasks(target_tasks, self.server.origin, variables=variables)
+                self.assertEqual(0, recovered.returncode, recovered.stdout)
+                self.assertNotIn(POSTGRES_PASSWORD, recovered.stdout)
+                postgres_targets = [
+                    target for target in self.state.targets
+                    if target["attributes"].get("kind") == "postgres"
+                ]
+                self.assertEqual(1, len(postgres_targets))
+                self.assertEqual(target_id, postgres_targets[0]["id"])
+                recovered_state = credential_state_file.read_text(encoding="utf-8")
+                self.assertIn(target_id, recovered_state)
+                self.assertNotIn(POSTGRES_USERNAME, recovered_state)
+                self.assertNotIn(POSTGRES_PASSWORD, recovered_state)
+
+                self.state.clear_requests()
+                replay = run_tasks(target_tasks, self.server.origin, variables=variables)
+                self.assertEqual(0, replay.returncode, replay.stdout)
+                self.assertRegex(replay.stdout, r"changed=0\s+unreachable=0\s+failed=0")
+                self.assertFalse(any(
+                    method in {"POST", "PATCH", "DELETE"}
+                    for method, _path, _body in self.state.requests
+                ))
 
     def test_drifted_provider_state_is_persistently_reconciled_for_every_resource_type(self) -> None:
         self.state.seed_drifted_resources()

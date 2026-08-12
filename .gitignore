@@ -54,3 +54,6 @@ docs/private-data/
 # Local Ansible secret inputs; keep only the sanitized example in Git
 operations/ansible/secrets.*
 !operations/ansible/secrets.example
+
+# Production runtime secrets are provisioned from external custody.
+deploy/production/secrets/

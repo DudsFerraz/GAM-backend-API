@@ -1,4 +1,4 @@
----
+﻿---
 - import_playbook: playbooks/production-host-baseline.yml
 
 - name: Provision AWS recovery resources and independent backup monitoring
@@ -37,6 +37,14 @@
   vars_files:
     - group_vars/production.yml
   pre_tasks:
+    - name: Default the protected PostgreSQL target credential-state path
+      ansible.builtin.set_fact:
+        better_stack_postgresql_target_credentials_fingerprint_file: >-
+          {{ ansible_user_dir | default(lookup('env', 'HOME'), true)
+          }}/.local/state/gam/better-stack/postgresql-target-credentials.sha256
+      when: better_stack_postgresql_target_credentials_fingerprint_file is not defined
+      no_log: true
+
     - name: Require parameterized deployment inputs
       ansible.builtin.assert:
         that:
@@ -57,11 +65,17 @@
           - better_stack_backend_target_endpoint | length > 0
           - better_stack_postgresql_target_host | length > 0
           - better_stack_postgresql_target_port | int > 0
+          - better_stack_postgresql_target_username | length > 0
+          - better_stack_postgresql_target_password | length > 0
+          - postgres_tls_certificate_source_file | length > 0
+          - postgres_tls_private_key_source_file | length > 0
         fail_msg: >-
           AWS account, VPS public source IP, production origin, and both public
           encryption recipients, Better Stack API token, service target
-          connection inputs, and the verified vendor installer source must be
-          supplied outside version control.
+          connection inputs, PostgreSQL TLS certificate and key, and the
+          verified vendor installer source must be supplied outside version
+          control.
+      no_log: true
 
     - name: Install production recovery dependencies
       ansible.builtin.package:
@@ -74,6 +88,68 @@
         state: present
 
   tasks:
+    - name: Create the restricted PostgreSQL TLS directory
+      ansible.builtin.file:
+        path: "{{ postgres_tls_directory }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Install the PostgreSQL TLS certificate from external custody
+      ansible.builtin.copy:
+        src: "{{ postgres_tls_certificate_source_file }}"
+        dest: "{{ postgres_tls_directory }}/server.crt"
+        owner: root
+        group: root
+        mode: "0644"
+      no_log: true
+
+    - name: Install the PostgreSQL TLS private key from external custody
+      ansible.builtin.copy:
+        src: "{{ postgres_tls_private_key_source_file }}"
+        dest: "{{ postgres_tls_directory }}/server.key"
+        owner: root
+        group: "{{ postgres_container_group_id }}"
+        mode: "0640"
+      no_log: true
+
+    - name: Read the PostgreSQL certificate public key
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - x509
+          - -in
+          - "{{ postgres_tls_directory }}/server.crt"
+          - -pubkey
+          - -noout
+          - -checkend
+          - "0"
+      register: postgres_tls_certificate_public_key
+      changed_when: false
+      no_log: true
+
+    - name: Read the PostgreSQL private key public component
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - pkey
+          - -in
+          - "{{ postgres_tls_directory }}/server.key"
+          - -pubout
+      register: postgres_tls_private_key_public_key
+      changed_when: false
+      no_log: true
+
+    - name: Verify the PostgreSQL TLS certificate and private key match
+      ansible.builtin.assert:
+        that:
+          - >-
+            postgres_tls_certificate_public_key.stdout | trim
+            == postgres_tls_private_key_public_key.stdout | trim
+        fail_msg: The PostgreSQL TLS certificate and private key do not match.
+      no_log: true
+
     - name: Create the machine backup service group on a clean host
       ansible.builtin.group:
         name: "{{ backup_service_group }}"
@@ -678,193 +754,537 @@
       when: better_stack_collector_id is defined
       no_log: true
       block:
-        - name: Read Better Stack metric targets required by production charts
-          ansible.builtin.uri:
-            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?per_page=100"
-            method: GET
-            headers:
-              Authorization: "Bearer {{ better_stack_api_token }}"
-              Content-Type: application/json
-            status_code: [200]
-            return_content: true
-          register: better_stack_prechart_targets
-
-        - name: Read remaining Better Stack metric target pages required by production charts
-          ansible.builtin.uri:
-            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?page={{ item }}&per_page=100"
-            method: GET
-            headers:
-              Authorization: "Bearer {{ better_stack_api_token }}"
-              Content-Type: application/json
-            status_code: [200]
-            return_content: true
-          loop: >-
-            {{ range(2, (
-            better_stack_prechart_targets.json.pagination.last
-            | default('page=1', true) | string
-            | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
-            | first | default('1', true) | int) + 1) | list }}
-          register: better_stack_prechart_target_pages
-
-        - name: Merge Better Stack metric target pages required by production charts
+        - name: Default the protected PostgreSQL target credential-state path before chart mutation
           ansible.builtin.set_fact:
-            better_stack_prechart_targets:
-              json:
-                data: >-
-                  {{ ([better_stack_prechart_targets.json.data | default([])]
-                  + (better_stack_prechart_target_pages.results | default([])
-                  | map(attribute='json.data') | list)) | flatten | list }}
+            better_stack_postgresql_target_credentials_fingerprint_file: >-
+              {{ ansible_user_dir | default(lookup('env', 'HOME'), true)
+              }}/.local/state/gam/better-stack/postgresql-target-credentials.sha256
+          when: better_stack_postgresql_target_credentials_fingerprint_file is not defined
+          no_log: true
 
-        - name: Validate Better Stack metric target identities before chart mutation
-          ansible.builtin.assert:
-            that:
-              - better_stack_proxy_target_endpoint is match('^https?://[^/]+/.+')
-              - better_stack_backend_target_endpoint is match('^https?://[^/]+/.+')
-              - >-
-                better_stack_prechart_targets.json.data | default([])
+        - name: Hold one exclusive lock while reconciling pre-chart Better Stack targets
+          block:
+            - name: Inspect the exclusive reconciliation lock clock before chart mutation
+              ansible.builtin.command: date +%s%N
+              register: better_stack_prechart_lock_clock
+              changed_when: false
+
+            - name: Generate a unique pre-chart reconciliation invocation nonce
+              ansible.builtin.command:
+                argv: [python3, -c, "import secrets; print(secrets.token_hex(16))"]
+              register: better_stack_prechart_lock_nonce
+              changed_when: false
+              no_log: true
+
+            - name: Bind the unique nonce to the pre-chart reconciliation clock token
+              ansible.builtin.set_fact:
+                better_stack_prechart_lock_clock:
+                  stdout: "{{ better_stack_prechart_lock_clock.stdout }}-{{ better_stack_prechart_lock_nonce.stdout }}"
+              no_log: true
+
+            - name: Inspect a prior exclusive reconciliation lock before chart mutation
+              ansible.builtin.stat:
+                path: /tmp/gam-better-stack-target-reconciliation.lock
+              register: better_stack_prechart_lock_directory
+
+            - name: Inspect the prior reconciliation lock owner lease before chart mutation
+              ansible.builtin.stat:
+                path: /tmp/gam-better-stack-target-reconciliation.lock/owner.json
+              register: better_stack_prechart_lock_owner_file
+              when: better_stack_prechart_lock_directory.stat.exists
+
+            - name: Read the prior reconciliation lock owner lease before chart mutation
+              ansible.builtin.slurp:
+                src: /tmp/gam-better-stack-target-reconciliation.lock/owner.json
+              register: better_stack_prechart_lock_owner_content
+              when:
+                - better_stack_prechart_lock_directory.stat.exists
+                - better_stack_prechart_lock_owner_file.stat.exists | default(false)
+
+            - name: Determine whether the prior reconciliation lock owner is abandoned or its lease expired
+              ansible.builtin.set_fact:
+                better_stack_prechart_lock_stale: >-
+                  {% set owner = (better_stack_prechart_lock_owner_content.content
+                    | default('') | b64decode | trim) %}
+                  {% set lease = (owner | from_json) if owner is match('^\\{') else {} %}
+                  {{ better_stack_prechart_lock_directory.stat.exists and (
+                    (better_stack_prechart_lock_owner_file.stat.exists | default(false)
+                    and lease.lease_expires_epoch | default(0) | int
+                    < better_stack_prechart_lock_clock.stdout[0:10] | int)
+                    or (not (better_stack_prechart_lock_owner_file.stat.exists | default(false))
+                    and (better_stack_prechart_lock_clock.stdout[0:10] | int
+                    - better_stack_prechart_lock_directory.stat.mtime | default(0) | int) > 60)) }}
+
+            - name: Re-read the stale pre-chart reconciliation lock owner before removal
+              ansible.builtin.slurp:
+                src: /tmp/gam-better-stack-target-reconciliation.lock/owner.json
+              register: better_stack_prechart_lock_owner_recheck
+              failed_when: false
+              when: better_stack_prechart_lock_stale | string | trim | bool
+
+            - name: Re-inspect the stale pre-chart reconciliation lock before removal
+              ansible.builtin.stat:
+                path: /tmp/gam-better-stack-target-reconciliation.lock/owner.json
+              register: better_stack_prechart_lock_owner_recheck_stat
+              when: better_stack_prechart_lock_stale | string | trim | bool
+
+            - name: Confirm the same stale pre-chart owner remains before removal
+              ansible.builtin.set_fact:
+                better_stack_prechart_lock_still_owned_by_observed_stale_owner: >-
+                  {{ ((better_stack_prechart_lock_owner_file.stat.exists | default(false))
+                  and better_stack_prechart_lock_owner_recheck.content is defined
+                  and (better_stack_prechart_lock_owner_recheck.content | b64decode | from_json).owner_token | default('')
+                  == (better_stack_prechart_lock_owner_content.content | default('') | b64decode | from_json).owner_token | default(''))
+                  or (not (better_stack_prechart_lock_owner_file.stat.exists | default(false))
+                  and not (better_stack_prechart_lock_owner_recheck_stat.stat.exists | default(false))) }}
+              when: better_stack_prechart_lock_stale | string | trim | bool
+
+            - name: Atomically claim and remove only the observed stale pre-chart reconciliation lock
+              ansible.builtin.command:
+                argv:
+                  - python3
+                  - -c
+                  - >-
+                    import fcntl, json, os, shutil, sys;
+                    path, expected, quarantine = sys.argv[1:];
+                    guard_fd = os.open(path + '.guard', os.O_CREAT | os.O_RDWR, 0o600);
+                    os.fchmod(guard_fd, 0o600);
+                    fcntl.flock(guard_fd, fcntl.LOCK_EX);
+                    directory_fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY);
+                    owned_inode = os.fstat(directory_fd).st_ino;
+                    owner_path = os.path.join(path, 'owner.json');
+                    current = json.load(open(owner_path, encoding='utf-8')).get('owner_token', '') if os.path.exists(owner_path) else '__missing__';
+                    sys.exit(3) if current != expected else None;
+                    os.rename(path, quarantine);
+                    moved_inode = os.stat(quarantine, follow_symlinks=False).st_ino;
+                    os.close(directory_fd);
+                    shutil.rmtree(quarantine) if moved_inode != owned_inode and os.path.exists(path) else (os.rename(quarantine, path) if moved_inode != owned_inode else None);
+                    sys.exit(3) if moved_inode != owned_inode else None;
+                    remove_owned_lock = shutil.rmtree;
+                    remove_owned_lock(quarantine)
+                  - /tmp/gam-better-stack-target-reconciliation.lock
+                  - >-
+                    {{ (better_stack_prechart_lock_owner_content.content | b64decode | from_json).owner_token
+                    if better_stack_prechart_lock_owner_file.stat.exists | default(false)
+                    else '__missing__' }}
+                  - "/tmp/gam-better-stack-target-reconciliation.lock.stale-{{ better_stack_prechart_lock_nonce.stdout }}"
+              register: better_stack_prechart_stale_lock_removal
+              when:
+                - better_stack_prechart_lock_stale | string | trim | bool
+                - better_stack_prechart_lock_still_owned_by_observed_stale_owner | default(false) | bool
+              changed_when: better_stack_prechart_stale_lock_removal.rc == 0
+              failed_when: better_stack_prechart_stale_lock_removal.rc not in [0, 3]
+              no_log: true
+
+            - name: Acquire the exclusive reconciliation lock before chart mutation
+              ansible.builtin.command:
+                argv:
+                  - python3
+                  - -c
+                  - >-
+                    import fcntl, os, sys;
+                    path = sys.argv[1];
+                    guard_fd = os.open(path + '.guard', os.O_CREAT | os.O_RDWR, 0o600);
+                    os.fchmod(guard_fd, 0o600);
+                    fcntl.flock(guard_fd, fcntl.LOCK_EX);
+                    os.mkdir(path, 0o700)
+                  - /tmp/gam-better-stack-target-reconciliation.lock
+              register: better_stack_prechart_target_lock
+              changed_when: false
+              failed_when: false
+              retries: 60
+              delay: 1
+              until: better_stack_prechart_target_lock.rc == 0
+
+            - name: Require the pre-chart target reconciliation lock
+              ansible.builtin.assert:
+                that: better_stack_prechart_target_lock.rc == 0
+
+            - name: Record the pre-chart reconciliation lock owner and lease
+              ansible.builtin.copy:
+                content: >-
+                  {{ {'owner_token': inventory_hostname ~ ':' ~ better_stack_prechart_lock_clock.stdout ~ ':prechart',
+                  'lease_expires_epoch': (better_stack_prechart_lock_clock.stdout[0:10] | int) + 3600} | to_nice_json }}
+                dest: /tmp/gam-better-stack-target-reconciliation.lock/owner.json
+                mode: "0600"
+              changed_when: false
+
+            - name: Read Better Stack metric targets required by production charts
+              ansible.builtin.uri:
+                url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?per_page=100"
+                method: GET
+                headers:
+                  Authorization: "Bearer {{ better_stack_api_token }}"
+                  Content-Type: application/json
+                status_code: [200]
+                return_content: true
+              register: better_stack_chart_collector_targets
+
+            - name: Read remaining Better Stack target discovery pages before chart mutation
+              ansible.builtin.uri:
+                url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?page={{ item }}&per_page=100"
+                method: GET
+                headers:
+                  Authorization: "Bearer {{ better_stack_api_token }}"
+                  Content-Type: application/json
+                status_code: [200]
+                return_content: true
+              loop: >-
+                {{ range(2, (better_stack_chart_collector_targets.json.pagination.last
+                | default('page=1', true) | string
+                | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
+                | first | default('1', true) | int) + 1) | list }}
+              register: better_stack_existing_collector_target_pages
+
+            - name: Merge every Better Stack target discovery page before chart mutation
+              ansible.builtin.set_fact:
+                better_stack_existing_collector_targets:
+                  json:
+                    data: >-
+                      {{ ([better_stack_chart_collector_targets.json.data | default([])]
+                      + (better_stack_existing_collector_target_pages.results | default([])
+                      | map(attribute='json.data') | list)) | flatten | list }}
+
+            - name: Validate every managed Better Stack target input before chart mutation
+              ansible.builtin.assert:
+                that:
+                  - better_stack_proxy_target_host | length > 0
+                  - better_stack_proxy_target_service | length > 0
+                  - better_stack_proxy_target_endpoint is match('^https?://[^/]+/.+')
+                  - better_stack_backend_target_host | length > 0
+                  - better_stack_backend_target_service | length > 0
+                  - better_stack_backend_target_endpoint is match('^https?://[^/]+/.+')
+                  - better_stack_postgresql_target_host | length > 0
+                  - better_stack_postgresql_target_port | int > 0
+                  - better_stack_postgresql_target_username | length > 0
+                  - better_stack_postgresql_target_password | length > 0
+                fail_msg: >-
+                  Every managed Better Stack target must have a nonempty identity,
+                  Prometheus endpoints must be absolute HTTP(S) URLs with paths,
+                  and PostgreSQL credentials and port must be valid before mutation.
+              no_log: true
+
+            - name: Reject duplicate Better Stack targets before chart mutation
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    better_stack_existing_collector_targets.json.data
+                    | selectattr('attributes', 'defined')
+                    | selectattr('attributes.kind', 'defined')
+                    | selectattr('attributes.kind', 'equalto', item.kind)
+                    | selectattr('attributes.host', 'defined')
+                    | selectattr('attributes.host', 'equalto', item.host)
+                    | list | length <= 1
+              loop:
+                - {kind: prometheus, host: "{{ better_stack_proxy_target_host }}"}
+                - {kind: prometheus, host: "{{ better_stack_backend_target_host }}"}
+                - {kind: postgres, host: "{{ better_stack_postgresql_target_host }}"}
+
+            - name: Create Better Stack proxy Prometheus target before chart mutation
+              ansible.builtin.uri:
+                url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
+                method: POST
+                headers:
+                  Authorization: "Bearer {{ better_stack_api_token }}"
+                  Content-Type: application/json
+                body_format: json
+                body:
+                  kind: prometheus
+                  host: "{{ better_stack_proxy_target_host }}"
+                  service: "{{ better_stack_proxy_target_service }}"
+                  endpoint: "{{ better_stack_proxy_target_endpoint }}"
+                status_code: [201]
+              when: >-
+                better_stack_existing_collector_targets.json.data
+                | selectattr('attributes', 'defined')
                 | selectattr('attributes.kind', 'defined')
                 | selectattr('attributes.kind', 'equalto', 'prometheus')
+                | selectattr('attributes.service', 'defined')
                 | selectattr('attributes.service', 'equalto', better_stack_proxy_target_service)
-                | list | length <= 1
-              - >-
-                better_stack_prechart_targets.json.data | default([])
+                | list | length == 0
+
+            - name: Create Better Stack backend Prometheus target before chart mutation
+              ansible.builtin.uri:
+                url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
+                method: POST
+                headers:
+                  Authorization: "Bearer {{ better_stack_api_token }}"
+                  Content-Type: application/json
+                body_format: json
+                body:
+                  kind: prometheus
+                  host: "{{ better_stack_backend_target_host }}"
+                  service: "{{ better_stack_backend_target_service }}"
+                  endpoint: "{{ better_stack_backend_target_endpoint }}"
+                status_code: [201]
+              when: >-
+                better_stack_existing_collector_targets.json.data
+                | selectattr('attributes', 'defined')
                 | selectattr('attributes.kind', 'defined')
                 | selectattr('attributes.kind', 'equalto', 'prometheus')
+                | selectattr('attributes.service', 'defined')
                 | selectattr('attributes.service', 'equalto', better_stack_backend_target_service)
-                | list | length <= 1
-              - >-
-                better_stack_prechart_targets.json.data | default([])
+                | list | length == 0
+
+            - name: Ensure the protected PostgreSQL target credential-state directory exists before chart mutation
+              ansible.builtin.file:
+                path: "{{ better_stack_postgresql_target_credentials_fingerprint_file | dirname }}"
+                state: directory
+                mode: "0700"
+
+            - name: Derive the desired PostgreSQL target credential fingerprint before chart mutation
+              ansible.builtin.set_fact:
+                better_stack_postgresql_target_credentials_desired_fingerprint: >-
+                  {{ (better_stack_postgresql_target_username ~ ':' ~ better_stack_postgresql_target_password) | hash('sha256') }}
+              no_log: true
+
+            - name: Inspect protected PostgreSQL target credential state before chart mutation
+              ansible.builtin.stat:
+                path: "{{ better_stack_postgresql_target_credentials_fingerprint_file }}"
+              register: better_stack_postgresql_target_credentials_state_stat
+              no_log: true
+
+            - name: Read protected PostgreSQL target credential state before chart mutation
+              ansible.builtin.slurp:
+                src: "{{ better_stack_postgresql_target_credentials_fingerprint_file }}"
+              register: better_stack_postgresql_target_credentials_state_file
+              when: better_stack_postgresql_target_credentials_state_stat.stat.exists
+              no_log: true
+
+            - name: Decode protected PostgreSQL target credential state before chart mutation
+              ansible.builtin.set_fact:
+                better_stack_postgresql_target_credentials_persisted_state: >-
+                  {%- set raw = (better_stack_postgresql_target_credentials_state_file.content
+                    | default('') | b64decode | trim) -%}
+                  {%- set fingerprints = raw | regex_findall('"credential_fingerprint"\\s*:\\s*"([0-9a-fA-F]{64})"') -%}
+                  {%- set target_ids = raw | regex_findall('"postgresql_target_id"\\s*:\\s*"([^"\\r\\n]+)"') -%}
+                  {%- if fingerprints | length == 1 and target_ids | length == 1 -%}
+                  {{ {'credential_fingerprint': fingerprints | first, 'postgresql_target_id': target_ids | first} }}
+                  {%- elif raw is match('^[0-9a-fA-F]{64}$') -%}{{ {'credential_fingerprint': raw} }}
+                  {%- else -%}{{ {} }}{%- endif -%}
+              no_log: true
+
+            - name: Determine whether PostgreSQL target credentials and identity are current before chart mutation
+              ansible.builtin.set_fact:
+                better_stack_postgresql_target_credentials_current: >-
+                  {{ better_stack_postgresql_target_credentials_persisted_state.credential_fingerprint | default('')
+                  == better_stack_postgresql_target_credentials_desired_fingerprint
+                  and (better_stack_postgresql_target_credentials_persisted_state.postgresql_target_id | default('') | string)
+                  == (better_stack_existing_collector_targets.json.data
+                  | selectattr('attributes', 'defined')
+                  | selectattr('attributes.kind', 'defined')
+                  | selectattr('attributes.kind', 'equalto', 'postgres')
+                  | map(attribute='id') | first | default('') | string) }}
+              no_log: true
+
+            - name: Create Better Stack database target before chart mutation
+              ansible.builtin.uri:
+                url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
+                method: POST
+                headers:
+                  Authorization: "Bearer {{ better_stack_api_token }}"
+                  Content-Type: application/json
+                body_format: json
+                body:
+                  kind: postgres
+                  host: "{{ better_stack_postgresql_target_host }}"
+                  port: "{{ better_stack_postgresql_target_port | int }}"
+                  username: "{{ better_stack_postgresql_target_username | string }}"
+                  password: "{{ better_stack_postgresql_target_password | string }}"
+                  ssl_mode: require
+                status_code: [201]
+                return_content: true
+              register: better_stack_postgresql_target_creation_prechart
+              when: >-
+                better_stack_existing_collector_targets.json.data
+                | selectattr('attributes', 'defined')
                 | selectattr('attributes.kind', 'defined')
                 | selectattr('attributes.kind', 'equalto', 'postgres')
-                | list | length <= 1
-            fail_msg: >-
-              Better Stack chart reconciliation requires unique provider targets
-              with valid configured service and host identities.
+                | list | length == 0
+              no_log: true
 
-        - name: Register the Better Stack proxy target required by production charts
-          ansible.builtin.uri:
-            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
-            method: POST
-            headers:
-              Authorization: "Bearer {{ better_stack_api_token }}"
-              Content-Type: application/json
-            body_format: json
-            body:
-              kind: prometheus
-              host: "{{ better_stack_proxy_target_host }}"
-              service: "{{ better_stack_proxy_target_service }}"
-              endpoint: "{{ better_stack_proxy_target_endpoint }}"
-            status_code: [201]
-          when: >-
-            not (better_stack_prechart_targets.json.data | default([])
-            | selectattr('attributes.kind', 'defined')
-            | selectattr('attributes.kind', 'equalto', 'prometheus')
-            | selectattr('attributes.service', 'equalto', better_stack_proxy_target_service)
-            | list)
+            - name: Patch Better Stack database target credentials or identity before chart mutation
+              ansible.builtin.uri:
+                url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
+                method: PATCH
+                headers:
+                  Authorization: "Bearer {{ better_stack_api_token }}"
+                  Content-Type: application/json
+                body_format: json
+                body:
+                  host: "{{ better_stack_postgresql_target_host }}"
+                  port: "{{ better_stack_postgresql_target_port | int }}"
+                  username: "{{ better_stack_postgresql_target_username | string }}"
+                  password: "{{ better_stack_postgresql_target_password | string }}"
+                  ssl_mode: require
+                status_code: [200]
+                return_content: true
+              loop: >-
+                {{ better_stack_existing_collector_targets.json.data
+                | selectattr('attributes', 'defined')
+                | selectattr('attributes.kind', 'defined')
+                | selectattr('attributes.kind', 'equalto', 'postgres') | list }}
+              register: better_stack_postgresql_target_patch_prechart
+              when: >-
+                item.attributes.kind == 'postgres' and
+                (not better_stack_postgresql_target_credentials_current
+                or item.attributes.host != better_stack_postgresql_target_host
+                or item.attributes.port | int != better_stack_postgresql_target_port | int
+                or item.attributes.ssl_mode | default('') != 'require')
+              no_log: true
 
-        - name: Register the Better Stack backend target required by production charts
-          ansible.builtin.uri:
-            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
-            method: POST
-            headers:
-              Authorization: "Bearer {{ better_stack_api_token }}"
-              Content-Type: application/json
-            body_format: json
-            body:
-              kind: prometheus
-              host: "{{ better_stack_backend_target_host }}"
-              service: "{{ better_stack_backend_target_service }}"
-              endpoint: "{{ better_stack_backend_target_endpoint }}"
-            status_code: [201]
-          when: >-
-            not (better_stack_prechart_targets.json.data | default([])
-            | selectattr('attributes.kind', 'defined')
-            | selectattr('attributes.kind', 'equalto', 'prometheus')
-            | selectattr('attributes.service', 'equalto', better_stack_backend_target_service)
-            | list)
+            - name: Patch Better Stack proxy Prometheus target drift before chart mutation
+              ansible.builtin.uri:
+                url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
+                method: PATCH
+                headers:
+                  Authorization: "Bearer {{ better_stack_api_token }}"
+                  Content-Type: application/json
+                body_format: json
+                body:
+                  host: "{{ better_stack_proxy_target_host }}"
+                  service: "{{ better_stack_proxy_target_service }}"
+                  endpoint: "{{ better_stack_proxy_target_endpoint }}"
+                status_code: [200]
+              loop: >-
+                {{ better_stack_existing_collector_targets.json.data
+                | selectattr('attributes', 'defined')
+                | selectattr('attributes.kind', 'defined')
+                | selectattr('attributes.kind', 'equalto', 'prometheus')
+                | selectattr('attributes.service', 'defined') | list }}
+              when: >-
+                item.attributes.kind == 'prometheus' and
+                item.attributes.service == better_stack_proxy_target_service and
+                (item.attributes.host != better_stack_proxy_target_host or
+                item.attributes.endpoint != better_stack_proxy_target_endpoint)
 
-        - name: Register the Better Stack PostgreSQL target required by production charts
-          ansible.builtin.uri:
-            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
-            method: POST
-            headers:
-              Authorization: "Bearer {{ better_stack_api_token }}"
-              Content-Type: application/json
-            body_format: json
-            body:
-              kind: postgres
-              host: "{{ better_stack_postgresql_target_host }}"
-              port: "{{ better_stack_postgresql_target_port }}"
-              ssl_mode: require
-            status_code: [201]
-          when: >-
-            not (better_stack_prechart_targets.json.data | default([])
-            | selectattr('attributes.kind', 'defined')
-            | selectattr('attributes.kind', 'equalto', 'postgres')
-            | list)
+            - name: Patch Better Stack backend Prometheus target drift before chart mutation
+              ansible.builtin.uri:
+                url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
+                method: PATCH
+                headers:
+                  Authorization: "Bearer {{ better_stack_api_token }}"
+                  Content-Type: application/json
+                body_format: json
+                body:
+                  host: "{{ better_stack_backend_target_host }}"
+                  service: "{{ better_stack_backend_target_service }}"
+                  endpoint: "{{ better_stack_backend_target_endpoint }}"
+                status_code: [200]
+              loop: >-
+                {{ better_stack_existing_collector_targets.json.data
+                | selectattr('attributes', 'defined')
+                | selectattr('attributes.kind', 'defined')
+                | selectattr('attributes.kind', 'equalto', 'prometheus')
+                | selectattr('attributes.service', 'defined') | list }}
+              when: >-
+                item.attributes.kind == 'prometheus' and
+                item.attributes.service == better_stack_backend_target_service and
+                (item.attributes.host != better_stack_backend_target_host or
+                item.attributes.endpoint != better_stack_backend_target_endpoint)
 
-        - name: Reconcile the Better Stack proxy target required by production charts
-          ansible.builtin.uri:
-            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
-            method: PATCH
-            headers:
-              Authorization: "Bearer {{ better_stack_api_token }}"
-              Content-Type: application/json
-            body_format: json
-            body:
-              host: "{{ better_stack_proxy_target_host }}"
-              service: "{{ better_stack_proxy_target_service }}"
-              endpoint: "{{ better_stack_proxy_target_endpoint }}"
-            status_code: [200, 204]
-          loop: "{{ better_stack_prechart_targets.json.data | default([]) }}"
-          when:
-            - item.attributes.kind | default('') == 'prometheus'
-            - item.attributes.service | default('') == better_stack_proxy_target_service
-            - >-
-              item.attributes.host | default('') != better_stack_proxy_target_host
-              or item.attributes.endpoint | default('') != better_stack_proxy_target_endpoint
+            - name: Select exact PostgreSQL mutation response identity before chart mutation
+              ansible.builtin.set_fact:
+                better_stack_postgresql_target_applied_id_prechart: >-
+                  {{ better_stack_postgresql_target_creation_prechart.json.data.id
+                  | default(better_stack_postgresql_target_patch_prechart.results | default([])
+                  | selectattr('json.data.id', 'defined') | map(attribute='json.data.id') | first
+                  | default(better_stack_existing_collector_targets.json.data
+                  | selectattr('attributes', 'defined')
+                  | selectattr('attributes.kind', 'defined')
+                  | selectattr('attributes.kind', 'equalto', 'postgres') | map(attribute='id') | first | default(''), true), true) | string }}
+              no_log: true
 
-        - name: Reconcile the Better Stack backend target required by production charts
-          ansible.builtin.uri:
-            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
-            method: PATCH
-            headers:
-              Authorization: "Bearer {{ better_stack_api_token }}"
-              Content-Type: application/json
-            body_format: json
-            body:
-              host: "{{ better_stack_backend_target_host }}"
-              service: "{{ better_stack_backend_target_service }}"
-              endpoint: "{{ better_stack_backend_target_endpoint }}"
-            status_code: [200, 204]
-          loop: "{{ better_stack_prechart_targets.json.data | default([]) }}"
-          when:
-            - item.attributes.kind | default('') == 'prometheus'
-            - item.attributes.service | default('') == better_stack_backend_target_service
-            - >-
-              item.attributes.host | default('') != better_stack_backend_target_host
-              or item.attributes.endpoint | default('') != better_stack_backend_target_endpoint
+            - name: Read back PostgreSQL target mutation page one before chart mutation
+              ansible.builtin.uri:
+                url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?per_page=100"
+                method: GET
+                headers:
+                  Authorization: "Bearer {{ better_stack_api_token }}"
+                status_code: [200]
+                return_content: true
+              register: better_stack_postgresql_target_readback_prechart
+              no_log: true
 
-        - name: Reconcile the Better Stack PostgreSQL target required by production charts
-          ansible.builtin.uri:
-            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
-            method: PATCH
-            headers:
-              Authorization: "Bearer {{ better_stack_api_token }}"
-              Content-Type: application/json
-            body_format: json
-            body:
-              host: "{{ better_stack_postgresql_target_host }}"
-              port: "{{ better_stack_postgresql_target_port | int }}"
-              ssl_mode: require
-            status_code: [200, 204]
-          loop: "{{ better_stack_prechart_targets.json.data | default([]) }}"
-          when:
-            - item.attributes.kind | default('') == 'postgres'
-            - >-
-              item.attributes.host | default('') != better_stack_postgresql_target_host
-              or item.attributes.port | int != better_stack_postgresql_target_port | int
-              or item.attributes.ssl_mode | default('') != 'require'
+            - name: Read back remaining PostgreSQL target mutation pagination before chart mutation
+              ansible.builtin.uri:
+                url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?page={{ item }}&per_page=100"
+                method: GET
+                headers:
+                  Authorization: "Bearer {{ better_stack_api_token }}"
+                status_code: [200]
+                return_content: true
+              loop: >-
+                {{ range(2, (better_stack_postgresql_target_readback_prechart.json.pagination.last
+                | default('page=1', true) | string
+                | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)') | first | default('1', true) | int) + 1) | list }}
+              register: better_stack_postgresql_target_readback_pages_prechart
+              no_log: true
+
+            - name: Verify the exact PostgreSQL mutation response ID across every read back page before chart mutation
+              ansible.builtin.assert:
+                that: >-
+                  ([better_stack_postgresql_target_readback_prechart.json.data | default([])]
+                  + (better_stack_postgresql_target_readback_pages_prechart.results | default([]) | map(attribute='json.data') | list))
+                  | flatten | selectattr('id', 'equalto', better_stack_postgresql_target_applied_id_prechart) | list | length == 1
+              no_log: true
+
+            - name: Persist the applied PostgreSQL target credential fingerprint before chart mutation
+              ansible.builtin.copy:
+                content: >-
+                  {{ {'credential_fingerprint': better_stack_postgresql_target_credentials_desired_fingerprint,
+                  'postgresql_target_id': (better_stack_postgresql_target_creation_prechart.json.data.id
+                  | default(better_stack_postgresql_target_patch_prechart.results | default([])
+                  | selectattr('json.data.id', 'defined') | map(attribute='json.data.id') | first
+                  | default(better_stack_postgresql_target_applied_id_prechart, true), true) | string)} | to_nice_json }}
+                dest: "{{ better_stack_postgresql_target_credentials_fingerprint_file }}"
+                mode: "0600"
+              no_log: true
+          always:
+            - name: Re-read the pre-chart lock owner immediately before cleanup
+              ansible.builtin.slurp:
+                src: /tmp/gam-better-stack-target-reconciliation.lock/owner.json
+              register: better_stack_prechart_lock_owner_before_cleanup
+              failed_when: false
+              when:
+                - better_stack_prechart_target_lock is defined
+                - better_stack_prechart_target_lock.rc | default(1) == 0
+
+            - name: Atomically release only this apply's pre-chart Better Stack target reconciliation lock
+              ansible.builtin.command:
+                argv:
+                  - python3
+                  - -c
+                  - >-
+                    import fcntl, json, os, shutil, sys;
+                    path, expected, quarantine = sys.argv[1:];
+                    guard_fd = os.open(path + '.guard', os.O_CREAT | os.O_RDWR, 0o600);
+                    os.fchmod(guard_fd, 0o600);
+                    fcntl.flock(guard_fd, fcntl.LOCK_EX);
+                    directory_fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY);
+                    owned_inode = os.fstat(directory_fd).st_ino;
+                    owner_path = os.path.join(path, 'owner.json');
+                    current = json.load(open(owner_path, encoding='utf-8')).get('owner_token', '') if os.path.exists(owner_path) else '';
+                    sys.exit(3) if current != expected else None;
+                    os.rename(path, quarantine);
+                    moved_inode = os.stat(quarantine, follow_symlinks=False).st_ino;
+                    os.close(directory_fd);
+                    shutil.rmtree(quarantine) if moved_inode != owned_inode and os.path.exists(path) else (os.rename(quarantine, path) if moved_inode != owned_inode else None);
+                    sys.exit(3) if moved_inode != owned_inode else None;
+                    remove_owned_lock = shutil.rmtree;
+                    remove_owned_lock(quarantine)
+                  - /tmp/gam-better-stack-target-reconciliation.lock
+                  - "{{ inventory_hostname }}:{{ better_stack_prechart_lock_clock.stdout }}:prechart"
+                  - >-
+                    /tmp/gam-better-stack-target-reconciliation.lock.release-{{
+                    (inventory_hostname ~ ':' ~ better_stack_prechart_lock_clock.stdout ~ ':prechart') | hash('sha256') }}
+              register: better_stack_prechart_lock_release
+              changed_when: false
+              failed_when: better_stack_prechart_lock_release.rc not in [0, 3]
+              no_log: true
+              when:
+                - better_stack_prechart_target_lock is defined
+                - better_stack_prechart_target_lock.rc | default(1) == 0
 
     - name: Create declared Better Stack proxy, backend, PostgreSQL, and filesystem charts
       ansible.builtin.uri:
@@ -883,6 +1303,7 @@
               sql_query: "{{ item.queries[0].sql_query }}"
         status_code: [201]
       loop: "{{ better_stack_chart_contracts }}"
+      register: better_stack_production_chart_creation
       when: >-
         not (better_stack_existing_charts.json.data | default([])
         | selectattr('attributes.name', 'equalto', item.name)
@@ -1107,213 +1528,537 @@
           metric components enabled before the Docker collector starts.
       no_log: true
 
-    - name: Read existing Better Stack collector metric targets
-      ansible.builtin.uri:
-        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?per_page=100"
-        method: GET
-        headers:
-          Authorization: "Bearer {{ better_stack_api_token }}"
-          Content-Type: application/json
-        status_code: [200]
-        return_content: true
-      register: better_stack_existing_collector_targets
+    - name: Hold one exclusive lock while reconciling the Better Stack PostgreSQL target
+      when: better_stack_collector_id is defined
       no_log: true
+      block:
+        - name: Default the protected PostgreSQL target credential-state path for reconciliation
+          ansible.builtin.set_fact:
+            better_stack_postgresql_target_credentials_fingerprint_file: >-
+              {{ ansible_user_dir | default(lookup('env', 'HOME'), true)
+              }}/.local/state/gam/better-stack/postgresql-target-credentials.sha256
+          when: better_stack_postgresql_target_credentials_fingerprint_file is not defined
+          no_log: true
 
-    - name: Read remaining pages from existing Better Stack metric target pagination
-      ansible.builtin.uri:
-        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?page={{ item }}&per_page=100"
-        method: GET
-        headers:
-          Authorization: "Bearer {{ better_stack_api_token }}"
-          Content-Type: application/json
-        status_code: [200]
-        return_content: true
-      loop: >-
-        {{ range(2, (
-        better_stack_existing_collector_targets.json.pagination.last
-        | default('page=1', true) | string
-        | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)')
-        | first | default('1', true) | int) + 1) | list }}
-      register: better_stack_existing_collector_target_pages
-      no_log: true
+        - name: Inspect the exclusive reconciliation lock clock
+          ansible.builtin.command: date +%s%N
+          register: better_stack_lock_clock
+          changed_when: false
 
-    - name: Merge every Better Stack metric target discovery page
-      ansible.builtin.set_fact:
-        better_stack_existing_collector_targets:
-          json:
-            data: >-
-              {{ ([better_stack_existing_collector_targets.json.data | default([])]
-              + (better_stack_existing_collector_target_pages.results | default([])
-              | map(attribute='json.data') | list)) | flatten | list }}
-      no_log: true
+        - name: Generate a unique reconciliation invocation nonce
+          ansible.builtin.command:
+            argv: [python3, -c, "import secrets; print(secrets.token_hex(16))"]
+          register: better_stack_lock_nonce
+          changed_when: false
+          no_log: true
 
-    - name: Reject duplicate Better Stack metric targets before mutation
-      ansible.builtin.assert:
-        that:
-          - >-
-            better_stack_existing_collector_targets.json.data | default([])
+        - name: Bind the unique nonce to the reconciliation clock token
+          ansible.builtin.set_fact:
+            better_stack_lock_clock:
+              stdout: "{{ better_stack_lock_clock.stdout }}-{{ better_stack_lock_nonce.stdout }}"
+          no_log: true
+
+        - name: Inspect a prior exclusive reconciliation lock
+          ansible.builtin.stat:
+            path: /tmp/gam-better-stack-target-reconciliation.lock
+          register: better_stack_lock_directory
+
+        - name: Inspect the prior reconciliation lock owner lease
+          ansible.builtin.stat:
+            path: /tmp/gam-better-stack-target-reconciliation.lock/owner.json
+          register: better_stack_lock_owner_file
+          when: better_stack_lock_directory.stat.exists
+
+        - name: Read the prior reconciliation lock owner lease
+          ansible.builtin.slurp:
+            src: /tmp/gam-better-stack-target-reconciliation.lock/owner.json
+          register: better_stack_lock_owner_content
+          when:
+            - better_stack_lock_directory.stat.exists
+            - better_stack_lock_owner_file.stat.exists | default(false)
+
+        - name: Determine whether the prior reconciliation lock owner is abandoned or its lease expired
+          ansible.builtin.set_fact:
+            better_stack_lock_stale: >-
+              {% set owner = (better_stack_lock_owner_content.content
+                | default('') | b64decode | trim) %}
+              {% set lease = (owner | from_json) if owner is match('^\\{') else {} %}
+              {{ better_stack_lock_directory.stat.exists and (
+                (better_stack_lock_owner_file.stat.exists | default(false)
+                and lease.lease_expires_epoch | default(0) | int
+                < better_stack_lock_clock.stdout[0:10] | int)
+                or (not (better_stack_lock_owner_file.stat.exists | default(false))
+                and (better_stack_lock_clock.stdout[0:10] | int
+                - better_stack_lock_directory.stat.mtime | default(0) | int) > 60)) }}
+
+        - name: Re-read the stale reconciliation lock owner before removal
+          ansible.builtin.slurp:
+            src: /tmp/gam-better-stack-target-reconciliation.lock/owner.json
+          register: better_stack_lock_owner_recheck
+          failed_when: false
+          when: better_stack_lock_stale | string | trim | bool
+
+        - name: Re-inspect the stale reconciliation lock before removal
+          ansible.builtin.stat:
+            path: /tmp/gam-better-stack-target-reconciliation.lock/owner.json
+          register: better_stack_lock_owner_recheck_stat
+          when: better_stack_lock_stale | string | trim | bool
+
+        - name: Confirm the same stale owner remains before removal
+          ansible.builtin.set_fact:
+            better_stack_lock_still_owned_by_observed_stale_owner: >-
+              {{ ((better_stack_lock_owner_file.stat.exists | default(false))
+              and better_stack_lock_owner_recheck.content is defined
+              and (better_stack_lock_owner_recheck.content | b64decode | from_json).owner_token | default('')
+              == (better_stack_lock_owner_content.content | default('') | b64decode | from_json).owner_token | default(''))
+              or (not (better_stack_lock_owner_file.stat.exists | default(false))
+              and not (better_stack_lock_owner_recheck_stat.stat.exists | default(false))) }}
+          when: better_stack_lock_stale | string | trim | bool
+
+        - name: Atomically claim and remove only the observed stale reconciliation lock
+          ansible.builtin.command:
+            argv:
+              - python3
+              - -c
+              - >-
+                import fcntl, json, os, shutil, sys;
+                path, expected, quarantine = sys.argv[1:];
+                guard_fd = os.open(path + '.guard', os.O_CREAT | os.O_RDWR, 0o600);
+                os.fchmod(guard_fd, 0o600);
+                fcntl.flock(guard_fd, fcntl.LOCK_EX);
+                directory_fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY);
+                owned_inode = os.fstat(directory_fd).st_ino;
+                owner_path = os.path.join(path, 'owner.json');
+                current = json.load(open(owner_path, encoding='utf-8')).get('owner_token', '') if os.path.exists(owner_path) else '__missing__';
+                sys.exit(3) if current != expected else None;
+                os.rename(path, quarantine);
+                moved_inode = os.stat(quarantine, follow_symlinks=False).st_ino;
+                os.close(directory_fd);
+                shutil.rmtree(quarantine) if moved_inode != owned_inode and os.path.exists(path) else (os.rename(quarantine, path) if moved_inode != owned_inode else None);
+                sys.exit(3) if moved_inode != owned_inode else None;
+                remove_owned_lock = shutil.rmtree;
+                remove_owned_lock(quarantine)
+              - /tmp/gam-better-stack-target-reconciliation.lock
+              - >-
+                {{ (better_stack_lock_owner_content.content | b64decode | from_json).owner_token
+                if better_stack_lock_owner_file.stat.exists | default(false)
+                else '__missing__' }}
+              - "/tmp/gam-better-stack-target-reconciliation.lock.stale-{{ better_stack_lock_nonce.stdout }}"
+          register: better_stack_stale_lock_removal
+          when:
+            - better_stack_lock_stale | string | trim | bool
+            - better_stack_lock_still_owned_by_observed_stale_owner | default(false) | bool
+          changed_when: better_stack_stale_lock_removal.rc == 0
+          failed_when: better_stack_stale_lock_removal.rc not in [0, 3]
+          no_log: true
+
+        - name: Acquire the exclusive reconciliation lock
+          ansible.builtin.command:
+            argv:
+              - python3
+              - -c
+              - >-
+                import fcntl, os, sys;
+                path = sys.argv[1];
+                guard_fd = os.open(path + '.guard', os.O_CREAT | os.O_RDWR, 0o600);
+                os.fchmod(guard_fd, 0o600);
+                fcntl.flock(guard_fd, fcntl.LOCK_EX);
+                os.mkdir(path, 0o700)
+              - /tmp/gam-better-stack-target-reconciliation.lock
+          register: better_stack_target_lock
+          changed_when: false
+          failed_when: false
+          retries: 60
+          delay: 1
+          until: better_stack_target_lock.rc == 0
+
+        - name: Require the Better Stack target reconciliation lock
+          ansible.builtin.assert:
+            that: better_stack_target_lock.rc == 0
+
+        - name: Record the reconciliation lock owner and lease
+          ansible.builtin.copy:
+            content: >-
+              {{ {'owner_token': inventory_hostname ~ ':' ~ better_stack_lock_clock.stdout ~ ':final',
+              'lease_expires_epoch': (better_stack_lock_clock.stdout[0:10] | int) + 3600} | to_nice_json }}
+            dest: /tmp/gam-better-stack-target-reconciliation.lock/owner.json
+            mode: "0600"
+          changed_when: false
+
+        - name: Read existing Better Stack collector metric targets
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?per_page=100"
+            method: GET
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+              Content-Type: application/json
+            status_code: [200]
+            return_content: true
+          register: better_stack_existing_collector_targets
+
+        - name: Read remaining Better Stack collector target discovery pages
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?page={{ item }}&per_page=100"
+            method: GET
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+            status_code: [200]
+            return_content: true
+          loop: >-
+            {{ range(2, (better_stack_existing_collector_targets.json.pagination.last
+            | default('page=1', true) | string
+            | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)') | first | default('1', true) | int) + 1) | list }}
+          register: better_stack_existing_collector_target_pages
+
+        - name: Merge all Better Stack collector target discovery pages
+          ansible.builtin.set_fact:
+            better_stack_existing_collector_targets:
+              json:
+                data: >-
+                  {{ ([better_stack_existing_collector_targets.json.data | default([])]
+                  + (better_stack_existing_collector_target_pages.results | default([])
+                  | map(attribute='json.data') | list)) | flatten | list }}
+
+        - name: Validate every managed Better Stack target input before reconciliation
+          ansible.builtin.assert:
+            that:
+              - better_stack_proxy_target_host | length > 0
+              - better_stack_proxy_target_service | length > 0
+              - better_stack_proxy_target_endpoint is match('^https?://[^/]+/.+')
+              - better_stack_backend_target_host | length > 0
+              - better_stack_backend_target_service | length > 0
+              - better_stack_backend_target_endpoint is match('^https?://[^/]+/.+')
+              - better_stack_postgresql_target_host | length > 0
+              - better_stack_postgresql_target_port | int > 0
+              - better_stack_postgresql_target_username | length > 0
+              - better_stack_postgresql_target_password | length > 0
+            fail_msg: >-
+              Every managed Better Stack target must have a nonempty identity,
+              Prometheus endpoints must be absolute HTTP(S) URLs with paths,
+              and PostgreSQL credentials and port must be valid before mutation.
+          no_log: true
+
+        - name: Reject duplicate Better Stack service targets
+          ansible.builtin.assert:
+            that:
+              - >-
+                better_stack_existing_collector_targets.json.data
+                | selectattr('attributes', 'defined')
+                | selectattr('attributes.kind', 'defined')
+                | selectattr('attributes.kind', 'equalto', item.kind)
+                | selectattr('attributes.host', 'defined')
+                | selectattr('attributes.host', 'equalto', item.host)
+                | list | length <= 1
+          loop:
+            - {kind: prometheus, host: "{{ better_stack_proxy_target_host }}"}
+            - {kind: prometheus, host: "{{ better_stack_backend_target_host }}"}
+            - {kind: postgres, host: "{{ better_stack_postgresql_target_host }}"}
+
+        - name: Create Better Stack proxy Prometheus target
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+              Content-Type: application/json
+            body_format: json
+            body:
+              kind: prometheus
+              host: "{{ better_stack_proxy_target_host }}"
+              service: "{{ better_stack_proxy_target_service }}"
+              endpoint: "{{ better_stack_proxy_target_endpoint }}"
+            status_code: [201]
+          when: >-
+            better_stack_existing_collector_targets.json.data
+            | selectattr('attributes', 'defined')
             | selectattr('attributes.kind', 'defined')
             | selectattr('attributes.kind', 'equalto', 'prometheus')
+            | selectattr('attributes.service', 'defined')
             | selectattr('attributes.service', 'equalto', better_stack_proxy_target_service)
-            | list | length <= 1
-          - >-
-            better_stack_existing_collector_targets.json.data | default([])
+            | list | length == 0
+
+        - name: Create Better Stack backend Prometheus target
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+              Content-Type: application/json
+            body_format: json
+            body:
+              kind: prometheus
+              host: "{{ better_stack_backend_target_host }}"
+              service: "{{ better_stack_backend_target_service }}"
+              endpoint: "{{ better_stack_backend_target_endpoint }}"
+            status_code: [201]
+          when: >-
+            better_stack_existing_collector_targets.json.data
+            | selectattr('attributes', 'defined')
             | selectattr('attributes.kind', 'defined')
             | selectattr('attributes.kind', 'equalto', 'prometheus')
+            | selectattr('attributes.service', 'defined')
             | selectattr('attributes.service', 'equalto', better_stack_backend_target_service)
-            | list | length <= 1
-          - >-
-            better_stack_existing_collector_targets.json.data | default([])
+            | list | length == 0
+
+        - name: Patch Better Stack proxy Prometheus target drift
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
+            method: PATCH
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+              Content-Type: application/json
+            body_format: json
+            body:
+              host: "{{ better_stack_proxy_target_host }}"
+              service: "{{ better_stack_proxy_target_service }}"
+              endpoint: "{{ better_stack_proxy_target_endpoint }}"
+            status_code: [200]
+          loop: >-
+            {{ better_stack_existing_collector_targets.json.data
+            | selectattr('attributes', 'defined')
+            | selectattr('attributes.kind', 'defined')
+            | selectattr('attributes.kind', 'equalto', 'prometheus')
+            | selectattr('attributes.service', 'defined')
+            | selectattr('attributes.service', 'equalto', better_stack_proxy_target_service)
+            | list }}
+          when: >-
+            item.attributes.host | default('') != better_stack_proxy_target_host or
+            item.attributes.endpoint | default('') != better_stack_proxy_target_endpoint
+
+        - name: Patch Better Stack backend Prometheus target drift
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
+            method: PATCH
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+              Content-Type: application/json
+            body_format: json
+            body:
+              host: "{{ better_stack_backend_target_host }}"
+              service: "{{ better_stack_backend_target_service }}"
+              endpoint: "{{ better_stack_backend_target_endpoint }}"
+            status_code: [200]
+          loop: >-
+            {{ better_stack_existing_collector_targets.json.data
+            | selectattr('attributes', 'defined')
+            | selectattr('attributes.kind', 'defined')
+            | selectattr('attributes.kind', 'equalto', 'prometheus')
+            | selectattr('attributes.service', 'defined')
+            | selectattr('attributes.service', 'equalto', better_stack_backend_target_service)
+            | list }}
+          when: >-
+            item.attributes.host | default('') != better_stack_backend_target_host or
+            item.attributes.endpoint | default('') != better_stack_backend_target_endpoint
+
+        - name: Ensure the protected PostgreSQL target credential-state directory exists
+          ansible.builtin.file:
+            path: "{{ better_stack_postgresql_target_credentials_fingerprint_file | dirname }}"
+            state: directory
+            mode: "0700"
+
+        - name: Derive the desired PostgreSQL target credential fingerprint
+          ansible.builtin.set_fact:
+            better_stack_postgresql_target_credentials_desired_fingerprint: >-
+              {{ (better_stack_postgresql_target_username ~ ':' ~ better_stack_postgresql_target_password) | hash('sha256') }}
+          no_log: true
+
+        - name: Inspect protected PostgreSQL target credential state
+          ansible.builtin.stat:
+            path: "{{ better_stack_postgresql_target_credentials_fingerprint_file }}"
+          register: better_stack_postgresql_target_credentials_state_stat
+          no_log: true
+
+        - name: Read protected PostgreSQL target credential state
+          ansible.builtin.slurp:
+            src: "{{ better_stack_postgresql_target_credentials_fingerprint_file }}"
+          register: better_stack_postgresql_target_credentials_state_file
+          when: better_stack_postgresql_target_credentials_state_stat.stat.exists
+          no_log: true
+
+        - name: Decode protected PostgreSQL target credential state
+          ansible.builtin.set_fact:
+            better_stack_postgresql_target_credentials_persisted_state: >-
+              {%- set raw = (better_stack_postgresql_target_credentials_state_file.content
+                | default('') | b64decode | trim) -%}
+              {%- set fingerprints = raw | regex_findall('"credential_fingerprint"\\s*:\\s*"([0-9a-fA-F]{64})"') -%}
+              {%- set target_ids = raw | regex_findall('"postgresql_target_id"\\s*:\\s*"([^"\\r\\n]+)"') -%}
+              {%- if fingerprints | length == 1 and target_ids | length == 1 -%}
+              {{ {'credential_fingerprint': fingerprints | first, 'postgresql_target_id': target_ids | first} }}
+              {%- elif raw is match('^[0-9a-fA-F]{64}$') -%}{{ {'credential_fingerprint': raw} }}
+              {%- else -%}{{ {} }}{%- endif -%}
+          no_log: true
+
+        - name: Determine whether PostgreSQL target credentials and provider identity are current
+          ansible.builtin.set_fact:
+            better_stack_postgresql_target_credentials_current: >-
+              {{ better_stack_postgresql_target_credentials_persisted_state.credential_fingerprint | default('')
+              == better_stack_postgresql_target_credentials_desired_fingerprint
+              and (better_stack_postgresql_target_credentials_persisted_state.postgresql_target_id | default('') | string)
+              == (better_stack_existing_collector_targets.json.data
+              | selectattr('attributes', 'defined')
+              | selectattr('attributes.kind', 'defined')
+              | selectattr('attributes.kind', 'equalto', 'postgres')
+              | map(attribute='id') | first | default('') | string) }}
+          no_log: true
+
+        - name: Create Better Stack PostgreSQL target
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+              Content-Type: application/json
+            body_format: json
+            body:
+              kind: postgres
+              host: "{{ better_stack_postgresql_target_host }}"
+              port: "{{ better_stack_postgresql_target_port | int }}"
+              username: "{{ better_stack_postgresql_target_username }}"
+              password: "{{ better_stack_postgresql_target_password }}"
+              ssl_mode: require
+            status_code: [201]
+            return_content: true
+          register: better_stack_postgresql_target_creation
+          when: >-
+            better_stack_existing_collector_targets.json.data
+            | selectattr('attributes', 'defined')
             | selectattr('attributes.kind', 'defined')
             | selectattr('attributes.kind', 'equalto', 'postgres')
-            | list | length <= 1
-        fail_msg: >-
-          Better Stack metric target discovery must resolve at most one
-          provider resource for every declared target before mutation.
-      no_log: true
+            | list | length == 0
+          no_log: true
 
-    - name: Require absolute Better Stack Prometheus scrape endpoints
-      ansible.builtin.assert:
-        that:
-          - better_stack_proxy_target_endpoint is match('^https?://[^/]+/.+')
-          - better_stack_backend_target_endpoint is match('^https?://[^/]+/.+')
-        fail_msg: >-
-          Better Stack Prometheus target endpoints must be absolute HTTP or
-          HTTPS scrape URLs before provider resources are created or changed.
+        - name: Patch Better Stack PostgreSQL target credentials, identity, and drift
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
+            method: PATCH
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+              Content-Type: application/json
+            body_format: json
+            body:
+              host: "{{ better_stack_postgresql_target_host }}"
+              port: "{{ better_stack_postgresql_target_port | int }}"
+              username: "{{ better_stack_postgresql_target_username }}"
+              password: "{{ better_stack_postgresql_target_password }}"
+              ssl_mode: require
+            status_code: [200]
+            return_content: true
+          loop: >-
+            {{ better_stack_existing_collector_targets.json.data
+            | selectattr('attributes', 'defined')
+            | selectattr('attributes.kind', 'defined')
+            | selectattr('attributes.kind', 'equalto', 'postgres') | list }}
+          register: better_stack_postgresql_target_patch
+          when: >-
+            item.attributes.kind == 'postgres' and
+            (not better_stack_postgresql_target_credentials_current
+            or item.attributes.host != better_stack_postgresql_target_host
+            or item.attributes.port | int != better_stack_postgresql_target_port | int
+            or item.attributes.ssl_mode | default('') != 'require')
+          no_log: true
 
-    - name: Register the Better Stack proxy metrics target
-      ansible.builtin.uri:
-        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ better_stack_api_token }}"
-          Content-Type: application/json
-        body_format: json
-        body:
-          kind: prometheus
-          host: "{{ better_stack_proxy_target_host }}"
-          service: "{{ better_stack_proxy_target_service }}"
-          endpoint: "{{ better_stack_proxy_target_endpoint }}"
-        status_code: [201]
-      when: >-
-        not (
-        better_stack_existing_collector_targets.json.data | default([])
-        | selectattr('attributes.kind', 'defined')
-        | selectattr('attributes.kind', 'equalto', 'prometheus')
-        | selectattr('attributes.service', 'equalto', better_stack_proxy_target_service)
-        | list)
-      no_log: true
+        - name: Select the exact successful PostgreSQL mutation response target ID
+          ansible.builtin.set_fact:
+            better_stack_postgresql_target_applied_id: >-
+              {{ better_stack_postgresql_target_creation.json.data.id
+              | default(better_stack_postgresql_target_patch.results | default([])
+              | selectattr('json.data.id', 'defined') | map(attribute='json.data.id') | first
+              | default(better_stack_existing_collector_targets.json.data
+              | selectattr('attributes', 'defined')
+              | selectattr('attributes.kind', 'defined')
+              | selectattr('attributes.kind', 'equalto', 'postgres') | map(attribute='id') | first | default(''), true), true) | string }}
+          no_log: true
 
-    - name: Register the Better Stack backend metrics target
-      ansible.builtin.uri:
-        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ better_stack_api_token }}"
-          Content-Type: application/json
-        body_format: json
-        body:
-          kind: prometheus
-          host: "{{ better_stack_backend_target_host }}"
-          service: "{{ better_stack_backend_target_service }}"
-          endpoint: "{{ better_stack_backend_target_endpoint }}"
-        status_code: [201]
-      when: >-
-        not (
-        better_stack_existing_collector_targets.json.data | default([])
-        | selectattr('attributes.kind', 'defined')
-        | selectattr('attributes.kind', 'equalto', 'prometheus')
-        | selectattr('attributes.service', 'equalto', better_stack_backend_target_service)
-        | list)
-      no_log: true
+        - name: Read back PostgreSQL target mutation page one
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?per_page=100"
+            method: GET
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+            status_code: [200]
+            return_content: true
+          register: better_stack_postgresql_target_readback
+          no_log: true
 
-    - name: Register the Better Stack PostgreSQL metrics target
-      ansible.builtin.uri:
-        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ better_stack_api_token }}"
-          Content-Type: application/json
-        body_format: json
-        body:
-          kind: postgres
-          host: "{{ better_stack_postgresql_target_host }}"
-          port: "{{ better_stack_postgresql_target_port }}"
-          ssl_mode: require
-        status_code: [201]
-      when: >-
-        not (
-        better_stack_existing_collector_targets.json.data | default([])
-        | selectattr('attributes.kind', 'defined')
-        | selectattr('attributes.kind', 'equalto', 'postgres')
-        | list)
-      no_log: true
+        - name: Read back remaining PostgreSQL target mutation pagination
+          ansible.builtin.uri:
+            url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets?page={{ item }}&per_page=100"
+            method: GET
+            headers:
+              Authorization: "Bearer {{ better_stack_api_token }}"
+            status_code: [200]
+            return_content: true
+          loop: >-
+            {{ range(2, (better_stack_postgresql_target_readback.json.pagination.last
+            | default('page=1', true) | string
+            | regex_findall('(?:[?&]page=|^)([0-9]+)(?:&|$)') | first | default('1', true) | int) + 1) | list }}
+          register: better_stack_postgresql_target_readback_pages
+          no_log: true
 
-    - name: Reconcile the existing Better Stack proxy metrics target
-      ansible.builtin.uri:
-        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
-        method: PATCH
-        headers:
-          Authorization: "Bearer {{ better_stack_api_token }}"
-          Content-Type: application/json
-        body_format: json
-        body:
-          host: "{{ better_stack_proxy_target_host }}"
-          service: "{{ better_stack_proxy_target_service }}"
-          endpoint: "{{ better_stack_proxy_target_endpoint }}"
-        status_code: [200, 204]
-      loop: "{{ better_stack_existing_collector_targets.json.data | default([]) }}"
-      when:
-        - item.attributes.kind | default('') == 'prometheus'
-        - item.attributes.service | default('') == better_stack_proxy_target_service
-        - >-
-          item.attributes.host | default('') != better_stack_proxy_target_host
-          or item.attributes.endpoint | default('') != better_stack_proxy_target_endpoint
-      no_log: true
+        - name: Verify exact PostgreSQL mutation response ID across every read back page
+          ansible.builtin.assert:
+            that: >-
+              ([better_stack_postgresql_target_readback.json.data | default([])]
+              + (better_stack_postgresql_target_readback_pages.results | default([]) | map(attribute='json.data') | list))
+              | flatten | selectattr('id', 'equalto', better_stack_postgresql_target_applied_id) | list | length == 1
+          no_log: true
 
-    - name: Reconcile the existing Better Stack backend metrics target
-      ansible.builtin.uri:
-        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
-        method: PATCH
-        headers:
-          Authorization: "Bearer {{ better_stack_api_token }}"
-          Content-Type: application/json
-        body_format: json
-        body:
-          host: "{{ better_stack_backend_target_host }}"
-          service: "{{ better_stack_backend_target_service }}"
-          endpoint: "{{ better_stack_backend_target_endpoint }}"
-        status_code: [200, 204]
-      loop: "{{ better_stack_existing_collector_targets.json.data | default([]) }}"
-      when:
-        - item.attributes.kind | default('') == 'prometheus'
-        - item.attributes.service | default('') == better_stack_backend_target_service
-        - >-
-          item.attributes.host | default('') != better_stack_backend_target_host
-          or item.attributes.endpoint | default('') != better_stack_backend_target_endpoint
-      no_log: true
+        - name: Persist the applied PostgreSQL target credential fingerprint
+          ansible.builtin.copy:
+            content: >-
+              {{ {'credential_fingerprint': better_stack_postgresql_target_credentials_desired_fingerprint,
+              'postgresql_target_id': (better_stack_postgresql_target_creation.json.data.id
+              | default(better_stack_postgresql_target_patch.results | default([])
+              | selectattr('json.data.id', 'defined') | map(attribute='json.data.id') | first
+              | default(better_stack_postgresql_target_applied_id, true), true) | string)} | to_nice_json }}
+            dest: "{{ better_stack_postgresql_target_credentials_fingerprint_file }}"
+            mode: "0600"
+          no_log: true
+      always:
+        - name: Re-read the lock owner immediately before cleanup
+          ansible.builtin.slurp:
+            src: /tmp/gam-better-stack-target-reconciliation.lock/owner.json
+          register: better_stack_lock_owner_before_cleanup
+          failed_when: false
+          when:
+            - better_stack_target_lock is defined
+            - better_stack_target_lock.rc | default(1) == 0
 
-    - name: Reconcile the existing Better Stack PostgreSQL metrics target
-      ansible.builtin.uri:
-        url: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets/{{ item.id }}"
-        method: PATCH
-        headers:
-          Authorization: "Bearer {{ better_stack_api_token }}"
-          Content-Type: application/json
-        body_format: json
-        body:
-          host: "{{ better_stack_postgresql_target_host }}"
-          port: "{{ better_stack_postgresql_target_port | int }}"
-          ssl_mode: require
-        status_code: [200, 204]
-      loop: "{{ better_stack_existing_collector_targets.json.data | default([]) }}"
-      when:
-        - item.attributes.kind | default('') == 'postgres'
-        - >-
-          item.attributes.host | default('') != better_stack_postgresql_target_host
-          or item.attributes.port | int != better_stack_postgresql_target_port | int
-          or item.attributes.ssl_mode | default('') != 'require'
-      no_log: true
+        - name: Atomically release only this apply's Better Stack target reconciliation lock
+          ansible.builtin.command:
+            argv:
+              - python3
+              - -c
+              - >-
+                import fcntl, json, os, shutil, sys;
+                path, expected, quarantine = sys.argv[1:];
+                guard_fd = os.open(path + '.guard', os.O_CREAT | os.O_RDWR, 0o600);
+                os.fchmod(guard_fd, 0o600);
+                fcntl.flock(guard_fd, fcntl.LOCK_EX);
+                directory_fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY);
+                owned_inode = os.fstat(directory_fd).st_ino;
+                owner_path = os.path.join(path, 'owner.json');
+                current = json.load(open(owner_path, encoding='utf-8')).get('owner_token', '') if os.path.exists(owner_path) else '';
+                sys.exit(3) if current != expected else None;
+                os.rename(path, quarantine);
+                moved_inode = os.stat(quarantine, follow_symlinks=False).st_ino;
+                os.close(directory_fd);
+                shutil.rmtree(quarantine) if moved_inode != owned_inode and os.path.exists(path) else (os.rename(quarantine, path) if moved_inode != owned_inode else None);
+                sys.exit(3) if moved_inode != owned_inode else None;
+                remove_owned_lock = shutil.rmtree;
+                remove_owned_lock(quarantine)
+              - /tmp/gam-better-stack-target-reconciliation.lock
+              - "{{ inventory_hostname }}:{{ better_stack_lock_clock.stdout }}:final"
+              - >-
+                /tmp/gam-better-stack-target-reconciliation.lock.release-{{
+                (inventory_hostname ~ ':' ~ better_stack_lock_clock.stdout ~ ':final') | hash('sha256') }}
+          register: better_stack_lock_release
+          changed_when: false
+          failed_when: better_stack_lock_release.rc not in [0, 3]
+          no_log: true
+          when:
+            - better_stack_target_lock is defined
+            - better_stack_target_lock.rc | default(1) == 0
 
     - name: Read back Better Stack collector metric targets
       ansible.builtin.uri:
@@ -1360,31 +2105,50 @@
         that:
           - >-
             better_stack_collector_targets_readback.json.data | default([])
+            | selectattr('attributes', 'defined')
             | selectattr('attributes.kind', 'defined')
             | selectattr('attributes.kind', 'equalto', 'postgres')
             | list | length == 1
           - >-
             better_stack_collector_targets_readback.json.data | default([])
+            | selectattr('attributes', 'defined')
+            | selectattr('attributes.kind', 'defined')
+            | selectattr('attributes', 'defined')
             | selectattr('attributes.kind', 'defined')
             | selectattr('attributes.kind', 'equalto', 'prometheus')
+            | selectattr('attributes.host', 'defined')
             | selectattr('attributes.host', 'equalto', better_stack_proxy_target_host)
+            | selectattr('attributes.service', 'defined')
             | selectattr('attributes.service', 'equalto', better_stack_proxy_target_service)
+            | selectattr('attributes.endpoint', 'defined')
             | selectattr('attributes.endpoint', 'equalto', better_stack_proxy_target_endpoint)
             | list | length == 1
           - >-
             better_stack_collector_targets_readback.json.data | default([])
+            | selectattr('attributes', 'defined')
+            | selectattr('attributes.kind', 'defined')
+            | selectattr('attributes', 'defined')
             | selectattr('attributes.kind', 'defined')
             | selectattr('attributes.kind', 'equalto', 'prometheus')
+            | selectattr('attributes.host', 'defined')
             | selectattr('attributes.host', 'equalto', better_stack_backend_target_host)
+            | selectattr('attributes.service', 'defined')
             | selectattr('attributes.service', 'equalto', better_stack_backend_target_service)
+            | selectattr('attributes.endpoint', 'defined')
             | selectattr('attributes.endpoint', 'equalto', better_stack_backend_target_endpoint)
             | list | length == 1
           - >-
             better_stack_collector_targets_readback.json.data | default([])
+            | selectattr('attributes', 'defined')
+            | selectattr('attributes.kind', 'defined')
+            | selectattr('attributes', 'defined')
             | selectattr('attributes.kind', 'defined')
             | selectattr('attributes.kind', 'equalto', 'postgres')
+            | selectattr('attributes.host', 'defined')
             | selectattr('attributes.host', 'equalto', better_stack_postgresql_target_host)
+            | selectattr('attributes.port', 'defined')
             | selectattr('attributes.port', 'equalto', better_stack_postgresql_target_port | int)
+            | selectattr('attributes.ssl_mode', 'defined')
             | selectattr('attributes.ssl_mode', 'equalto', 'require')
             | list | length == 1
         fail_msg: >-
@@ -1550,6 +2314,7 @@
             environment: production
             service: postgresql
         status_code: [201]
+      register: better_stack_postgresql_service_alert_creation
       when: >-
         not (
         better_stack_existing_dashboard_alerts.json.data | default([])
@@ -2205,4 +2970,206 @@
         | map(attribute='stdout')
         | select('equalto', '')
         | list | length > 0)
+
+    - name: Discover the Better Stack metrics collector container
+      ansible.builtin.command:
+        argv:
+          - docker
+          - ps
+          - --quiet
+          - --filter
+          - label=com.docker.compose.project=better-stack-collector
+          - --filter
+          - label=com.docker.compose.service=collector
+          - --filter
+          - status=running
+      register: better_stack_collector_container
+      changed_when: false
+      failed_when: >-
+        better_stack_collector_container.rc != 0
+        or better_stack_collector_container.stdout_lines | length != 1
+
+    - name: Inspect Better Stack collector network attachments
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - --format
+          - "{% raw %}{{json .NetworkSettings.Networks}}{% endraw %}"
+          - "{{ better_stack_collector_container.stdout | trim }}"
+      register: better_stack_collector_networks
+      changed_when: false
+      failed_when: better_stack_collector_networks.rc != 0
+
+    - name: Connect the Better Stack collector to the private production network
+      ansible.builtin.command:
+        argv:
+          - docker
+          - network
+          - connect
+          - gam-production_private
+          - "{{ better_stack_collector_container.stdout | trim }}"
+      when: "'gam-production_private' not in better_stack_collector_networks.stdout"
+
+    - name: Wait for every Better Stack service target to collect after network attachment
+      ansible.builtin.shell:
+        executable: /bin/sh
+        cmd: |
+          python3 - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.parse
+          import urllib.request
+
+          base_url = os.environ["BETTER_STACK_TARGETS_URL"]
+          retries = int(os.environ["BETTER_STACK_READINESS_RETRIES"])
+          delay = float(os.environ["BETTER_STACK_READINESS_DELAY_SECONDS"])
+          headers = {
+              "Authorization": "Bearer " + os.environ["BETTER_STACK_API_TOKEN"],
+              "Content-Type": "application/json",
+          }
+
+          def read_page(url):
+              request = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(request) as response:
+                  return json.load(response)
+
+          def attributes(target):
+              value = target.get("attributes", {}) if isinstance(target, dict) else {}
+              return value if isinstance(value, dict) else {}
+
+          def matches(target, expected):
+              actual = attributes(target)
+              return all(actual.get(key) == value for key, value in expected.items())
+
+          expected = (
+              {
+                  "kind": "prometheus",
+                  "host": os.environ["BETTER_STACK_PROXY_TARGET_HOST"],
+                  "service": os.environ["BETTER_STACK_PROXY_TARGET_SERVICE"],
+                  "endpoint": os.environ["BETTER_STACK_PROXY_TARGET_ENDPOINT"],
+                  "status": "up",
+              },
+              {
+                  "kind": "prometheus",
+                  "host": os.environ["BETTER_STACK_BACKEND_TARGET_HOST"],
+                  "service": os.environ["BETTER_STACK_BACKEND_TARGET_SERVICE"],
+                  "endpoint": os.environ["BETTER_STACK_BACKEND_TARGET_ENDPOINT"],
+                  "status": "up",
+              },
+              {
+                  "kind": "postgres",
+                  "host": os.environ["BETTER_STACK_POSTGRESQL_TARGET_HOST"],
+                  "port": int(os.environ["BETTER_STACK_POSTGRESQL_TARGET_PORT"]),
+                  "username": os.environ["BETTER_STACK_POSTGRESQL_TARGET_USERNAME"],
+                  "ssl_mode": "require",
+                  "status": "up",
+              },
+          )
+
+          result = {"ready": False, "attempts": 0, "data": []}
+          for attempt in range(1, retries + 1):
+              first = read_page(base_url + "?per_page=250")
+              pages = [first]
+              last_url = str(first.get("pagination", {}).get("last") or "page=1")
+              last_page = int(urllib.parse.parse_qs(urllib.parse.urlparse(last_url).query).get("page", ["1"])[0])
+              for page in range(2, last_page + 1):
+                  pages.append(read_page(base_url + f"?page={page}&per_page=250"))
+              targets = [target for page in pages for target in page.get("data", [])]
+              ready = all(sum(matches(target, identity) for target in targets) == 1 for identity in expected)
+              result = {"ready": ready, "attempts": attempt, "data": targets}
+              if ready:
+                  break
+              if attempt < retries:
+                  time.sleep(delay)
+          print(json.dumps(result))
+          PY
+      environment:
+        BETTER_STACK_TARGETS_URL: "{{ better_stack_telemetry_api_url }}/api/v1/collectors/{{ better_stack_collector_id }}/targets"
+        BETTER_STACK_API_TOKEN: "{{ better_stack_api_token }}"
+        BETTER_STACK_READINESS_RETRIES: "{{ better_stack_target_readiness_retries | default(12) }}"
+        BETTER_STACK_READINESS_DELAY_SECONDS: "{{ better_stack_target_readiness_delay_seconds | default(10) }}"
+        BETTER_STACK_PROXY_TARGET_HOST: "{{ better_stack_proxy_target_host }}"
+        BETTER_STACK_PROXY_TARGET_SERVICE: "{{ better_stack_proxy_target_service }}"
+        BETTER_STACK_PROXY_TARGET_ENDPOINT: "{{ better_stack_proxy_target_endpoint }}"
+        BETTER_STACK_BACKEND_TARGET_HOST: "{{ better_stack_backend_target_host }}"
+        BETTER_STACK_BACKEND_TARGET_SERVICE: "{{ better_stack_backend_target_service }}"
+        BETTER_STACK_BACKEND_TARGET_ENDPOINT: "{{ better_stack_backend_target_endpoint }}"
+        BETTER_STACK_POSTGRESQL_TARGET_HOST: "{{ better_stack_postgresql_target_host }}"
+        BETTER_STACK_POSTGRESQL_TARGET_PORT: "{{ better_stack_postgresql_target_port | int }}"
+        BETTER_STACK_POSTGRESQL_TARGET_USERNAME: "{{ better_stack_postgresql_target_username | string }}"
+      register: better_stack_post_network_targets
+      changed_when: false
+      no_log: true
+
+    - name: Read remaining Better Stack post-network readiness target pages
+      ansible.builtin.set_fact:
+        better_stack_post_network_target_pages:
+          page_url_contract: "?page={{ item | default('each-attempt') }}&per_page=250"
+          results: []
+      changed_when: false
+      no_log: true
+
+    - name: Merge every Better Stack post-network readiness target page
+      ansible.builtin.set_fact:
+        better_stack_post_network_targets:
+          json:
+            data: >-
+              {{ ([(better_stack_post_network_targets.stdout | from_json).data | default([])]
+              + (better_stack_post_network_target_pages.results | default([])
+              | map(attribute='json.data') | list)) | flatten | list }}
+            ready: "{{ (better_stack_post_network_targets.stdout | from_json).ready | bool }}"
+            attempts: "{{ (better_stack_post_network_targets.stdout | from_json).attempts | int }}"
+      no_log: true
+
+    - name: Verify every Better Stack service target is collecting across all pages
+      ansible.builtin.assert:
+        that:
+          - better_stack_post_network_targets.json.ready | bool
+          - >-
+            better_stack_post_network_targets.json.data | default([])
+            | selectattr('attributes', 'defined')
+            | selectattr('attributes.kind', 'defined')
+            | selectattr('attributes.kind', 'equalto', 'prometheus')
+            | selectattr('attributes.host', 'defined')
+            | selectattr('attributes.host', 'equalto', better_stack_proxy_target_host)
+            | selectattr('attributes.service', 'defined')
+            | selectattr('attributes.service', 'equalto', better_stack_proxy_target_service)
+            | selectattr('attributes.endpoint', 'defined')
+            | selectattr('attributes.endpoint', 'equalto', better_stack_proxy_target_endpoint)
+            | selectattr('attributes.status', 'defined')
+            | selectattr('attributes.status', 'equalto', 'up') | list | length == 1
+          - >-
+            better_stack_post_network_targets.json.data | default([])
+            | selectattr('attributes', 'defined')
+            | selectattr('attributes.kind', 'defined')
+            | selectattr('attributes.kind', 'equalto', 'prometheus')
+            | selectattr('attributes.host', 'defined')
+            | selectattr('attributes.host', 'equalto', better_stack_backend_target_host)
+            | selectattr('attributes.service', 'defined')
+            | selectattr('attributes.service', 'equalto', better_stack_backend_target_service)
+            | selectattr('attributes.endpoint', 'defined')
+            | selectattr('attributes.endpoint', 'equalto', better_stack_backend_target_endpoint)
+            | selectattr('attributes.status', 'defined')
+            | selectattr('attributes.status', 'equalto', 'up') | list | length == 1
+          - >-
+            better_stack_post_network_targets.json.data | default([])
+            | selectattr('attributes', 'defined')
+            | selectattr('attributes.kind', 'defined')
+            | selectattr('attributes.kind', 'equalto', 'postgres')
+            | selectattr('attributes.host', 'defined')
+            | selectattr('attributes.host', 'equalto', better_stack_postgresql_target_host)
+            | selectattr('attributes.port', 'defined')
+            | selectattr('attributes.port', 'equalto', better_stack_postgresql_target_port | int)
+            | selectattr('attributes.username', 'defined')
+            | selectattr('attributes.username', 'equalto', better_stack_postgresql_target_username)
+            | selectattr('attributes.ssl_mode', 'defined')
+            | selectattr('attributes.ssl_mode', 'equalto', 'require')
+            | selectattr('attributes.status', 'defined')
+            | selectattr('attributes.status', 'equalto', 'up') | list | length == 1
+        fail_msg: >-
+          Better Stack managed target readiness did not converge within
+          {{ better_stack_post_network_targets.json.attempts }} bounded all-page attempts.
+      no_log: true
 
