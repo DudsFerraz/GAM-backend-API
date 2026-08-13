@@ -10,6 +10,17 @@ import br.org.gam.api.event.application.useCases.GetEvent;
 import br.org.gam.api.event.application.useCases.SearchEvents;
 import br.org.gam.api.event.application.useCases.createEvent.CreateEvent;
 import br.org.gam.api.event.application.useCases.manageEvent.ManageGenericEvent;
+import br.org.gam.api.event.missa.application.useCases.AssignMissaMember;
+import br.org.gam.api.event.missa.application.useCases.CancelMissa;
+import br.org.gam.api.event.missa.application.useCases.CreateMissa;
+import br.org.gam.api.event.missa.application.useCases.DeleteMissa;
+import br.org.gam.api.event.missa.application.useCases.FinalizeMissa;
+import br.org.gam.api.event.missa.application.useCases.GetMissa;
+import br.org.gam.api.event.missa.application.useCases.LockMissa;
+import br.org.gam.api.event.missa.application.useCases.RemoveMissaMember;
+import br.org.gam.api.event.missa.application.useCases.ReopenMissa;
+import br.org.gam.api.event.missa.application.useCases.ReplaceMissa;
+import br.org.gam.api.event.missa.web.MissaController;
 import br.org.gam.api.event.oratorio.application.useCases.OratorioOperations;
 import br.org.gam.api.event.oratorio.web.OratorioController;
 import br.org.gam.api.event.web.EventController;
@@ -95,6 +106,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         controllers = {
                 AccountController.class,
                 EventController.class,
+                MissaController.class,
                 OratorioController.class,
                 GamLocationController.class,
                 MemberController.class,
@@ -119,6 +131,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         PaginationWebConfiguration.class,
         AccountController.class,
         EventController.class,
+        MissaController.class,
         OratorioController.class,
         GamLocationController.class,
         MemberController.class,
@@ -152,6 +165,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         GetPresence.class,
         ManageGenericEvent.class,
         RegisterPresence.class,
+        CreateMissa.class,
+        GetMissa.class,
+        ReplaceMissa.class,
+        AssignMissaMember.class,
+        RemoveMissaMember.class,
+        LockMissa.class,
+        FinalizeMissa.class,
+        ReopenMissa.class,
+        CancelMissa.class,
+        DeleteMissa.class,
         OratorioOperations.class,
         CreateGamLocation.class,
         GetGamLocations.class,

@@ -71,6 +71,9 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
             "PRESENCE_REGISTER",
             "PRESENCE_EDIT",
             "PRESENCE_REMOVE",
+            "MISSA_GET",
+            "MISSA_CREATE",
+            "MISSA_MANAGE",
             "ROLE_GET",
             "PERMISSION_GET",
             "ORATORIO_GET",
@@ -95,6 +98,7 @@ class RbacCatalogPersistenceIT extends PostgreSQLIntegrationTest {
             "EVENT_GET_PRESENCES",
             "EVENT_GET_MEMBER",
             "GAM_LOCATION_GET",
+            "MISSA_GET",
             "ORATORIO_GET"
     );
 

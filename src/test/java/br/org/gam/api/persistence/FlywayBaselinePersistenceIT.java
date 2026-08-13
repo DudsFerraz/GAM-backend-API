@@ -81,7 +81,7 @@ class FlywayBaselinePersistenceIT extends FlywayMigrationTestSupport {
     }
 
     @Test
-    @DisplayName("ADR-0021 and ADR-0022 - production migration lifecycle -> V1-V25 precede successful Java repeatables")
+    @DisplayName("ADR-0021 and ADR-0022 - production migration lifecycle -> V1-V26 precede successful Java repeatables")
     void productionRepeatablesShouldRunSuccessfullyAfterTheCompleteVersionedBaseline() {
         String schema = uniqueSchema("baseline_repeatables");
         migrate(schema, PRODUCTION_MIGRATION_PATH).migrate();
@@ -91,7 +91,7 @@ class FlywayBaselinePersistenceIT extends FlywayMigrationTestSupport {
                         + "WHERE version IS NOT NULL AND success "
                         + "ORDER BY installed_rank",
                 String.class
-        )).containsExactlyElementsOf(IntStream.rangeClosed(1, 25)
+        )).containsExactlyElementsOf(IntStream.rangeClosed(1, 26)
                 .mapToObj(Integer::toString)
                 .toList());
 

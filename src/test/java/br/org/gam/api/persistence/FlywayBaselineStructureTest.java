@@ -3,16 +3,21 @@ package br.org.gam.api.persistence;
 import br.org.gam.api.testing.annotation.StructuralTest;
 import br.org.gam.api.testing.annotation.UnitTest;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -40,10 +45,37 @@ class FlywayBaselineStructureTest {
                     + "|\\bDROP\\s+(?:COLUMN|CONSTRAINT)\\b"
     );
     private static final Map<Integer, MigrationContract> EXPECTED_BASELINE = expectedBaseline();
+    private static final Map<String, String> FROZEN_BASELINE_BLOB_IDS = Map.ofEntries(
+            Map.entry("V1__create_accounts_table.sql", "aeb75646a0dea0969e378d334c5d2c9011a5ee1e"),
+            Map.entry("V2__create_activity_logs_table.sql", "e81c3abf370e42cc8378a2bbe8d136a0c5f5038b"),
+            Map.entry("V3__create_roles_table.sql", "71a6ebc884577e32b7422fdfae4a397c8894a72a"),
+            Map.entry("V4__create_permissions_table.sql", "ca61c97ff4494dbf9a0cef80849c49f7ceb8fb37"),
+            Map.entry("V5__create_members_table.sql", "31f5eac00670752c2368a5d099feeea355811dfa"),
+            Map.entry("V6__create_gam_locations_table.sql", "a78563fff02edf51b56a5f947e45dbaf2f5a0fd7"),
+            Map.entry("V7__create_events_table.sql", "2ffce5259b5171d5277616a3c395767d13593818"),
+            Map.entry("V8__create_presences_table.sql", "984850b47e27495f42c722581ec185383f5172bb"),
+            Map.entry("V9__create_oratorios_table.sql", "a6af01b71994c2d63861b00f9babad9dce503a58"),
+            Map.entry("V10__create_oratorianos_table.sql", "89619cd921b6dee49f25463f25ccc0e813d0e656"),
+            Map.entry("V11__create_missas_table.sql", "c645dfc1ecce9ea1c880a2978877e05fad2e8cbd"),
+            Map.entry("V12__create_refresh_tokens_table.sql", "fba3fb6589ab343857dbbc8da36b614b5b67d305"),
+            Map.entry("V13__create_membership_solicitations_table.sql", "56bdd89c0670d256442f15e2a9ce96494e9db08f"),
+            Map.entry("V14__create_oratoriano_attendances_table.sql", "7d75ccc8191c083419d6da2c68603624743e16b1"),
+            Map.entry("V15__create_oratoriano_additional_forms_table.sql", "e8c5b7de288689f36006586b16487c4428e9f085"),
+            Map.entry("V16__create_oratoriano_form_print_snapshots_table.sql", "de8d2d0309aaab989ccba71a800c5fb065213091"),
+            Map.entry("V17__create_oratoriano_form_attachments_table.sql", "8b18cbe22c40d38f454f10a5fa297bd96070b305"),
+            Map.entry("V18__create_role_permissions_table.sql", "ec3154377d456851b37d5abf986f7e5e225f92b9"),
+            Map.entry("V19__create_account_roles_table.sql", "d09e271c709331ed077eb9d7ba98cde09830031e"),
+            Map.entry("V20__create_oratorio_lanche_table.sql", "639a2d0ae062a22997b20a0a058459e6dbbf01e6"),
+            Map.entry("V21__create_oratorio_bt_jovens_table.sql", "3f20f5a2a272b12cf81441c981f5633442db512a"),
+            Map.entry("V22__create_oratorio_bt_criancas_table.sql", "9436f0829e5b94f6f8d04cee01aa05e40c0e59c8"),
+            Map.entry("V23__create_oratorio_presences_oratorianos_table.sql", "18f84db37ba89c526a1024f23c9e0433dfedcb81"),
+            Map.entry("V24__create_missa_acolhida_members_table.sql", "79c6845324c819c0f522209e0994d576b2643e5c"),
+            Map.entry("V25__create_oratorio_team_assignments_table.sql", "21f601c978405dc78f7388bd7431f2c744972b99")
+    );
 
     @Test
-    @DisplayName("ADR-0022 - versioned SQL directory -> exact consecutive V1-V25 manifest")
-    void versionedSqlDirectoryShouldContainTheExactConsecutiveBaselineManifest() throws IOException {
+    @DisplayName("ADR-0022 - versioned SQL directory -> frozen V1-V25 baseline followed by V26")
+    void versionedSqlDirectoryShouldPreserveTheBaselineAndAppendForwardMigrations() throws IOException {
         Map<Integer, String> actualManifest = new LinkedHashMap<>();
         for (Path migration : versionedMigrations()) {
             Matcher matcher = VERSIONED_MIGRATION.matcher(migration.getFileName().toString());
@@ -59,10 +91,22 @@ class FlywayBaselineStructureTest {
         Map<Integer, String> expectedManifest = new LinkedHashMap<>();
         EXPECTED_BASELINE.forEach((version, contract) -> expectedManifest.put(version, contract.filename()));
 
-        assertThat(actualManifest).containsExactlyEntriesOf(expectedManifest);
-        assertThat(actualManifest.keySet()).containsExactlyElementsOf(
-                java.util.stream.IntStream.rangeClosed(1, 25).boxed().toList()
-        );
+        assertThat(actualManifest.entrySet().stream()
+                .filter(entry -> entry.getKey() <= 25)
+                .toList()).containsExactlyElementsOf(expectedManifest.entrySet());
+        assertThat(actualManifest.entrySet().stream()
+                .filter(entry -> entry.getKey() > 25)
+                .toList()).containsExactly(Map.entry(26, "V26__create_missa_assignments_table.sql"));
+    }
+
+    @Test
+    @DisplayName("ADR-0022 - accepted V1-V25 files -> immutable content after baseline cutover")
+    void acceptedBaselineMigrationContentsShouldRemainImmutable() {
+        SoftAssertions softly = new SoftAssertions();
+        FROZEN_BASELINE_BLOB_IDS.forEach((filename, expectedBlobId) -> softly.assertThat(gitBlobId(
+                MIGRATION_DIRECTORY.resolve(filename)
+        )).as(filename + " frozen Git blob identity").isEqualTo(expectedBlobId));
+        softly.assertAll();
     }
 
     @Test
@@ -86,10 +130,13 @@ class FlywayBaselineStructureTest {
     }
 
     @Test
-    @DisplayName("ADR-0022 - current-state baseline SQL -> no compatibility-only transition operations")
+    @DisplayName("ADR-0022 - rebuilt V1-V25 baseline SQL -> no compatibility-only transition operations")
     void currentStateBaselineShouldContainNoCompatibilityOnlyTransitionOperations() throws IOException {
         List<String> offenders = new ArrayList<>();
         for (Path migration : versionedMigrations()) {
+            if (version(migration) > 25) {
+                continue;
+            }
             String sql = Files.readString(migration);
             Matcher matcher = COMPATIBILITY_TRANSITION.matcher(sql);
             while (matcher.find()) {
@@ -261,6 +308,20 @@ class FlywayBaselineStructureTest {
                 "oratorio_team_type_enum"
         ));
         return Collections.unmodifiableMap(baseline);
+    }
+
+    private static String gitBlobId(Path path) {
+        try {
+            String normalized = Files.readString(path, StandardCharsets.UTF_8)
+                    .replace("\r\n", "\n")
+                    .replace('\r', '\n');
+            byte[] content = normalized.getBytes(StandardCharsets.UTF_8);
+            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            digest.update(("blob " + content.length + "\0").getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest.digest(content));
+        } catch (IOException | NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("Could not fingerprint frozen migration " + path, exception);
+        }
     }
 
     private static MigrationContract migration(String filename, String table, String... enums) {

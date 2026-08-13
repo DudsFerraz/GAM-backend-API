@@ -322,6 +322,16 @@ class OpenApiSharedSchemasApiIT extends AbstractOpenApiDocumentationApiIT {
     }
 
     @Test
+    @DisplayName("REQ-PRESENCE-018 and REQ-OPENAPI-004/006 - ApiErrorDTO code catalog -> includes Missa assignment Presence dependency")
+    void apiErrorCodeCatalogShouldIncludeMissaAssignmentPresenceDependency() {
+        Map<String, Object> error = object(schemas(), "ApiErrorDTO");
+        Map<String, Object> code = object(object(error, "properties"), "code");
+
+        assertThat(strings(code, "enum"))
+                .contains("MISSA_ASSIGNMENT_REQUIRES_PRESENCE");
+    }
+
+    @Test
     @DisplayName("REQ-OPENAPI-007 - paged GamLocation response schema -> GAM envelope rather than Spring Page internals")
     void pagedGamLocationResponseSchemaShouldUseTheGAMOwnedEnvelope() {
         Map<String, Object> contract = openApiContract().jsonPath().getMap("$");
@@ -457,12 +467,18 @@ class OpenApiSharedSchemasApiIT extends AbstractOpenApiDocumentationApiIT {
     }
 
     @Test
-    @DisplayName("REQ-ORATORIO-009/010, REQ-ORATORIANO-005/009/010, REQ-ORATORIANO-FORM-002/018 and REQ-OPENAPI-004 - specialized audited reasons -> owner-specific requirement semantics")
+    @DisplayName("REQ-ACTIVITY-008, REQ-MISSA-009/013/014/016, REQ-ORATORIANO-005/009/010 and REQ-OPENAPI-004 - specialized reasons -> normalized Unicode code-point rule")
     void specializedAuditedReasonSchemasShouldDocumentOwnerSpecificRequirementSemantics() {
         Map<String, Object> schemas = schemas();
         SoftAssertions softly = new SoftAssertions();
 
-        for (String schemaName : List.of("ReasonDTO", "ReopenDTO", "ReplaceOratorianoDTO")) {
+        for (String schemaName : List.of(
+                "AssignmentDTO",
+                "ReplaceMissaDTO",
+                "ReopenDTO",
+                "ReasonDTO",
+                "ReplaceOratorianoDTO"
+        )) {
             Map<String, Object> reason = object(
                     object(object(schemas, schemaName), "properties"),
                     "reason"
@@ -503,6 +519,13 @@ class OpenApiSharedSchemasApiIT extends AbstractOpenApiDocumentationApiIT {
         softly.assertThat(strings(reopen, "required"))
                 .as("ReopenDTO required properties")
                 .contains("reason");
+
+        for (String schemaName : List.of("AssignmentDTO", "ReplaceMissaDTO")) {
+            List<String> required = strings(object(schemas, schemaName), "required");
+            softly.assertThat(required == null || !required.contains("reason"))
+                    .as("%s reason must remain optional", schemaName)
+                    .isTrue();
+        }
 
         Map<String, Object> replacement = object(schemas, "ReplaceOratorianoDTO");
         softly.assertThat(strings(replacement, "required"))

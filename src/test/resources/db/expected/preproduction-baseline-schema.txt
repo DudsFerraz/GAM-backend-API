@@ -147,19 +147,17 @@ membership_solicitations.surname | character varying(255) | NOT NULL | default=<
 membership_solicitations.updated_at | timestamp with time zone | NOT NULL | default=<none>
 membership_solicitations.updated_by | uuid | NULL | default=<none>
 membership_solicitations.version | bigint | NOT NULL | default=0
-missa_acolhida_members.member_id | uuid | NULL | default=<none>
-missa_acolhida_members.missa_id | uuid | NULL | default=<none>
-missas.comentarios_member | uuid | NULL | default=<none>
+missa_assignments.created_at | timestamp with time zone | NOT NULL | default=<none>
+missa_assignments.created_by | uuid | NULL | default=<none>
+missa_assignments.member_id | uuid | NOT NULL | default=<none>
+missa_assignments.missa_id | uuid | NOT NULL | default=<none>
+missa_assignments.responsibility | character varying(32) | NOT NULL | default=<none>
 missas.created_at | timestamp with time zone | NOT NULL | default=<none>
 missas.created_by | uuid | NULL | default=<none>
 missas.deleted_at | timestamp with time zone | NULL | default=<none>
 missas.deleted_by | uuid | NULL | default=<none>
 missas.event_id | uuid | NOT NULL | default=<none>
 missas.id | uuid | NOT NULL | default=<none>
-missas.leitura_1_member | uuid | NULL | default=<none>
-missas.leitura_2_member | uuid | NULL | default=<none>
-missas.preces_member | uuid | NULL | default=<none>
-missas.salmo_member | uuid | NULL | default=<none>
 missas.updated_at | timestamp with time zone | NOT NULL | default=<none>
 missas.updated_by | uuid | NULL | default=<none>
 oratoriano_additional_forms.completed_at | timestamp with time zone | NULL | default=<none>
@@ -476,18 +474,21 @@ membership_solicitations.membership_solicitations_status_not_null | NOT NULL sta
 membership_solicitations.membership_solicitations_surname_not_null | NOT NULL surname
 membership_solicitations.membership_solicitations_updated_at_not_null | NOT NULL updated_at
 membership_solicitations.membership_solicitations_version_not_null | NOT NULL version
-missa_acolhida_members.fk_acolhida_member | FOREIGN KEY (member_id) REFERENCES members(id)
-missa_acolhida_members.fk_acolhida_missa | FOREIGN KEY (missa_id) REFERENCES missas(id)
+missa_assignments.check_missa_assignments_responsibility | CHECK (responsibility::text = ANY (ARRAY['COMENTARIOS'::character varying, 'PRIMEIRA_LEITURA'::character varying, 'SALMO'::character varying, 'SEGUNDA_LEITURA'::character varying, 'PRECES'::character varying, 'ACOLHIDA'::character varying, 'BANDA'::character varying]::text[]))
+missa_assignments.fk_missa_assignments_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
+missa_assignments.fk_missa_assignments_member | FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE RESTRICT
+missa_assignments.fk_missa_assignments_missa | FOREIGN KEY (missa_id) REFERENCES missas(id) ON DELETE CASCADE
+missa_assignments.missa_assignments_created_at_not_null | NOT NULL created_at
+missa_assignments.missa_assignments_member_id_not_null | NOT NULL member_id
+missa_assignments.missa_assignments_missa_id_not_null | NOT NULL missa_id
+missa_assignments.missa_assignments_responsibility_not_null | NOT NULL responsibility
+missa_assignments.pk_missa_assignments | PRIMARY KEY (missa_id, responsibility, member_id)
 missas.check_missas_deleted_attribution | CHECK (deleted_by IS NULL OR deleted_at IS NOT NULL)
-missas.fk_comentarios_member | FOREIGN KEY (comentarios_member) REFERENCES members(id)
-missas.fk_leitura_1_member | FOREIGN KEY (leitura_1_member) REFERENCES members(id)
-missas.fk_leitura_2_member | FOREIGN KEY (leitura_2_member) REFERENCES members(id)
+missas.check_missas_shared_identity | CHECK (id = event_id)
 missas.fk_missa_created_by | FOREIGN KEY (created_by) REFERENCES accounts(id) ON DELETE SET NULL
 missas.fk_missa_deleted_by | FOREIGN KEY (deleted_by) REFERENCES accounts(id) ON DELETE SET NULL
 missas.fk_missa_event | FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
 missas.fk_missa_updated_by | FOREIGN KEY (updated_by) REFERENCES accounts(id) ON DELETE SET NULL
-missas.fk_preces_member | FOREIGN KEY (preces_member) REFERENCES members(id)
-missas.fk_salmo_member | FOREIGN KEY (salmo_member) REFERENCES members(id)
 missas.missas_created_at_not_null | NOT NULL created_at
 missas.missas_event_id_not_null | NOT NULL event_id
 missas.missas_id_not_null | NOT NULL id
@@ -691,6 +692,8 @@ members.members_pkey | CREATE UNIQUE INDEX members_pkey ON members USING btree (
 membership_solicitations.idx_membership_solicitations_member | CREATE UNIQUE INDEX idx_membership_solicitations_member ON membership_solicitations USING btree (member_id) WHERE (member_id IS NOT NULL)
 membership_solicitations.idx_membership_solicitations_one_pending | CREATE UNIQUE INDEX idx_membership_solicitations_one_pending ON membership_solicitations USING btree (account_id) WHERE ((status = 'PENDING'::membership_solicitation_status_enum) AND (deleted_at IS NULL))
 membership_solicitations.membership_solicitations_pkey | CREATE UNIQUE INDEX membership_solicitations_pkey ON membership_solicitations USING btree (id)
+missa_assignments.idx_missa_assignments_single_member | CREATE UNIQUE INDEX idx_missa_assignments_single_member ON missa_assignments USING btree (missa_id, responsibility) WHERE ((responsibility)::text = ANY ((ARRAY['COMENTARIOS'::character varying, 'PRIMEIRA_LEITURA'::character varying, 'SALMO'::character varying, 'SEGUNDA_LEITURA'::character varying, 'PRECES'::character varying])::text[]))
+missa_assignments.pk_missa_assignments | CREATE UNIQUE INDEX pk_missa_assignments ON missa_assignments USING btree (missa_id, responsibility, member_id)
 missas.idx_missas_event_id_not_deleted | CREATE UNIQUE INDEX idx_missas_event_id_not_deleted ON missas USING btree (event_id) WHERE (deleted_at IS NULL)
 missas.missas_pkey | CREATE UNIQUE INDEX missas_pkey ON missas USING btree (id)
 oratoriano_additional_forms.idx_oratoriano_additional_form_current | CREATE UNIQUE INDEX idx_oratoriano_additional_form_current ON oratoriano_additional_forms USING btree (oratoriano_id) WHERE ((status = 'COMPLETED'::oratoriano_form_status_enum) AND (deleted_at IS NULL))

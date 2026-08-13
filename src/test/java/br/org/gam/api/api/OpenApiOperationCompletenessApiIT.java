@@ -26,7 +26,7 @@ class OpenApiOperationCompletenessApiIT extends AbstractOpenApiDocumentationApiI
     private static final Set<String> HTTP_METHODS = Set.of("get", "post", "put", "patch", "delete");
     private static final Set<String> CONSUMER_TAGS = Set.of(
             "Authentication", "Accounts", "Members", "Membership Solicitations", "Events", "GamLocations",
-            "Presences", "RBAC", "Oratorios", "Oratorianos", "Oratoriano Forms", "Health"
+            "Presences", "RBAC", "Oratorios", "Oratorianos", "Oratoriano Forms", "Missas", "Health"
     );
     private static final List<String> NULLABLE_OBJECT_DRAFT_FIELDS = List.of(
             "address", "responsible", "father", "mother", "health", "declarations"

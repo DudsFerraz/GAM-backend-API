@@ -4,9 +4,14 @@ import br.org.gam.api.testing.annotation.ApiTest;
 import br.org.gam.api.testing.annotation.FunctionalTest;
 import br.org.gam.api.testing.annotation.IntegrationTest;
 import br.org.gam.api.testing.annotation.SecurityTest;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,6 +24,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SecurityTest
 @DisplayName("API - OpenAPI documentation contract")
 class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
+
+    private static final List<String> MISSA_RESPONSIBILITIES = List.of(
+            "COMENTARIOS",
+            "PRIMEIRA_LEITURA",
+            "SALMO",
+            "SEGUNDA_LEITURA",
+            "PRECES",
+            "ACOLHIDA",
+            "BANDA"
+    );
 
     private static final Map<String, String> MEMBER_REPLACEMENT_PATHS = Map.of(
             "/members/{memberId}", "updateMemberProfile",
@@ -777,6 +792,422 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
     }
 
     @Test
+    @DisplayName("REQ-MISSA-002/008/016/020 and REQ-OPENAPI-003/004 - Missa operations -> exact tag and success contracts")
+    void missaOperationsShouldDocumentExactTagsStatusesAndLocation() {
+        Map<String, Object> paths = object(openApiContract().body(), "paths");
+        Map<String, Object> create = object(object(paths, "/missas"), "post");
+        Map<String, Object> get = object(object(paths, "/missas/{missaId}"), "get");
+        Map<String, Object> remove = object(
+                object(paths, "/missas/{missaId}/assignments/{responsibility}/members/{memberId}"),
+                "delete"
+        );
+        Map<String, Object> delete = object(object(paths, "/missas/{missaId}"), "delete");
+        SoftAssertions softly = new SoftAssertions();
+
+        List.of(create, remove, delete).forEach(operation -> softly.assertThat(operation.get("tags"))
+                .as(String.valueOf(operation.get("operationId")) + " tags")
+                .isEqualTo(List.of("Missas")));
+
+        Map<String, Object> createResponses = object(create, "responses");
+        softly.assertThat(createResponses).as("createMissa responses")
+                .containsOnlyKeys("201", "400", "401", "403", "404");
+        softly.assertThat(object(get, "responses")).as("getMissa responses")
+                .containsOnlyKeys("200", "400", "401", "403", "404");
+        Map<String, Object> created = object(createResponses, "201");
+        if (created != null) {
+            softly.assertThat(object(created, "headers"))
+                    .as("createMissa 201 headers")
+                    .containsKey("Location");
+        }
+
+        for (Map<String, Object> operation : List.of(remove, delete)) {
+            Map<String, Object> responses = object(operation, "responses");
+            softly.assertThat(responses)
+                    .as(String.valueOf(operation.get("operationId")) + " responses")
+                    .containsKey("204")
+                    .doesNotContainKey("200");
+            if (responses.containsKey("204")) {
+                softly.assertThat(object(responses, "204"))
+                        .as(String.valueOf(operation.get("operationId")) + " 204 response")
+                        .doesNotContainKey("content");
+            }
+        }
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-MISSA-002/003/006-010/013-016 and REQ-OPENAPI-003 - Missa descriptions -> consumer-usable permissions, visibility, lifecycle, side-effect, retry, and reason rules")
+    void missaOperationsShouldDocumentConsumerUsableBehavior() {
+        Map<String, Object> paths = object(openApiContract().body(), "paths");
+        SoftAssertions softly = new SoftAssertions();
+
+        assertOperationDescription(softly, paths, "/missas", "post",
+                "missa_create", "gamlocation", "audience", "without assignments", "event_create");
+        assertOperationDescription(softly, paths, "/missas/{missaId}", "get",
+                "missa_get", "audience", "visibility", "public", "404");
+        assertOperationDescription(softly, paths, "/missas/{missaId}", "put",
+                "missa_manage", "audience", "visibility", "scheduled", "completed", "locked",
+                "finalized", "cancelled", "reason", "event_manage");
+        assertOperationDescription(
+                softly,
+                paths,
+                "/missas/{missaId}/assignments/{responsibility}/members/{memberId}",
+                "put",
+                "missa_manage", "audience", "visibility", "presence", "create", "reuse", "atomic",
+                "idempotent", "scheduled", "completed", "locked", "finalized", "cancelled", "reason",
+                "presence_register"
+        );
+        assertOperationDescription(
+                softly,
+                paths,
+                "/missas/{missaId}/assignments/{responsibility}/members/{memberId}",
+                "delete",
+                "missa_manage", "audience", "visibility", "presence", "does not remove", "idempotent",
+                "scheduled", "completed", "locked", "finalized", "cancelled", "reason"
+        );
+        assertOperationDescription(softly, paths, "/missas/{missaId}/lock", "patch",
+                "missa_manage", "audience", "visibility", "completed", "locked", "no reason",
+                "event_manage");
+        assertOperationDescription(softly, paths, "/missas/{missaId}/finalize", "patch",
+                "missa_manage", "audience", "visibility", "completed", "locked", "finalized", "no reason",
+                "event_manage");
+        assertOperationDescription(softly, paths, "/missas/{missaId}/reopen", "patch",
+                "missa_manage", "audience", "visibility", "locked", "finalized", "completed", "reason",
+                "event_manage");
+        assertOperationDescription(softly, paths, "/missas/{missaId}/cancel", "patch",
+                "missa_manage", "audience", "visibility", "scheduled", "cancelled", "reason",
+                "assignments", "presences", "event_manage");
+        assertOperationDescription(softly, paths, "/missas/{missaId}", "delete",
+                "missa_manage", "audience", "visibility", "scheduled", "completed", "cancelled",
+                "active presence", "reason", "locked", "finalized", "reopen");
+
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-MISSA-002/004/009/011/014 and REQ-OPENAPI-004 - Missa schemas -> exact required, nullable, and enum semantics")
+    void missaSchemasShouldDocumentExactRequiredNullableAndEnumSemantics() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> schemas = object(object(contract, "components"), "schemas");
+        Map<String, Object> create = object(schemas, "CreateMissaDTO");
+        Map<String, Object> createProperties = object(create, "properties");
+        Map<String, Object> replacement = object(schemas, "ReplaceMissaDTO");
+        Map<String, Object> replacementProperties = object(replacement, "properties");
+        Map<String, Object> reopen = object(schemas, "ReopenDTO");
+        Map<String, Object> reopenProperties = object(reopen, "properties");
+        Map<String, Object> detail = object(schemas, "MissaRDTO");
+        Map<String, Object> detailProperties = object(detail, "properties");
+        Map<String, Object> responsibility = object(schemas, "ResponsibilityRDTO");
+        Map<String, Object> assignedMember = object(schemas, "AssignedMemberRDTO");
+        SoftAssertions softly = new SoftAssertions();
+
+        softly.assertThat(strings(create, "required"))
+                .as("CreateMissaDTO required fields")
+                .containsExactlyInAnyOrder("title", "gamLocationId", "beginDate", "endDate");
+        softly.assertThat(object(createProperties, "description").get("type"))
+                .as("CreateMissaDTO.description nullability")
+                .isEqualTo(List.of("string", "null"));
+        softly.assertThat(object(createProperties, "requiredPermissionId").get("type"))
+                .as("CreateMissaDTO.requiredPermissionId nullability")
+                .isEqualTo(List.of("string", "null"));
+        softly.assertThat(object(createProperties, "title"))
+                .containsEntry("minLength", 1)
+                .containsEntry("maxLength", 255);
+        softly.assertThat(object(createProperties, "description"))
+                .containsEntry("maxLength", 10_000);
+
+        softly.assertThat(strings(replacement, "required"))
+                .as("ReplaceMissaDTO required fields")
+                .containsExactlyInAnyOrder("title", "gamLocationId", "beginDate", "endDate");
+        softly.assertThat(object(replacementProperties, "description").get("type"))
+                .as("ReplaceMissaDTO.description explicit-null support")
+                .isEqualTo(List.of("string", "null"));
+        softly.assertThat(object(replacementProperties, "requiredPermissionId").get("type"))
+                .as("ReplaceMissaDTO.requiredPermissionId explicit-null support")
+                .isEqualTo(List.of("string", "null"));
+
+        softly.assertThat(strings(reopen, "required"))
+                .as("ReopenDTO required fields")
+                .containsExactlyInAnyOrder("targetStatus", "reason");
+        softly.assertThat(resolveSchema(contract, object(reopenProperties, "targetStatus")).get("enum"))
+                .as("supported Missa reopen targets")
+                .isEqualTo(List.of("COMPLETED", "LOCKED"));
+        softly.assertThat(object(reopenProperties, "reason"))
+                .containsEntry("minLength", 1)
+                .doesNotContainKey("maxLength");
+
+        softly.assertThat(strings(detail, "required"))
+                .as("MissaRDTO required fields")
+                .containsExactlyInAnyOrder("id", "event", "assignments");
+        softly.assertThat(schemaProperties(
+                contract,
+                object(detailProperties, "event"),
+                "type",
+                new HashSet<>()
+        )).as("MissaRDTO.event immutable MISSA type constraint")
+                .anyMatch(this::isMissaOnlySchema);
+        softly.assertThat(object(detailProperties, "assignments"))
+                .as("MissaRDTO exact seven-entry assignment catalog")
+                .containsEntry("minItems", MISSA_RESPONSIBILITIES.size())
+                .containsEntry("maxItems", MISSA_RESPONSIBILITIES.size());
+        softly.assertThat(strings(responsibility, "required"))
+                .as("ResponsibilityRDTO required fields")
+                .containsExactlyInAnyOrder("responsibility", "members");
+        softly.assertThat(strings(assignedMember, "required"))
+                .as("AssignedMemberRDTO required fields")
+                .containsExactlyInAnyOrder("id", "firstName", "surname", "status");
+        softly.assertThat(resolveSchema(
+                contract,
+                object(object(responsibility, "properties"), "responsibility")
+        ).get("enum"))
+                .as("closed ordered responsibility catalog")
+                .isEqualTo(MISSA_RESPONSIBILITIES);
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-EVENT-002, REQ-MISSA-011 and REQ-OPENAPI-004 - embedded Event -> complete required and nullable common representation")
+    void missaEmbeddedEventShouldDocumentTheCompleteCommonRepresentation() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> schemas = object(object(contract, "components"), "schemas");
+        Map<String, Object> event = object(schemas, "EventRDTO");
+        Map<String, Object> properties = object(event, "properties");
+        SoftAssertions softly = new SoftAssertions();
+
+        softly.assertThat(strings(event, "required"))
+                .as("EventRDTO required common representation")
+                .containsExactlyInAnyOrder(
+                        "id",
+                        "title",
+                        "description",
+                        "gamLocation",
+                        "requiredPermission",
+                        "beginDate",
+                        "endDate",
+                        "type",
+                        "status",
+                        "cancellationReason"
+                );
+        softly.assertThat(schemaAllowsNull(
+                contract,
+                object(properties, "requiredPermission"),
+                new HashSet<>()
+        )).as("EventRDTO.requiredPermission nullability").isTrue();
+        softly.assertThat(schemaAllowsNull(
+                contract,
+                object(properties, "cancellationReason"),
+                new HashSet<>()
+        )).as("EventRDTO.cancellationReason nullability").isTrue();
+
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-MISSA-004/011 and REQ-OPENAPI-004 - assignment schema -> exact ordered catalog and responsibility cardinality")
+    void missaAssignmentSchemaShouldExpressTheClosedOrderedCatalogAndCardinality() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> schemas = object(object(contract, "components"), "schemas");
+        Map<String, Object> detail = object(schemas, "MissaRDTO");
+        Map<String, Object> assignments = object(object(detail, "properties"), "assignments");
+        Object prefixValue = assignments.get("prefixItems");
+        SoftAssertions softly = new SoftAssertions();
+
+        softly.assertThat(assignments)
+                .as("MissaRDTO exact assignment tuple length")
+                .containsEntry("minItems", MISSA_RESPONSIBILITIES.size())
+                .containsEntry("maxItems", MISSA_RESPONSIBILITIES.size());
+        softly.assertThat(prefixValue)
+                .as("MissaRDTO ordered responsibility tuple")
+                .isInstanceOf(List.class);
+
+        if (prefixValue instanceof List<?> prefixItems) {
+            softly.assertThat(prefixItems)
+                    .as("one assignment schema per fixed responsibility")
+                    .hasSize(MISSA_RESPONSIBILITIES.size());
+            for (int index = 0; index < Math.min(prefixItems.size(), MISSA_RESPONSIBILITIES.size()); index++) {
+                Object prefixItem = prefixItems.get(index);
+                String responsibility = MISSA_RESPONSIBILITIES.get(index);
+                softly.assertThat(prefixItem)
+                        .as("%s tuple entry schema", responsibility)
+                        .isInstanceOf(Map.class);
+                if (!(prefixItem instanceof Map<?, ?> candidate)) {
+                    continue;
+                }
+
+                @SuppressWarnings("unchecked")
+                Map<String, Object> itemSchema = (Map<String, Object>) candidate;
+                List<Map<String, Object>> responsibilitySchemas = schemaProperties(
+                        contract,
+                        itemSchema,
+                        "responsibility",
+                        new HashSet<>()
+                );
+                softly.assertThat(responsibilitySchemas)
+                        .as("%s exact responsibility constraint", responsibility)
+                        .anyMatch(schema -> isExactResponsibilitySchema(schema, responsibility));
+
+                List<Map<String, Object>> memberSchemas = schemaProperties(
+                        contract,
+                        itemSchema,
+                        "members",
+                        new HashSet<>()
+                );
+                softly.assertThat(memberSchemas)
+                        .as("%s members schema", responsibility)
+                        .isNotEmpty();
+                if (index < 5) {
+                    softly.assertThat(memberSchemas)
+                            .as("%s singleton capacity", responsibility)
+                            .anyMatch(this::hasMaximumOneMember);
+                } else {
+                    softly.assertThat(memberSchemas)
+                            .as("%s unbounded capacity", responsibility)
+                            .noneMatch(schema -> schema.containsKey("maxItems"));
+                }
+            }
+        }
+
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-MISSA-005/006/009/016/019 and REQ-OPENAPI-004 - Missa conflicts -> operation-specific codes and safe details")
+    void missaOperationsShouldDocumentOperationSpecificConflicts() {
+        Map<String, Object> paths = object(openApiContract().body(), "paths");
+        SoftAssertions softly = new SoftAssertions();
+
+        assertConflictExamples(softly, paths, "/missas/{missaId}", "put", Map.of(
+                "EVENT_STATUS_TRANSITION_NOT_ALLOWED", Set.of("eventId", "currentStatus", "requestedStatus")
+        ));
+        assertConflictExamples(
+                softly,
+                paths,
+                "/missas/{missaId}/assignments/{responsibility}/members/{memberId}",
+                "put",
+                Map.of(
+                        "MISSA_RESPONSIBILITY_ALREADY_ASSIGNED",
+                        Set.of("missaId", "responsibility", "currentMemberId"),
+                        "MISSA_MEMBER_NOT_ACTIVE",
+                        Set.of("missaId", "memberId", "status"),
+                        "MISSA_ASSIGNMENT_NOT_ALLOWED",
+                        Set.of("missaId", "responsibility", "status", "evaluationInstant")
+                )
+        );
+        assertConflictExamples(
+                softly,
+                paths,
+                "/missas/{missaId}/assignments/{responsibility}/members/{memberId}",
+                "delete",
+                Map.of(
+                        "MISSA_ASSIGNMENT_NOT_ALLOWED",
+                        Set.of("missaId", "responsibility", "status", "evaluationInstant")
+                )
+        );
+        for (String command : List.of("lock", "finalize", "reopen", "cancel")) {
+            assertConflictExamples(softly, paths, "/missas/{missaId}/" + command, "patch", Map.of(
+                    "EVENT_STATUS_TRANSITION_NOT_ALLOWED", Set.of("eventId", "currentStatus", "requestedStatus")
+            ));
+        }
+        assertConflictExamples(softly, paths, "/missas/{missaId}", "delete", Map.of(
+                "EVENT_HAS_PRESENCES", Set.of("eventId", "activePresenceCount"),
+                "EVENT_STATUS_TRANSITION_NOT_ALLOWED", Set.of("eventId", "currentStatus", "requestedStatus")
+        ));
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-MISSA-002/011/013 and REQ-OPENAPI-004 - Missa examples -> endDate strictly after beginDate")
+    void missaRequestAndResponseExamplesShouldUseValidChronology() {
+        Map<String, Object> paths = object(openApiContract().body(), "paths");
+        SoftAssertions softly = new SoftAssertions();
+
+        assertTemporalExamples(softly, requestExamples(
+                object(object(paths, "/missas"), "post")
+        ), "createMissa request");
+        assertTemporalExamples(softly, requestExamples(
+                object(object(paths, "/missas/{missaId}"), "put")
+        ), "replaceMissa request");
+
+        for (List<String> operation : List.of(
+                List.of("/missas", "post", "201"),
+                List.of("/missas/{missaId}", "get", "200"),
+                List.of("/missas/{missaId}", "put", "200"),
+                List.of("/missas/{missaId}/assignments/{responsibility}/members/{memberId}", "put", "200"),
+                List.of("/missas/{missaId}/lock", "patch", "200"),
+                List.of("/missas/{missaId}/finalize", "patch", "200"),
+                List.of("/missas/{missaId}/reopen", "patch", "200"),
+                List.of("/missas/{missaId}/cancel", "patch", "200")
+        )) {
+            Map<String, Object> endpoint = object(object(paths, operation.get(0)), operation.get(1));
+            Map<String, Object> response = object(object(endpoint, "responses"), operation.get(2));
+            assertTemporalExamples(
+                    softly,
+                    responseExamples(response),
+                    endpoint.get("operationId") + " response"
+            );
+        }
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-MISSA-001/002/004/011 and REQ-OPENAPI-004 - Missa response examples -> immutable type and complete ordered assignment catalog")
+    void missaResponseExamplesShouldShowTheSpecializedContract() {
+        Map<String, Object> paths = object(openApiContract().body(), "paths");
+        SoftAssertions softly = new SoftAssertions();
+
+        for (List<String> operation : List.of(
+                List.of("/missas", "post", "201"),
+                List.of("/missas/{missaId}", "get", "200"),
+                List.of("/missas/{missaId}", "put", "200"),
+                List.of("/missas/{missaId}/assignments/{responsibility}/members/{memberId}", "put", "200"),
+                List.of("/missas/{missaId}/lock", "patch", "200"),
+                List.of("/missas/{missaId}/finalize", "patch", "200"),
+                List.of("/missas/{missaId}/reopen", "patch", "200"),
+                List.of("/missas/{missaId}/cancel", "patch", "200")
+        )) {
+            Map<String, Object> endpoint = object(object(paths, operation.get(0)), operation.get(1));
+            Map<String, Object> response = object(object(endpoint, "responses"), operation.get(2));
+            List<Map<String, Object>> examples = responseExamples(response);
+            String operationId = String.valueOf(endpoint.get("operationId"));
+
+            softly.assertThat(examples).as(operationId + " specialized examples").isNotEmpty();
+            examples.forEach(example -> assertMissaExample(
+                    softly,
+                    example,
+                    operationId,
+                    "createMissa".equals(operationId)
+            ));
+        }
+        softly.assertAll();
+    }
+
+    @Test
+    @DisplayName("REQ-PRESENCE-018 and REQ-OPENAPI-003/004 - Presence removal assignment conflict -> exact code and non-disclosing details")
+    void presenceRemovalShouldDocumentMissaAssignmentDependencyConflict() {
+        Map<String, Object> contract = openApiContract().body();
+        Map<String, Object> paths = object(contract, "paths");
+        Map<String, Object> removal = object(
+                object(paths, "/events/{eventId}/presences/{memberId}"),
+                "delete"
+        );
+        Map<String, Object> conflict = object(object(removal, "responses"), "409");
+        Map<String, Object> dependency = responseExamples(conflict).stream()
+                .filter(example -> "MISSA_ASSIGNMENT_REQUIRES_PRESENCE".equals(example.get("code")))
+                .findFirst()
+                .orElse(null);
+
+        assertThat(dependency)
+                .as("Presence-removal MISSA_ASSIGNMENT_REQUIRES_PRESENCE example")
+                .isNotNull();
+        if (dependency != null) {
+            assertThat(dependency).containsEntry("status", 409);
+            assertThat(object(dependency, "details"))
+                    .as("MISSA_ASSIGNMENT_REQUIRES_PRESENCE safe details")
+                    .containsOnlyKeys("missaId", "memberId");
+        }
+    }
+
+    @Test
     @DisplayName("REQ-OPENAPI-013 - backend-local Swagger UI -> available at /docs")
     void swaggerUiShouldBeAvailableWithoutAuthentication() {
         assertHtmlEndpointAvailable("/docs");
@@ -1145,6 +1576,270 @@ class OpenApiDocumentationApiIT extends AbstractOpenApiDocumentationApiIT {
         assertThat(schema).containsEntry("type", "object").containsEntry("additionalProperties", false);
         assertThat(object(schema, "properties")).containsOnlyKeys(keys.toArray(String[]::new));
         assertThat(strings(schema, "required")).containsExactlyInAnyOrderElementsOf(keys);
+    }
+
+    private void assertOperationDescription(
+            SoftAssertions softly,
+            Map<String, Object> paths,
+            String path,
+            String method,
+            String... requiredFragments
+    ) {
+        Map<String, Object> operation = object(object(paths, path), method);
+        String operationId = String.valueOf(operation.get("operationId"));
+        String description = String.valueOf(operation.get("description")).toLowerCase(Locale.ROOT);
+
+        softly.assertThat(description)
+                .as(operationId + " consumer description")
+                .doesNotContain("performs the documented gam operation")
+                .contains(requiredFragments);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> responseExamples(Map<String, Object> response) {
+        Map<String, Object> content = response == null ? null : object(response, "content");
+        Map<String, Object> mediaType = content == null ? null : object(content, "application/json");
+        if (mediaType == null && content != null) {
+            mediaType = object(content, "*/*");
+        }
+        return mediaExamples(mediaType);
+    }
+
+    private List<Map<String, Object>> requestExamples(Map<String, Object> operation) {
+        Map<String, Object> mediaType = object(
+                object(object(operation, "requestBody"), "content"),
+                "application/json"
+        );
+        return mediaExamples(mediaType);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> mediaExamples(Map<String, Object> mediaType) {
+        List<Map<String, Object>> examples = new ArrayList<>();
+        if (mediaType == null) {
+            return examples;
+        }
+
+        Map<String, Object> singleExample = object(mediaType, "example");
+        if (singleExample != null) {
+            examples.add(singleExample);
+        }
+
+        Map<String, Object> namedExamples = object(mediaType, "examples");
+        if (namedExamples != null) {
+            namedExamples.values().forEach(candidate -> {
+                Map<String, Object> wrapper = (Map<String, Object>) candidate;
+                Map<String, Object> value = object(wrapper, "value");
+                examples.add(value == null ? wrapper : value);
+            });
+        }
+        return examples;
+    }
+
+    private void assertConflictExamples(
+            SoftAssertions softly,
+            Map<String, Object> paths,
+            String path,
+            String method,
+            Map<String, Set<String>> expectedDetails
+    ) {
+        Map<String, Object> operation = object(object(paths, path), method);
+        Map<String, Object> conflict = object(object(operation, "responses"), "409");
+        Map<String, Map<String, Object>> examplesByCode = new LinkedHashMap<>();
+        responseExamples(conflict).forEach(example -> examplesByCode.put(String.valueOf(example.get("code")), example));
+
+        softly.assertThat(examplesByCode.keySet())
+                .as(operation.get("operationId") + " distinct 409 codes")
+                .containsExactlyInAnyOrderElementsOf(expectedDetails.keySet());
+        expectedDetails.forEach((code, detailKeys) -> {
+            Map<String, Object> example = examplesByCode.get(code);
+            softly.assertThat(example)
+                    .as(operation.get("operationId") + " " + code + " example")
+                    .isNotNull();
+            if (example != null) {
+                softly.assertThat(example).containsEntry("status", 409);
+                softly.assertThat(object(example, "details"))
+                        .as(operation.get("operationId") + " " + code + " details")
+                        .containsOnlyKeys(detailKeys.toArray(String[]::new));
+            }
+        });
+    }
+
+    private void assertTemporalExamples(
+            SoftAssertions softly,
+            List<Map<String, Object>> examples,
+            String label
+    ) {
+        softly.assertThat(examples).as(label + " examples").isNotEmpty();
+        for (Map<String, Object> example : examples) {
+            List<Map<String, Object>> temporalValues = new ArrayList<>();
+            collectTemporalValues(example, temporalValues);
+            softly.assertThat(temporalValues).as(label + " temporal values").isNotEmpty();
+            temporalValues.forEach(values -> softly.assertThat(Instant.parse(String.valueOf(values.get("endDate"))))
+                    .as(label + " endDate")
+                    .isAfter(Instant.parse(String.valueOf(values.get("beginDate")))));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> schemaProperties(
+            Map<String, Object> contract,
+            Map<String, Object> schema,
+            String propertyName,
+            Set<String> visitedReferences
+    ) {
+        if (schema == null) {
+            return List.of();
+        }
+        List<Map<String, Object>> matches = new ArrayList<>();
+        Object reference = schema.get("$ref");
+        if (reference != null && visitedReferences.add(reference.toString())) {
+            matches.addAll(schemaProperties(
+                    contract,
+                    resolveSchema(contract, schema),
+                    propertyName,
+                    visitedReferences
+            ));
+        }
+        Map<String, Object> properties = object(schema, "properties");
+        if (properties != null && properties.get(propertyName) instanceof Map<?, ?> property) {
+            matches.add((Map<String, Object>) property);
+        }
+        for (String composition : List.of("allOf", "anyOf", "oneOf")) {
+            Object alternatives = schema.get(composition);
+            if (alternatives instanceof List<?> schemas) {
+                schemas.stream()
+                        .filter(Map.class::isInstance)
+                        .map(candidate -> (Map<String, Object>) candidate)
+                        .forEach(candidate -> matches.addAll(schemaProperties(
+                                contract,
+                                candidate,
+                                propertyName,
+                                visitedReferences
+                        )));
+            }
+        }
+        return matches;
+    }
+
+    private boolean isMissaOnlySchema(Map<String, Object> schema) {
+        return "MISSA".equals(schema.get("const"))
+                || List.of("MISSA").equals(strings(schema, "enum"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertMissaExample(
+            SoftAssertions softly,
+            Map<String, Object> example,
+            String operationId,
+            boolean creation
+    ) {
+        Map<String, Object> event = object(example, "event");
+        softly.assertThat(event).as(operationId + " Event example").isNotNull();
+        if (event != null) {
+            softly.assertThat(event).as(operationId + " immutable Event type").containsEntry("type", "MISSA");
+            if (!"CANCELLED".equals(event.get("status"))) {
+                softly.assertThat(event)
+                        .as(operationId + " non-cancelled Event example")
+                        .containsEntry("cancellationReason", null);
+            }
+        }
+
+        Object assignmentValue = example.get("assignments");
+        softly.assertThat(assignmentValue).as(operationId + " assignment catalog").isInstanceOf(List.class);
+        if (!(assignmentValue instanceof List<?> assignments)) {
+            return;
+        }
+        List<Map<String, Object>> entries = assignments.stream()
+                .filter(Map.class::isInstance)
+                .map(entry -> (Map<String, Object>) entry)
+                .toList();
+        softly.assertThat(entries.stream().map(entry -> String.valueOf(entry.get("responsibility"))).toList())
+                .as(operationId + " ordered assignment responsibilities")
+                .containsExactlyElementsOf(MISSA_RESPONSIBILITIES);
+        softly.assertThat(entries).as(operationId + " seven assignment entries").hasSize(MISSA_RESPONSIBILITIES.size());
+        softly.assertThat(entries).allSatisfy(entry -> softly.assertThat(entry.get("members"))
+                .as(operationId + " " + entry.get("responsibility") + " members")
+                .isInstanceOf(List.class));
+        if (creation) {
+            softly.assertThat(entries).allSatisfy(entry -> softly.assertThat((List<?>) entry.get("members"))
+                    .as("createMissa " + entry.get("responsibility") + " members")
+                    .isEmpty());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void collectTemporalValues(Object node, List<Map<String, Object>> temporalValues) {
+        if (node instanceof Map<?, ?> candidate) {
+            Map<String, Object> values = (Map<String, Object>) candidate;
+            if (values.containsKey("beginDate") || values.containsKey("endDate")) {
+                assertThat(values).containsKeys("beginDate", "endDate");
+                temporalValues.add(values);
+            }
+            values.values().forEach(value -> collectTemporalValues(value, temporalValues));
+        } else if (node instanceof List<?> values) {
+            values.forEach(value -> collectTemporalValues(value, temporalValues));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean schemaAllowsNull(
+            Map<String, Object> contract,
+            Map<String, Object> schema,
+            Set<String> visitedReferences
+    ) {
+        if (schema == null) {
+            return false;
+        }
+        Object type = schema.get("type");
+        boolean allowsNull = type == null
+                || "null".equals(type)
+                || type instanceof List<?> types && types.contains("null");
+        if (schema.containsKey("const")) {
+            allowsNull &= schema.get("const") == null;
+        }
+        if (schema.get("enum") instanceof List<?> values) {
+            allowsNull &= values.contains(null);
+        }
+        Object reference = schema.get("$ref");
+        if (reference != null && visitedReferences.add(reference.toString())) {
+            allowsNull &= schemaAllowsNull(contract, resolveSchema(contract, schema), visitedReferences);
+        }
+        for (String composition : List.of("anyOf", "oneOf")) {
+            Object alternatives = schema.get(composition);
+            if (alternatives instanceof List<?> candidates) {
+                allowsNull &= candidates.stream()
+                        .filter(Map.class::isInstance)
+                        .map(candidate -> (Map<String, Object>) candidate)
+                        .anyMatch(candidate -> schemaAllowsNull(
+                                contract,
+                                candidate,
+                                new HashSet<>(visitedReferences)
+                        ));
+            }
+        }
+        Object allOf = schema.get("allOf");
+        if (allOf instanceof List<?> candidates) {
+            allowsNull &= !candidates.isEmpty()
+                    && candidates.stream()
+                    .filter(Map.class::isInstance)
+                    .map(candidate -> (Map<String, Object>) candidate)
+                    .allMatch(candidate -> schemaAllowsNull(
+                            contract,
+                            candidate,
+                            new HashSet<>(visitedReferences)
+                    ));
+        }
+        return allowsNull;
+    }
+
+    private boolean isExactResponsibilitySchema(Map<String, Object> schema, String responsibility) {
+        return responsibility.equals(schema.get("const"))
+                || List.of(responsibility).equals(strings(schema, "enum"));
+    }
+
+    private boolean hasMaximumOneMember(Map<String, Object> schema) {
+        return schema.get("maxItems") instanceof Number maximum && maximum.intValue() == 1;
     }
 
     private void assertNormalizedObservationsSchema(Map<String, Object> observations) {
