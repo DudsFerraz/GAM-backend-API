@@ -304,6 +304,9 @@
 				<version>0.8.15</version>
 				<executions>
 					<execution>
+						<configuration>
+							<append>false</append>
+						</configuration>
 						<goals>
 							<goal>prepare-agent</goal>
 						</goals>
