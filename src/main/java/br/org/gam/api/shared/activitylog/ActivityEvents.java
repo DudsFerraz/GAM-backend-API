@@ -23,6 +23,8 @@ import br.org.gam.api.shared.activitylog.events.PresenceUpdatedActivity;
 import br.org.gam.api.shared.activitylog.events.GamLocationCreatedActivity;
 import br.org.gam.api.shared.activitylog.events.GamLocationRemovedActivity;
 import br.org.gam.api.shared.activitylog.events.GamLocationUpdatedActivity;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -226,7 +228,9 @@ public class ActivityEvents {
                 targetId,
                 reason,
                 summary,
-                Map.copyOf(metadata)
+                metadata == null
+                        ? Map.of()
+                        : Collections.unmodifiableMap(new LinkedHashMap<>(metadata))
         ));
     }
 

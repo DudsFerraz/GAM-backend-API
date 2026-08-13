@@ -1,34 +1,28 @@
 package br.org.gam.api.event.missa.application.useCases;
 
-import br.org.gam.api.event.application.EventSecurity;
-import br.org.gam.api.event.application.EventEntityLoader;
-import br.org.gam.api.event.missa.application.MissaMapper;
-import br.org.gam.api.event.missa.application.MissaRDTO;
-import br.org.gam.api.event.missa.application.MissaEntityLoader;
+import br.org.gam.api.event.missa.application.MissaApiModels.MissaRDTO;
 import br.org.gam.api.event.missa.persistence.MissaEntity;
-import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.shared.exception.NotFoundException;
+import java.time.Instant;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class GetMissa {
-    private final MissaMapper missaMapper;
-    private final MissaEntityLoader getMissaInstance;
-    private final EventEntityLoader getEventInstance;
-    private final EventSecurity eventSecurity;
+    private final MissaUseCaseSupport support;
 
-    public GetMissa(MissaMapper missaMapper, MissaEntityLoader getMissaInstance, EventEntityLoader getEventInstance, EventSecurity eventSecurity) {
-        this.missaMapper = missaMapper;
-        this.getMissaInstance = getMissaInstance;
-        this.getEventInstance = getEventInstance;
-        this.eventSecurity = eventSecurity;
+    GetMissa(MissaUseCaseSupport support) {
+        this.support = support;
     }
-    public MissaRDTO byId(UUID id) {
-        EventEntity eventEntity = getEventInstance.requiredById(id);
-        if(!eventSecurity.canGetEvent(eventEntity)) throw NotFoundException.resource("Missa", id);
 
-        MissaEntity missaEntity = getMissaInstance.requiredById(id);
-        return missaMapper.entityToRDTO(missaEntity);
+    @Transactional(readOnly = true)
+    public MissaRDTO byId(UUID id) {
+        Instant evaluationInstant = support.clock.instant();
+        MissaEntity missa = support.required(id);
+        if (!support.eventSecurity.canGetEvent(missa.getEvent())) {
+            throw NotFoundException.resource("Missa", id);
+        }
+        return support.detail(missa, evaluationInstant);
     }
 }

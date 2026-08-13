@@ -29,4 +29,8 @@ public class ConflictException extends ApplicationException {
     public static ConflictException reason(String message) {
         return new ConflictException("RESOURCE_CONFLICT", message, null, null);
     }
+
+    public static ConflictException reason(String code, String message, Map<String, Object> details) {
+        return new ConflictException(code, message, null, null, details);
+    }
 }

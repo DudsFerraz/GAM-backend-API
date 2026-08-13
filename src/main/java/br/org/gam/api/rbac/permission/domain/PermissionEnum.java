@@ -43,6 +43,14 @@ public enum PermissionEnum {
     PRESENCE_EDIT(Code.PRESENCE_EDIT, "Edit presences", "Allows editing observations on Member attendance records"),
     PRESENCE_REMOVE(Code.PRESENCE_REMOVE, "Remove presences", "Allows removing mistaken Member attendance records"),
 
+    MISSA_GET(Code.MISSA_GET, "View Missas", "Allows viewing specialized Missa details"),
+    MISSA_CREATE(Code.MISSA_CREATE, "Create Missas", "Allows creating Missas"),
+    MISSA_MANAGE(
+            Code.MISSA_MANAGE,
+            "Manage Missas",
+            "Allows managing Missa details, assignments, lifecycle, and deletion"
+    ),
+
     ORATORIO_GET(Code.ORATORIO_GET, "View Oratorios", "Allows viewing specialized Oratorio details"),
     ORATORIO_CREATE(Code.ORATORIO_CREATE, "Create Oratorios", "Allows creating Oratorio occurrences"),
     ORATORIO_MANAGE(Code.ORATORIO_MANAGE, "Manage Oratorios", "Allows managing Oratorio planning and lifecycle"),
@@ -138,6 +146,10 @@ public enum PermissionEnum {
         public static final String PRESENCE_REGISTER = "PRESENCE_REGISTER";
         public static final String PRESENCE_EDIT = "PRESENCE_EDIT";
         public static final String PRESENCE_REMOVE = "PRESENCE_REMOVE";
+
+        public static final String MISSA_GET = "MISSA_GET";
+        public static final String MISSA_CREATE = "MISSA_CREATE";
+        public static final String MISSA_MANAGE = "MISSA_MANAGE";
 
         public static final String ORATORIO_GET = "ORATORIO_GET";
         public static final String ORATORIO_CREATE = "ORATORIO_CREATE";

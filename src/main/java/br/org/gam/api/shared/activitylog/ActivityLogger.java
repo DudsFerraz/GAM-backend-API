@@ -205,6 +205,9 @@ public class ActivityLogger {
             case MEMBERSHIP_SOLICITATION_SUBMITTED, MEMBERSHIP_SOLICITATION_APPROVED,
                  MEMBERSHIP_SOLICITATION_REJECTED -> ActivityTargetType.MEMBERSHIP_SOLICITATION;
             case PRESENCE_REGISTERED, PRESENCE_UPDATED, PRESENCE_REMOVED -> ActivityTargetType.PRESENCE;
+            case MISSA_CREATED, MISSA_UPDATED, MISSA_MEMBER_ASSIGNED, MISSA_MEMBER_REMOVED,
+                 MISSA_CANCELLED, MISSA_LOCKED, MISSA_FINALIZED, MISSA_REOPENED, MISSA_DELETED ->
+                    ActivityTargetType.MISSA;
             case ORATORIO_CREATED, ORATORIO_PLANNING_UPDATED, ORATORIO_TEAM_MEMBER_ASSIGNED,
                  ORATORIO_TEAM_MEMBER_REMOVED, ORATORIO_CANCELLED, ORATORIO_LOCKED,
                  ORATORIO_FINALIZED, ORATORIO_REOPENED, ORATORIO_DELETED,
@@ -227,11 +230,11 @@ public class ActivityLogger {
             String reason,
         Map<String, Object> metadata
     ) {
-        if (action == ActivityAction.EVENT_UPDATED) {
+        if (action == ActivityAction.EVENT_UPDATED || action == ActivityAction.MISSA_UPDATED) {
             boolean audienceChanged = contains(metadata.get("changedFields"), "requiredPermissionId");
             if (reason == null) {
                 if (audienceChanged) {
-                    throw new IllegalArgumentException("Activity action EVENT_UPDATED requires a reason.");
+                    throw new IllegalArgumentException("Activity action " + action + " requires a reason.");
                 }
                 return null;
             }
@@ -268,6 +271,7 @@ public class ActivityLogger {
         return switch (action) {
             case ACCOUNT_REGISTERED, EVENT_CREATED, EVENT_LOCKED, EVENT_FINALIZED,
                  GAM_LOCATION_CREATED, GAM_LOCATION_UPDATED, MEMBERSHIP_SOLICITATION_SUBMITTED,
+                 MISSA_CREATED, MISSA_LOCKED, MISSA_FINALIZED,
                  ORATORIO_CREATED, ORATORIO_LOCKED, ORATORIO_FINALIZED,
                  ORATORIO_MEMBER_ATTENDANCE_REGISTERED, ORATORIANO_ATTENDANCE_REGISTERED,
                  ORATORIANO_REGISTERED_AND_MARKED_PRESENT, ORATORIANO_REGISTERED,
@@ -285,6 +289,7 @@ public class ActivityLogger {
                  COORDINATOR_GRANTED, COORDINATOR_REVOKED,
                  ORATORIO_COORDINATOR_GRANTED, ORATORIO_COORDINATOR_REVOKED,
                  MEMBERSHIP_SOLICITATION_APPROVED, MEMBERSHIP_SOLICITATION_REJECTED,
+                 MISSA_CANCELLED, MISSA_REOPENED, MISSA_DELETED,
                  ORATORIO_CANCELLED, ORATORIO_REOPENED, ORATORIO_DELETED,
                  ORATORIANO_DELETED, ORATORIANO_RESTORED, ORATORIANO_FORM_DRAFT_DELETED,
                  ORATORIANO_FORM_REVOKED, PRESENCE_REMOVED, DEVELOPER_RESTORE_EXECUTED,
@@ -325,6 +330,17 @@ public class ActivityLogger {
                 requireType(normalized, "gamLocationId", UUID.class);
                 requireOptionalType(normalized, "requiredPermissionId", UUID.class);
             }
+            case MISSA_CREATED -> {
+                requireAllowedKeys(
+                        normalized,
+                        Set.of("type", "status", "gamLocationId", "requiredPermissionId"),
+                        Set.of("type", "status", "gamLocationId", "requiredPermissionId")
+                );
+                requireType(normalized, "type", String.class);
+                requireType(normalized, "status", String.class);
+                requireType(normalized, "gamLocationId", UUID.class);
+                requireOptionalType(normalized, "requiredPermissionId", UUID.class);
+            }
             case EVENT_UPDATED -> {
                 requireAllowedKeys(
                         normalized,
@@ -344,12 +360,58 @@ public class ActivityLogger {
                     requireType(normalized, "toStatus", String.class);
                 }
             }
+            case MISSA_UPDATED -> {
+                requireAllowedKeys(
+                        normalized,
+                        Set.of("changedFields", "fromStatus", "toStatus"),
+                        Set.of("changedFields")
+                );
+                requireStableEventChangedFields(normalized.get("changedFields"));
+                boolean hasFromStatus = normalized.containsKey("fromStatus");
+                boolean hasToStatus = normalized.containsKey("toStatus");
+                if (hasFromStatus != hasToStatus) {
+                    throw new IllegalArgumentException(
+                            "MISSA_UPDATED status metadata requires both fromStatus and toStatus."
+                    );
+                }
+                if (hasFromStatus) {
+                    requireType(normalized, "fromStatus", String.class);
+                    requireType(normalized, "toStatus", String.class);
+                }
+            }
             case EVENT_CANCELLED, EVENT_LOCKED, EVENT_FINALIZED, EVENT_REOPENED -> {
                 requireExactKeys(normalized, Set.of("fromStatus", "toStatus"));
                 requireType(normalized, "fromStatus", String.class);
                 requireType(normalized, "toStatus", String.class);
             }
             case EVENT_DELETED -> {
+                requireExactKeys(normalized, Set.of("type", "fromStatus", "gamLocationId"));
+                requireType(normalized, "type", String.class);
+                requireType(normalized, "fromStatus", String.class);
+                requireType(normalized, "gamLocationId", UUID.class);
+            }
+            case MISSA_MEMBER_ASSIGNED -> {
+                requireExactKeys(
+                        normalized,
+                        Set.of("responsibility", "memberId", "presenceId", "presenceCreated")
+                );
+                requireType(normalized, "responsibility", String.class);
+                requireType(normalized, "memberId", UUID.class);
+                requireType(normalized, "presenceId", UUID.class);
+                requireType(normalized, "presenceCreated", Boolean.class);
+            }
+            case MISSA_MEMBER_REMOVED -> {
+                requireExactKeys(normalized, Set.of("responsibility", "memberId", "presenceId"));
+                requireType(normalized, "responsibility", String.class);
+                requireType(normalized, "memberId", UUID.class);
+                requireType(normalized, "presenceId", UUID.class);
+            }
+            case MISSA_CANCELLED, MISSA_LOCKED, MISSA_FINALIZED, MISSA_REOPENED -> {
+                requireExactKeys(normalized, Set.of("fromStatus", "toStatus"));
+                requireType(normalized, "fromStatus", String.class);
+                requireType(normalized, "toStatus", String.class);
+            }
+            case MISSA_DELETED -> {
                 requireExactKeys(normalized, Set.of("type", "fromStatus", "gamLocationId"));
                 requireType(normalized, "type", String.class);
                 requireType(normalized, "fromStatus", String.class);

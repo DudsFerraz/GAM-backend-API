@@ -4,6 +4,7 @@ import br.org.gam.api.event.application.EventEntityLoader;
 import br.org.gam.api.event.application.EventSecurity;
 import br.org.gam.api.event.domain.Event;
 import br.org.gam.api.event.domain.EventStatus;
+import br.org.gam.api.event.domain.EventType;
 import br.org.gam.api.event.persistence.EventEntity;
 import br.org.gam.api.presence.application.PresenceMapper;
 import br.org.gam.api.presence.application.PresenceRDTO;
@@ -19,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,19 +31,22 @@ public class ManagePresence {
     private final PresenceRepository presenceRepository;
     private final PresenceMapper presenceMapper;
     private final ActivityEvents activityEvents;
+    private final JdbcTemplate jdbcTemplate;
 
     public ManagePresence(
             EventEntityLoader eventLoader,
             EventSecurity eventSecurity,
             PresenceRepository presenceRepository,
             PresenceMapper presenceMapper,
-            ActivityEvents activityEvents
+            ActivityEvents activityEvents,
+            JdbcTemplate jdbcTemplate
     ) {
         this.eventLoader = eventLoader;
         this.eventSecurity = eventSecurity;
         this.presenceRepository = presenceRepository;
         this.presenceMapper = presenceMapper;
         this.activityEvents = activityEvents;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @Transactional
@@ -80,6 +85,16 @@ public class ManagePresence {
                 memberId,
                 "PRESENCE_REMOVAL_NOT_ALLOWED"
         );
+
+        if (context.event().getType() == EventType.MISSA
+                && (context.status() == EventStatus.SCHEDULED || context.status() == EventStatus.COMPLETED)
+                && missaAssignmentExists(eventId, memberId)) {
+            throw ConflictException.reason(
+                    "MISSA_ASSIGNMENT_REQUIRES_PRESENCE",
+                    "The Member's Missa assignment requires this active Presence.",
+                    Map.of("missaId", eventId, "memberId", memberId)
+            );
+        }
 
         PresenceEntity presence = context.presence();
         presenceRepository.delete(presence);
@@ -124,7 +139,17 @@ public class ManagePresence {
             );
         }
 
-        return new MutationContext(presence, evaluationInstant);
+        return new MutationContext(presence, event, status, evaluationInstant);
+    }
+
+    private boolean missaAssignmentExists(UUID missaId, UUID memberId) {
+        Boolean exists = jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM missa_assignments WHERE missa_id = ? AND member_id = ?)",
+                Boolean.class,
+                missaId,
+                memberId
+        );
+        return Boolean.TRUE.equals(exists);
     }
 
     private String normalizeObservations(String observations) {
@@ -143,6 +168,11 @@ public class ManagePresence {
         return normalized;
     }
 
-    private record MutationContext(PresenceEntity presence, Instant evaluationInstant) {
+    private record MutationContext(
+            PresenceEntity presence,
+            EventEntity event,
+            EventStatus status,
+            Instant evaluationInstant
+    ) {
     }
 }

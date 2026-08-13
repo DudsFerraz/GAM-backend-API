@@ -67,6 +67,7 @@ public class OpenApiConfig {
             "registerOratoriano",
             "createOratorianoFormDraft",
             "createOratorianoFormPrintSnapshot"
+            , "createMissa"
     );
 
     private static final Set<String> NO_CONTENT_OPERATIONS = Set.of(
@@ -87,6 +88,7 @@ public class OpenApiConfig {
             "deleteOratorianoFormDraft",
             "completeOratorianoForm",
             "revokeOratorianoForm"
+            , "removeMissaMember", "deleteMissa"
     );
 
     private static final Set<String> PAGED_OPERATIONS = Set.of(
@@ -131,7 +133,10 @@ public class OpenApiConfig {
             "PRESENCE_ALREADY_REGISTERED",
             "PRESENCE_EDIT_NOT_ALLOWED",
             "PRESENCE_REGISTRATION_NOT_ALLOWED",
-            "PRESENCE_REMOVAL_NOT_ALLOWED"
+            "PRESENCE_REMOVAL_NOT_ALLOWED",
+            "MISSA_ASSIGNMENT_REQUIRES_PRESENCE"
+            , "MISSA_RESPONSIBILITY_ALREADY_ASSIGNED", "MISSA_MEMBER_NOT_ACTIVE",
+            "MISSA_ASSIGNMENT_NOT_ALLOWED"
     );
 
     private static final List<String> NULLABLE_FORM_DRAFT_OBJECT_SCHEMAS = List.of(
@@ -192,6 +197,7 @@ public class OpenApiConfig {
                     new Tag().name("Membership Solicitations"),
                     new Tag().name("Members"),
                     new Tag().name("Events"),
+                    new Tag().name("Missas"),
                     new Tag().name("Presences"),
                     new Tag().name("GamLocations"),
                     new Tag().name("RBAC"),
@@ -209,6 +215,8 @@ public class OpenApiConfig {
             requireCurrentAccountContextResponseFields(components);
             configureSharedSearchSchemas(components);
             configureMemberInformationSchemas(components);
+            configureEventResponseSchema(components);
+            configureMissaSchemas(components);
             configureNullableFormDraftObjectSchemas(components);
             configureNullableFormLifecycleSchemas(components);
             components.getSchemas().remove("Pageable");
@@ -249,6 +257,102 @@ public class OpenApiConfig {
                 makeSchemaNullable(schema.getProperties().get(propertyName));
             }
         }
+    }
+
+    private void configureMissaSchemas(Components components) {
+        Schema<?> create = components.getSchemas().get("CreateMissaDTO");
+        if (create != null && create.getProperties() != null) {
+            makeSchemaNullable(create.getProperties().get("description"));
+            makeSchemaNullable(create.getProperties().get("requiredPermissionId"));
+        }
+        Schema<?> replacement = components.getSchemas().get("ReplaceMissaDTO");
+        if (replacement != null && replacement.getProperties() != null) {
+            makeSchemaNullable(replacement.getProperties().get("description"));
+            makeSchemaNullable(replacement.getProperties().get("requiredPermissionId"));
+        }
+        Schema<?> reopen = components.getSchemas().get("ReopenDTO");
+        if (reopen != null && reopen.getProperties() != null) {
+            Schema<?> target = reopen.getProperties().get("targetStatus");
+            if (target != null) {
+                target.set$ref(null);
+                target.setType("string");
+                @SuppressWarnings("unchecked")
+                Schema<Object> typedTarget = (Schema<Object>) target;
+                typedTarget.setEnum(List.of("COMPLETED", "LOCKED"));
+            }
+            Schema<?> reason = reopen.getProperties().get("reason");
+            if (reason != null) {
+                reason.setMinLength(1);
+            }
+        }
+        Schema<?> missaDetail = components.getSchemas().get("MissaRDTO");
+        if (missaDetail != null && missaDetail.getProperties() != null) {
+            Schema<?> event = missaDetail.getProperties().get("event");
+            if (event != null) {
+                StringSchema missaType = new StringSchema();
+                missaType.setEnum(List.of("MISSA"));
+                Schema<Object> specializedEvent = new ObjectSchema();
+                specializedEvent.addProperty("type", missaType);
+                ComposedSchema constrainedEvent = new ComposedSchema();
+                constrainedEvent.setAllOf(List.of(event, specializedEvent));
+                missaDetail.getProperties().put("event", constrainedEvent);
+            }
+            Schema<?> assignments = missaDetail.getProperties().get("assignments");
+            if (assignments != null) {
+                assignments.setMinItems(7);
+                assignments.setMaxItems(7);
+                List<Schema> tuple = new ArrayList<>();
+                List<String> responsibilities = List.of(
+                        "COMENTARIOS", "PRIMEIRA_LEITURA", "SALMO", "SEGUNDA_LEITURA",
+                        "PRECES", "ACOLHIDA", "BANDA"
+                );
+                for (int index = 0; index < responsibilities.size(); index++) {
+                    StringSchema exactResponsibility = new StringSchema();
+                    exactResponsibility.setEnum(List.of(responsibilities.get(index)));
+                    ArraySchema members = new ArraySchema()
+                            .items(new Schema<>().$ref("#/components/schemas/AssignedMemberRDTO"));
+                    if (index < 5) {
+                        members.setMaxItems(1);
+                    }
+                    Schema<Object> constrainedEntry = new ObjectSchema()
+                            .addProperty("responsibility", exactResponsibility)
+                            .addProperty("members", members);
+                    constrainedEntry.setRequired(List.of("responsibility", "members"));
+                    ComposedSchema tupleEntry = new ComposedSchema();
+                    tupleEntry.setAllOf(List.of(
+                            new Schema<>().$ref("#/components/schemas/ResponsibilityRDTO"),
+                            constrainedEntry
+                    ));
+                    tuple.add(tupleEntry);
+                }
+                assignments.setPrefixItems(tuple);
+            }
+        }
+    }
+
+    private void configureEventResponseSchema(Components components) {
+        Schema<?> event = components.getSchemas().get("EventRDTO");
+        if (event == null || event.getProperties() == null) {
+            return;
+        }
+        event.setRequired(List.of(
+                "id", "title", "description", "gamLocation", "requiredPermission",
+                "beginDate", "endDate", "type", "status", "cancellationReason"
+        ));
+        Schema<?> requiredPermission = event.getProperties().get("requiredPermission");
+        if (requiredPermission != null && requiredPermission.get$ref() != null) {
+            Schema<Object> nullSchema = new Schema<>();
+            nullSchema.setType("null");
+            ComposedSchema nullablePermission = new ComposedSchema();
+            nullablePermission.setAnyOf(List.of(
+                    new Schema<>().$ref(requiredPermission.get$ref()),
+                    nullSchema
+            ));
+            event.getProperties().put("requiredPermission", nullablePermission);
+        } else {
+            makeSchemaNullable(requiredPermission);
+        }
+        makeSchemaNullable(event.getProperties().get("cancellationReason"));
     }
 
     private void makeSchemaNullable(Schema<?> schema) {
@@ -452,6 +556,43 @@ public class OpenApiConfig {
             case "registerEventPresence" ->
                     "Registers confirmed attendance for a Member. SCHEDULED and COMPLETED Events accept "
                             + "confirmed attendance without a clock-based time boundary.";
+            case "createMissa" ->
+                    "Requires MISSA_CREATE, an eligible GamLocation, and the selected audience authority when "
+                            + "restricted. Creates the Missa without assignments and does not require EVENT_CREATE.";
+            case "getMissa" ->
+                    "Requires MISSA_GET and exact audience visibility. A public Missa still requires MISSA_GET; "
+                            + "a missing, deleted, or audience-hidden Missa returns 404.";
+            case "replaceMissa" ->
+                    "Requires MISSA_MANAGE and current audience visibility, plus the newly selected audience "
+                            + "authority when restricted; EVENT_MANAGE is not required. SCHEDULED and COMPLETED "
+                            + "Missas allow replacement. LOCKED allows it only with an already-ended endDate; "
+                            + "FINALIZED and CANCELLED reject it. An audience change requires a reason.";
+            case "assignMissaMember" ->
+                    "Requires MISSA_MANAGE and exact audience visibility, not PRESENCE_REGISTER. In SCHEDULED or "
+                            + "COMPLETED, atomically creates or reuses the Member Presence and assignment; an exact "
+                            + "retry is idempotent. COMPLETED actual changes require a reason. LOCKED, FINALIZED, "
+                            + "and CANCELLED reject assignment changes.";
+            case "removeMissaMember" ->
+                    "Requires MISSA_MANAGE and exact audience visibility. In SCHEDULED or COMPLETED, removes only "
+                            + "the matching assignment and does not remove Presence; an absent pair is idempotent. "
+                            + "COMPLETED actual changes require a reason. LOCKED, FINALIZED, and CANCELLED reject "
+                            + "assignment changes.";
+            case "lockMissa" ->
+                    "Requires MISSA_MANAGE and exact audience visibility, not EVENT_MANAGE. Moves COMPLETED to "
+                            + "LOCKED and accepts no reason.";
+            case "finalizeMissa" ->
+                    "Requires MISSA_MANAGE and exact audience visibility, not EVENT_MANAGE. Moves COMPLETED or "
+                            + "LOCKED to FINALIZED and accepts no reason.";
+            case "reopenMissa" ->
+                    "Requires MISSA_MANAGE and exact audience visibility, not EVENT_MANAGE, with a required reason. "
+                            + "Reopens LOCKED to COMPLETED, or FINALIZED to LOCKED or COMPLETED.";
+            case "cancelMissa" ->
+                    "Requires MISSA_MANAGE and exact audience visibility, not EVENT_MANAGE, with a required reason. "
+                            + "Moves SCHEDULED to CANCELLED while preserving and freezing assignments and Presences.";
+            case "deleteMissa" ->
+                    "Requires MISSA_MANAGE, exact audience visibility, and a required reason. Deletes only a "
+                            + "SCHEDULED, COMPLETED, or CANCELLED Missa with no active Presence. LOCKED and FINALIZED "
+                            + "must reopen before deletion.";
             case "registerAndMarkOratorianoPresent" ->
                     "Atomically registers an Oratoriano and records confirmed attendance. SCHEDULED and "
                             + "COMPLETED occurrences accept confirmed attendance without a clock-based time boundary.";
@@ -588,6 +729,9 @@ public class OpenApiConfig {
         }
         if (path.startsWith("/members")) {
             return "Members";
+        }
+        if (path.startsWith("/missas")) {
+            return "Missas";
         }
         if (path.startsWith("/events")) {
             return "Events";
@@ -892,6 +1036,7 @@ public class OpenApiConfig {
         String resource = switch (operation.getOperationId()) {
             case "createGamLocation" -> "GamLocation";
             case "createOratorio" -> "Oratorio";
+            case "createMissa" -> "Missa";
             case "registerOratoriano" -> "Oratoriano";
             case "createOratorianoFormDraft" -> "Oratoriano form draft";
             default -> null;
@@ -1095,15 +1240,22 @@ public class OpenApiConfig {
                 notFoundResponse(operation)
         );
         ConflictDocumentation conflict = conflictDocumentation(operation.getOperationId());
-        operation.getResponses().putIfAbsent(
-                "409",
-                errorResponse(
-                        409,
-                        conflict.exampleCode(),
-                        conflict.description(),
-                        conflict.exampleDetails()
-                )
-        );
+        ApiResponse missaConflict = missaConflictResponse(operation.getOperationId());
+        if (missaConflict != null) {
+            operation.getResponses().put("409", missaConflict);
+        } else if ("removeEventPresence".equals(operation.getOperationId())) {
+            operation.getResponses().put("409", presenceRemovalConflictResponse());
+        } else {
+            operation.getResponses().putIfAbsent(
+                    "409",
+                    errorResponse(
+                            409,
+                            conflict.exampleCode(),
+                            conflict.description(),
+                            conflict.exampleDetails()
+                    )
+            );
+        }
         if (isMemberConditionalUpdate(operation.getOperationId())) {
             operation.getResponses().put("412", errorResponse(
                     412, "PRECONDITION_FAILED", "The supplied Member representation is stale."));
@@ -1112,6 +1264,9 @@ public class OpenApiConfig {
         }
         if ("listRoles".equals(operation.getOperationId())) {
             operation.getResponses().remove("404");
+            operation.getResponses().remove("409");
+        }
+        if (Set.of("createMissa", "getMissa").contains(operation.getOperationId())) {
             operation.getResponses().remove("409");
         }
         retainAcceptedAuthResponses(operation);
@@ -1592,6 +1747,33 @@ public class OpenApiConfig {
                     )
             );
         }
+        if ("assignMissaMember".equals(operationId)) {
+            return new ConflictDocumentation(
+                    "MISSA_RESPONSIBILITY_ALREADY_ASSIGNED",
+                    "Possible codes: MISSA_RESPONSIBILITY_ALREADY_ASSIGNED, MISSA_MEMBER_NOT_ACTIVE, "
+                            + "MISSA_ASSIGNMENT_NOT_ALLOWED. Details include missaId, memberId, responsibility, "
+                            + "currentMemberId, status, and evaluationInstant.",
+                    Map.of(
+                            "missaId", "019f6343-321a-7c90-a096-a551e8f88eb4",
+                            "memberId", "019f6343-321a-7c90-a096-a551e8f88eb5",
+                            "responsibility", "COMENTARIOS",
+                            "currentMemberId", "019f6343-321a-7c90-a096-a551e8f88eb6",
+                            "status", "SCHEDULED",
+                            "evaluationInstant", "2026-07-15T12:00:00Z"
+                    )
+            );
+        }
+        if ("deleteMissa".equals(operationId)) {
+            return new ConflictDocumentation(
+                    "EVENT_HAS_PRESENCES",
+                    "Possible codes: EVENT_HAS_PRESENCES, EVENT_STATUS_TRANSITION_NOT_ALLOWED. "
+                            + "Details include eventId and activePresenceCount.",
+                    Map.of(
+                            "eventId", "019f6343-321a-7c90-a096-a551e8f88eb4",
+                            "activePresenceCount", 2
+                    )
+            );
+        }
         if ("updateEventPresenceObservations".equals(operationId)) {
             return new ConflictDocumentation(
                     "PRESENCE_EDIT_NOT_ALLOWED",
@@ -1669,6 +1851,149 @@ public class OpenApiConfig {
         return errorResponse(status, code, description, Map.of());
     }
 
+    private ApiResponse presenceRemovalConflictResponse() {
+        MediaType mediaType = new MediaType()
+                .schema(new Schema<>().$ref("#/components/schemas/ApiErrorDTO"));
+        mediaType.addExamples(
+                "removalNotAllowed",
+                new Example().summary("Event lifecycle blocks Presence removal")
+                        .value(errorExample(
+                                409,
+                                "PRESENCE_REMOVAL_NOT_ALLOWED",
+                                "Presence removal is not allowed in the current Event lifecycle state.",
+                                Map.of(
+                                        "eventId", "019f6343-321a-7c90-a096-a551e8f88eb4",
+                                        "presenceId", "019f6343-321a-7c90-a096-a551e8f88eb6",
+                                        "status", "LOCKED"
+                                )
+                        ))
+        );
+        mediaType.addExamples(
+                "missaAssignmentRequiresPresence",
+                new Example().summary("Current Missa assignment depends on the Presence")
+                        .value(errorExample(
+                                409,
+                                "MISSA_ASSIGNMENT_REQUIRES_PRESENCE",
+                                "Remove the Member's current Missa assignments before removing the Presence.",
+                                Map.of(
+                                        "missaId", "019f6343-321a-7c90-a096-a551e8f88eb4",
+                                        "memberId", "019f6343-321a-7c90-a096-a551e8f88eb5"
+                                )
+                        ))
+        );
+        return errorTransport(
+                new ApiResponse()
+                        .description("Presence removal conflicts with Event lifecycle or a current Missa assignment.")
+                        .content(new Content().addMediaType("application/json", mediaType)),
+                false
+        );
+    }
+
+    private ApiResponse missaConflictResponse(String operationId) {
+        MediaType mediaType = new MediaType()
+                .schema(new Schema<>().$ref("#/components/schemas/ApiErrorDTO"));
+        switch (operationId) {
+            case "replaceMissa", "lockMissa", "finalizeMissa", "reopenMissa", "cancelMissa" ->
+                    addConflictExample(
+                            mediaType,
+                            "statusTransitionNotAllowed",
+                            "EVENT_STATUS_TRANSITION_NOT_ALLOWED",
+                            "The requested Missa status transition is not allowed.",
+                            Map.of(
+                                    "eventId", "019f6343-321a-7c90-a096-a551e8f88eb4",
+                                    "currentStatus", "FINALIZED",
+                                    "requestedStatus", "COMPLETED"
+                            )
+                    );
+            case "assignMissaMember" -> {
+                addConflictExample(
+                        mediaType,
+                        "responsibilityAlreadyAssigned",
+                        "MISSA_RESPONSIBILITY_ALREADY_ASSIGNED",
+                        "The Missa responsibility already has a Member.",
+                        Map.of(
+                                "missaId", "019f6343-321a-7c90-a096-a551e8f88eb4",
+                                "responsibility", "COMENTARIOS",
+                                "currentMemberId", "019f6343-321a-7c90-a096-a551e8f88eb6"
+                        )
+                );
+                addConflictExample(
+                        mediaType,
+                        "memberNotActive",
+                        "MISSA_MEMBER_NOT_ACTIVE",
+                        "Only an active Member may receive a new Missa assignment.",
+                        Map.of(
+                                "missaId", "019f6343-321a-7c90-a096-a551e8f88eb4",
+                                "memberId", "019f6343-321a-7c90-a096-a551e8f88eb5",
+                                "status", "INACTIVE"
+                        )
+                );
+                addAssignmentNotAllowedExample(mediaType);
+            }
+            case "removeMissaMember" -> addAssignmentNotAllowedExample(mediaType);
+            case "deleteMissa" -> {
+                addConflictExample(
+                        mediaType,
+                        "eventHasPresences",
+                        "EVENT_HAS_PRESENCES",
+                        "The Missa has active Presence records.",
+                        Map.of(
+                                "eventId", "019f6343-321a-7c90-a096-a551e8f88eb4",
+                                "activePresenceCount", 2
+                        )
+                );
+                addConflictExample(
+                        mediaType,
+                        "statusTransitionNotAllowed",
+                        "EVENT_STATUS_TRANSITION_NOT_ALLOWED",
+                        "The Missa must be reopened before deletion.",
+                        Map.of(
+                                "eventId", "019f6343-321a-7c90-a096-a551e8f88eb4",
+                                "currentStatus", "LOCKED",
+                                "requestedStatus", "LOCKED"
+                        )
+                );
+            }
+            default -> {
+                return null;
+            }
+        }
+        return errorTransport(
+                new ApiResponse()
+                        .description("The Missa operation conflicts with current resource state.")
+                        .content(new Content().addMediaType("application/json", mediaType)),
+                false
+        );
+    }
+
+    private void addAssignmentNotAllowedExample(MediaType mediaType) {
+        addConflictExample(
+                mediaType,
+                "assignmentNotAllowed",
+                "MISSA_ASSIGNMENT_NOT_ALLOWED",
+                "Missa assignments cannot change in the current lifecycle state.",
+                Map.of(
+                        "missaId", "019f6343-321a-7c90-a096-a551e8f88eb4",
+                        "responsibility", "COMENTARIOS",
+                        "status", "LOCKED",
+                        "evaluationInstant", "2026-07-15T12:00:00Z"
+                )
+        );
+    }
+
+    private void addConflictExample(
+            MediaType mediaType,
+            String name,
+            String code,
+            String message,
+            Map<String, Object> details
+    ) {
+        mediaType.addExamples(
+                name,
+                new Example().summary(message).value(errorExample(409, code, message, details))
+        );
+    }
+
     private ApiResponse errorResponse(int status, String code, String description, Map<String, Object> details) {
         return errorResponse(status, code, description, details, false);
     }
@@ -1727,6 +2052,75 @@ public class OpenApiConfig {
         addStructuredSearchRequestExample(operation);
         correctGamLocationMutationSuccessExample(operation);
         correctPrintSnapshotMetadataSuccessExample(operation);
+        correctMissaSuccessExample(operation);
+    }
+
+    private void correctMissaSuccessExample(io.swagger.v3.oas.models.Operation operation) {
+        String successStatus = switch (operation.getOperationId()) {
+            case "createMissa" -> "201";
+            case "getMissa", "replaceMissa", "assignMissaMember", "lockMissa", "finalizeMissa",
+                    "reopenMissa", "cancelMissa" -> "200";
+            default -> null;
+        };
+        if (successStatus == null) {
+            return;
+        }
+        ApiResponse response = operation.getResponses().get(successStatus);
+        if (response == null || response.getContent() == null) {
+            return;
+        }
+        boolean creation = "createMissa".equals(operation.getOperationId());
+        response.getContent().values().forEach(mediaType -> {
+            if (!(mediaType.getExample() instanceof Map<?, ?> generated)) {
+                return;
+            }
+            Map<String, Object> example = mutableStringKeyMap(generated);
+            if (example.get("event") instanceof Map<?, ?> generatedEvent) {
+                Map<String, Object> event = mutableStringKeyMap(generatedEvent);
+                event.put("type", "MISSA");
+                if ("cancelMissa".equals(operation.getOperationId())) {
+                    event.put("status", "CANCELLED");
+                    event.put("cancellationReason", "Synthetic cancellation reason");
+                } else {
+                    event.put("cancellationReason", null);
+                }
+                example.put("event", event);
+            }
+
+            Object assignedMember = firstMissaAssignedMember(example.get("assignments"));
+            List<Map<String, Object>> assignments = new ArrayList<>();
+            for (String responsibility : List.of(
+                    "COMENTARIOS", "PRIMEIRA_LEITURA", "SALMO", "SEGUNDA_LEITURA",
+                    "PRECES", "ACOLHIDA", "BANDA"
+            )) {
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("responsibility", responsibility);
+                entry.put("members", !creation && "COMENTARIOS".equals(responsibility)
+                        && assignedMember != null ? List.of(assignedMember) : List.of());
+                assignments.add(entry);
+            }
+            example.put("assignments", assignments);
+            mediaType.setExample(example);
+        });
+    }
+
+    private Object firstMissaAssignedMember(Object assignmentValue) {
+        if (!(assignmentValue instanceof List<?> assignments)) {
+            return null;
+        }
+        for (Object assignment : assignments) {
+            if (assignment instanceof Map<?, ?> entry && entry.get("members") instanceof List<?> members
+                    && !members.isEmpty()) {
+                return members.getFirst();
+            }
+        }
+        return null;
+    }
+
+    private Map<String, Object> mutableStringKeyMap(Map<?, ?> source) {
+        Map<String, Object> copy = new LinkedHashMap<>();
+        source.forEach((key, value) -> copy.put(String.valueOf(key), value));
+        return copy;
     }
 
     private void correctPrintSnapshotMetadataSuccessExample(
@@ -1900,6 +2294,12 @@ public class OpenApiConfig {
         String normalizedName = propertyName.toLowerCase();
         if ("byte".equals(schema.getFormat())) {
             return "U3ludGhldGljIEdBTSBiaW5hcnkgY29udGVudA==";
+        }
+        if ("begindate".equals(normalizedName)) {
+            return "2026-07-15T12:00:00Z";
+        }
+        if ("enddate".equals(normalizedName)) {
+            return "2026-07-15T13:00:00Z";
         }
         if ("date-time".equals(schema.getFormat()) || normalizedName.endsWith("at") || "timestamp".equals(normalizedName)) {
             return "2026-07-15T12:00:00Z";

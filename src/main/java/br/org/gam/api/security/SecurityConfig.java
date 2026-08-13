@@ -194,6 +194,30 @@ public class SecurityConfig {
                         .hasAuthority(PermissionEnum.Code.GAM_LOCATION_MANAGE)
                         .requestMatchers(HttpMethod.DELETE, "/gam-locations/*")
                         .hasAuthority(PermissionEnum.Code.GAM_LOCATION_MANAGE)
+                        .requestMatchers(HttpMethod.POST, "/missas")
+                        .hasAuthority(PermissionEnum.Code.MISSA_CREATE)
+                        .requestMatchers(HttpMethod.GET, "/missas/*")
+                        .hasAuthority(PermissionEnum.Code.MISSA_GET)
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/missas/*",
+                                "/missas/*/assignments/*/members/*"
+                        )
+                        .hasAuthority(PermissionEnum.Code.MISSA_MANAGE)
+                        .requestMatchers(
+                                HttpMethod.DELETE,
+                                "/missas/*",
+                                "/missas/*/assignments/*/members/*"
+                        )
+                        .hasAuthority(PermissionEnum.Code.MISSA_MANAGE)
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/missas/*/lock",
+                                "/missas/*/finalize",
+                                "/missas/*/reopen",
+                                "/missas/*/cancel"
+                        )
+                        .hasAuthority(PermissionEnum.Code.MISSA_MANAGE)
                         .requestMatchers(
                                 HttpMethod.POST,
                                 "/oratorios/*/attendance/oratorianos/register-and-mark"

@@ -128,6 +128,10 @@ BEGIN
          'Allows editing observations on Member attendance records'),
         ('PRESENCE_REMOVE', 'Remove presences',
          'Allows removing mistaken Member attendance records'),
+        ('MISSA_GET', 'View Missas', 'Allows viewing specialized Missa details'),
+        ('MISSA_CREATE', 'Create Missas', 'Allows creating Missas'),
+        ('MISSA_MANAGE', 'Manage Missas',
+         'Allows managing Missa details, assignments, lifecycle, and deletion'),
         ('ORATORIO_GET', 'View Oratorios', 'Allows viewing specialized Oratorio details'),
         ('ORATORIO_CREATE', 'Create Oratorios', 'Allows creating Oratorio occurrences'),
         ('ORATORIO_MANAGE', 'Manage Oratorios',
@@ -361,6 +365,7 @@ BEGIN
         'EVENT_GET_PRESENCES',
         'EVENT_GET_MEMBER',
         'GAM_LOCATION_GET',
+        'MISSA_GET',
         'ORATORIO_GET'
     );
 

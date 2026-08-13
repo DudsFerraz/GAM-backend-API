@@ -8,6 +8,7 @@ import br.org.gam.api.event.domain.EventStatus;
 import br.org.gam.api.member.application.MemberEntityLoader;
 import br.org.gam.api.member.persistence.MemberEntity;
 import br.org.gam.api.presence.application.PresenceEventRDTO;
+import br.org.gam.api.presence.application.PresenceMemberRDTO;
 import br.org.gam.api.presence.application.PresenceMapper;
 import br.org.gam.api.presence.persistence.PresenceEntity;
 import br.org.gam.api.presence.persistence.PresenceRepository;
@@ -16,6 +17,7 @@ import br.org.gam.api.shared.exception.ConflictException;
 import br.org.gam.api.shared.exception.InvalidCommandException;
 import br.org.gam.api.shared.exception.NotFoundException;
 import br.org.gam.api.shared.persistence.UUIDGenerator;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -23,6 +25,7 @@ import java.util.Objects;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,12 +38,16 @@ public class RegisterPresence {
     private final ActivityEvents activityEvents;
     private final EventSecurity eventSecurity;
     private final PresenceConflictResolver conflictResolver;
+    private final EntityManager entityManager;
+    private final JdbcTemplate jdbcTemplate;
 
     @Autowired
     public RegisterPresence(PresenceRepository presenceRepo, PresenceMapper presenceMapper,
                             MemberEntityLoader getMemberInstance, EventEntityLoader getEventInstance,
                             ActivityEvents activityEvents, EventSecurity eventSecurity,
-                            PresenceConflictResolver conflictResolver) {
+                            PresenceConflictResolver conflictResolver,
+                            EntityManager entityManager,
+                            JdbcTemplate jdbcTemplate) {
         this.presenceRepo = presenceRepo;
         this.presenceMapper = presenceMapper;
         this.getMemberInstance = getMemberInstance;
@@ -48,6 +55,8 @@ public class RegisterPresence {
         this.activityEvents = activityEvents;
         this.eventSecurity = eventSecurity;
         this.conflictResolver = conflictResolver;
+        this.entityManager = entityManager;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     RegisterPresence(PresenceRepository presenceRepo, PresenceMapper presenceMapper,
@@ -60,6 +69,8 @@ public class RegisterPresence {
                 getEventInstance,
                 activityEvents,
                 eventSecurity,
+                null,
+                null,
                 null
         );
     }
@@ -90,7 +101,7 @@ public class RegisterPresence {
             throw alreadyRegistered(dto, false);
         }
 
-        MemberEntity presentMember = getMemberInstance.requiredById(dto.memberId());
+        MemberEntity presentMember = activeMemberReference(dto.memberId());
 
         Objects.requireNonNull(presentMember, "Present member must not be null");
         Objects.requireNonNull(relatedEvent, "Presence event must not be null");
@@ -120,10 +131,10 @@ public class RegisterPresence {
                 observations
         );
 
-        return withEffectiveStatus(
-                presenceMapper.entityToRegisterPresenceRDTO(savedPresenceEntity),
-                status
-        );
+        RegisterPresenceRDTO response = jdbcTemplate == null
+                ? presenceMapper.entityToRegisterPresenceRDTO(savedPresenceEntity)
+                : responseWithoutMemberAggregateLoad(savedPresenceEntity, status, evaluationInstant);
+        return withEffectiveStatus(response, status);
     }
 
     private ConflictException alreadyRegistered(RegisterPresenceDTO dto, boolean afterConstraintViolation) {
@@ -192,5 +203,51 @@ public class RegisterPresence {
             );
         }
         return normalized;
+    }
+
+    private MemberEntity activeMemberReference(java.util.UUID memberId) {
+        if (entityManager == null || jdbcTemplate == null) {
+            return getMemberInstance.requiredById(memberId);
+        }
+        Boolean exists = jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM members WHERE id = ? AND deleted_at IS NULL)",
+                Boolean.class,
+                memberId
+        );
+        if (!Boolean.TRUE.equals(exists)) {
+            throw NotFoundException.resource("Member", memberId);
+        }
+        return entityManager.getReference(MemberEntity.class, memberId);
+    }
+
+    private RegisterPresenceRDTO responseWithoutMemberAggregateLoad(
+            PresenceEntity presence,
+            EventStatus status,
+            Instant evaluationInstant
+    ) {
+        Map<String, Object> member = jdbcTemplate.queryForMap(
+                "SELECT first_name, surname, status::text AS status FROM members WHERE id = ?",
+                presence.getMember().getId()
+        );
+        EventEntity event = presence.getEvent();
+        return new RegisterPresenceRDTO(
+                presence.getId(),
+                new PresenceMemberRDTO(
+                        presence.getMember().getId(),
+                        member.get("first_name").toString(),
+                        member.get("surname").toString(),
+                        br.org.gam.api.member.domain.MemberStatus.valueOf(member.get("status").toString())
+                ),
+                new PresenceEventRDTO(
+                        event.getId(),
+                        event.getTitle(),
+                        event.getBeginDate(),
+                        event.getEndDate(),
+                        event.getType(),
+                        status
+                ),
+                presence.getObservations(),
+                presence.getCreatedAt() == null ? evaluationInstant : presence.getCreatedAt()
+        );
     }
 }

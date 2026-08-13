@@ -44,6 +44,9 @@ public enum SystemRole {
                     PRESENCE_REGISTER,
                     PRESENCE_EDIT,
                     PRESENCE_REMOVE,
+                    MISSA_GET,
+                    MISSA_CREATE,
+                    MISSA_MANAGE,
                     ROLE_GET,
                     PERMISSION_GET
             ),
@@ -58,7 +61,7 @@ public enum SystemRole {
     MEMBER(
             "MEMBER",
             "Standard authenticated member access",
-            withOratorioRead(
+            withSpecializedEventRead(
                     EnumSet.of(
                             MEMBER_GET,
                             ACCOUNT_GET,
@@ -93,7 +96,8 @@ public enum SystemRole {
         );
     }
 
-    private static EnumSet<PermissionEnum> withOratorioRead(EnumSet<PermissionEnum> permissions) {
+    private static EnumSet<PermissionEnum> withSpecializedEventRead(EnumSet<PermissionEnum> permissions) {
+        permissions.add(MISSA_GET);
         permissions.add(ORATORIO_GET);
         return permissions;
     }
