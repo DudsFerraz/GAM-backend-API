@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:18-alpine
+    network_mode: bridge
     ports:
       - "127.0.0.1::5432"
     environment:

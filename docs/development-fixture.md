@@ -55,11 +55,17 @@ automatically allocated loopback port. Spring Boot discovers that mapped port
 through its Docker Compose service connection, so concurrent tasks do not
 share a fixed host port or database volume.
 
+PostgreSQL uses Docker's built-in `bridge` network for transport. Compose does
+not allocate a task-specific network or subnet, preventing short-lived tasks
+and verification runs from exhausting Docker's default address pools. Task
+isolation continues to come from the Compose project name, project-scoped
+container and volume names, and the dynamically allocated loopback host port.
+
 The first application start creates and starts the task's Compose resources.
 Later application reruns issue an idempotent Compose start and reuse the same
-running PostgreSQL container, network, and named database volume. Stopping the
-application does not stop those task resources. To inspect the allocated host
-port, use the project name derived from the resolved instance identifier:
+running PostgreSQL container and named database volume. Stopping the application
+does not stop those task resources. To inspect the allocated host port, use the
+project name derived from the resolved instance identifier:
 
 ```powershell
 docker compose --project-name gam-api-<instance-id> port postgres 5432

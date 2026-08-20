@@ -55,7 +55,7 @@ class DevelopmentFixtureConfigurationTest {
     }
 
     @Test
-    @DisplayName("concurrent development tasks -> isolated Compose project, volume, and host port")
+    @DisplayName("concurrent tasks -> isolated resources without dedicated Docker subnets")
     void concurrentDevelopmentTasksShouldUseIsolatedComposeResources() throws IOException {
         Properties defaults = properties("application.properties");
         String compose = Files.readString(Path.of("compose.yml"), StandardCharsets.UTF_8);
@@ -63,8 +63,12 @@ class DevelopmentFixtureConfigurationTest {
         assertThat(defaults.getProperty("spring.docker.compose.arguments[0]"))
                 .isEqualTo("--project-name=gam-api-${GAM_DEV_INSTANCE_ID:${CODEX_THREAD_ID:local}}");
         assertThat(compose)
+                .contains("network_mode: bridge")
                 .contains("\"127.0.0.1::5432\"")
-                .doesNotContain("\"5433:5432\"");
+                .doesNotContain(
+                        "\"5433:5432\"",
+                        "networks:"
+                );
     }
 
     @Test
