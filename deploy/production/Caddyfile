@@ -1,6 +1,12 @@
 {
-    admin 0.0.0.0:2019
+    admin localhost:2019
     metrics
+}
+
+# Expose only read-only Prometheus metrics to the private production network.
+# Caddy's mutating administration API remains loopback-only inside the proxy.
+:2020 {
+    metrics /metrics
 }
 
 # Keep HTTP-to-HTTPS redirect active while commissioning and maintenance are enabled.

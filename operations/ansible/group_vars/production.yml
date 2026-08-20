@@ -5,7 +5,12 @@ aws_region: sa-east-1
 aws_account_id: "{{ lookup('env', 'GAM_AWS_ACCOUNT_ID') }}"
 
 vps_public_source_ip: "{{ lookup('env', 'GAM_VPS_PUBLIC_SOURCE_IP') }}"
-production_origin: "{{ lookup('env', 'GAM_PRODUCTION_ORIGIN') }}"
+gam_public_origin: "{{ lookup('env', 'GAM_PUBLIC_ORIGIN') }}"
+
+production_root: /opt/gam
+production_compose_file: "{{ production_root }}/compose.yml"
+production_compose_environment_file: "{{ production_root }}/runtime/production.env"
+production_recoverable_secret_file: /etc/gam/secrets/production.env
 
 backup_bucket_name: "gam-production-backups-{{ aws_account_id }}-sa-east-1"
 backup_audit_bucket_name: "gam-production-backup-audit-{{ aws_account_id }}-sa-east-1"
@@ -96,7 +101,7 @@ better_stack_chart_contracts:
         sql_query: "{% raw %}SELECT {{time}} AS time, maxMerge(value_max) AS value FROM {{source}} WHERE dt BETWEEN {{start_time}} AND {{end_time}} AND name = 'node_filesystem_usage_percent'  GROUP BY time{% endraw %}"
 better_stack_proxy_target_host: "{{ lookup('env', 'BETTER_STACK_PROXY_TARGET_HOST') | default('proxy.internal', true) }}"
 better_stack_proxy_target_service: "{{ lookup('env', 'BETTER_STACK_PROXY_TARGET_SERVICE') }}"
-better_stack_proxy_target_endpoint: "{{ lookup('env', 'BETTER_STACK_PROXY_TARGET_ENDPOINT') | default('http://proxy.internal:2019/metrics', true) }}"
+better_stack_proxy_target_endpoint: "{{ lookup('env', 'BETTER_STACK_PROXY_TARGET_ENDPOINT') | default('http://proxy.internal:2020/metrics', true) }}"
 better_stack_backend_target_host: "{{ lookup('env', 'BETTER_STACK_BACKEND_TARGET_HOST') | default('backend.internal', true) }}"
 better_stack_backend_target_service: "{{ lookup('env', 'BETTER_STACK_BACKEND_TARGET_SERVICE') }}"
 better_stack_backend_target_endpoint: "{{ lookup('env', 'BETTER_STACK_BACKEND_TARGET_ENDPOINT') | default('http://backend.internal:8080/actuator/prometheus', true) }}"

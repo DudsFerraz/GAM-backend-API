@@ -4,6 +4,7 @@ import br.org.gam.api.testing.annotation.StructuralTest;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -174,8 +175,35 @@ class ProductionReviewReturnContractStructuralTest {
         );
 
         assertThat(healthVerification)
-                .contains("public_health.headers['content-type']")
+                .doesNotContain("public_health.headers[")
+                .contains("public_health.content_type")
                 .contains("application/json");
+    }
+
+    @Test
+    @DisplayName("REQ-OPS-008/011 - release verification rejects surrounding body bytes and media-type suffixes")
+    void releaseVerificationShouldRequireTheExactPublicHealthContract() throws IOException {
+        String playbook = requiredFile(RELEASE_PLAYBOOK).toLowerCase();
+        String healthVerification = section(
+                playbook,
+                "verify public production health after approved transition",
+                "record release result"
+        );
+
+        assertExactPublicHealthContract(healthVerification, "public_health");
+    }
+
+    @Test
+    @DisplayName("REQ-OPS-008/011 - rollback verification rejects surrounding body bytes and media-type suffixes")
+    void rollbackVerificationShouldRequireTheExactPublicHealthContract() throws IOException {
+        String playbook = requiredFile(RELEASE_PLAYBOOK).toLowerCase();
+        String healthVerification = section(
+                playbook,
+                "verify compatible application rollback",
+                "mark maintenance response as disabled after compatible rollback"
+        );
+
+        assertExactPublicHealthContract(healthVerification, "rollback_health");
     }
 
     private static String requiredFile(Path path) throws IOException {
@@ -198,5 +226,35 @@ class ProductionReviewReturnContractStructuralTest {
             assertThat(current).as("marker '%s'", marker).isGreaterThan(previous);
             previous = current;
         }
+    }
+
+    private static void assertExactPublicHealthContract(String verification, String responseVariable) {
+        assertThat(verification)
+                .as("leading or trailing response bytes must not be normalized before comparison")
+                .doesNotContain(responseVariable + ".content | trim")
+                .containsPattern(
+                        Pattern.quote(responseVariable + ".content")
+                                + "\\s*!=\\s*'\\{\"status\":\"up\"\\}'"
+                );
+        assertThat(verification)
+                .as("Ansible uri exposes flattened lowercase response keys, not a nested headers map")
+                .doesNotContain(responseVariable + ".headers[")
+                .contains(responseVariable + ".content_type")
+                .contains(responseVariable + ".cache_control");
+        assertThat(verification)
+                .as("media-type suffixes must not satisfy the exact application/json contract")
+                .doesNotContain("match('^application/json')")
+                .containsPattern(
+                        "(?s)"
+                                + Pattern.quote(responseVariable + ".content_type")
+                                + ".{0,120}?!=\\s*'application/json'"
+                );
+        assertThat(verification)
+                .as("the cache policy must use the flattened result key and require exact no-store")
+                .containsPattern(
+                        "(?s)"
+                                + Pattern.quote(responseVariable + ".cache_control")
+                                + ".{0,120}?!=\\s*'no-store'"
+                );
     }
 }

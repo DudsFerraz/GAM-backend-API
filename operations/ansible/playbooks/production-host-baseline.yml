@@ -74,4 +74,4 @@
     - role: docker
     - role: firewall
     - role: directories
-    - role: secret-inputs
+    # The secret-inputs role runs from site.yml after this host baseline.

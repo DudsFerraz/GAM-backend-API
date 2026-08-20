@@ -234,7 +234,7 @@ class ProductionDeploymentExpandedContractStructuralTest {
                 playbook,
                 "published",
                 "sha256sum",
-                "transfer the verified fixture frontend archive"
+                "transfer the verified controller-downloaded frontend archive"
         );
     }
 

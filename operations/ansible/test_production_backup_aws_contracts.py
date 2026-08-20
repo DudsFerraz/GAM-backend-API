@@ -40,6 +40,66 @@ def load_yaml(relative_path: str):
     return yaml.safe_load(read(relative_path))
 
 
+def production_monitoring_play() -> dict:
+    matches = [
+        play
+        for play in load_yaml("operations/ansible/site.yml")
+        if isinstance(play, dict)
+        and play.get("hosts") == "production"
+        and any(
+            task.get("name")
+            == "Connect the Better Stack collector to the private production network"
+            for task in play.get("tasks", [])
+        )
+    ]
+    if len(matches) != 1:
+        raise AssertionError(
+            "site.yml must contain exactly one production play that owns Better Stack reconciliation"
+        )
+    return matches[0]
+
+
+def git_show_index(relative_path: str) -> subprocess.CompletedProcess[bytes]:
+    result = subprocess.run(
+        ["git", "show", f":{relative_path}"],
+        cwd=ROOT,
+        capture_output=True,
+        timeout=30,
+    )
+    if result.returncode == 0 or os.name == "nt":
+        return result
+
+    git_pointer = ROOT / ".git"
+    if not git_pointer.is_file():
+        return result
+    match = re.fullmatch(
+        r"gitdir:\s*([A-Za-z]):[\\/](.+)",
+        git_pointer.read_text(encoding="utf-8").strip(),
+    )
+    if match is None:
+        return result
+
+    mounted_git_dir = (
+        Path("/mnt")
+        / match.group(1).casefold()
+        / Path(match.group(2).replace("\\", "/"))
+    )
+    if not mounted_git_dir.is_dir():
+        return result
+    return subprocess.run(
+        [
+            "git",
+            f"--git-dir={mounted_git_dir}",
+            f"--work-tree={ROOT}",
+            "show",
+            f":{relative_path}",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        timeout=30,
+    )
+
+
 def bash_executable() -> str:
     """Resolve Bash from the active runner instead of a workstation path."""
 
@@ -62,6 +122,26 @@ def bash_executable() -> str:
 
     raise AssertionError(
         "Bash is required for executable recovery-script contract validation"
+    )
+
+
+def aws_cli_executable() -> str:
+    candidates = [
+        Path(executable)
+        for executable in (shutil.which("aws"),)
+        if executable is not None
+    ]
+    candidates.extend(
+        (
+            Path(r"C:\Program Files\Amazon\AWSCLIV2\aws.exe"),
+            Path("/mnt/c/Program Files/Amazon/AWSCLIV2/aws.exe"),
+        )
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    raise AssertionError(
+        "AWS CLI v2 is required to validate complete EventBridge schedule argument vectors"
     )
 
 
@@ -2719,7 +2799,7 @@ exit 0
 
         self.assertEqual([], violations, "EventBridge schedule drift violations: " + "; ".join(violations))
 
-    def test_monitor_schedule_target_arguments_pass_aws_cli_serialization_validation(self):
+    def test_monitor_schedule_complete_arguments_pass_aws_cli_serialization_validation(self):
         tasks = list(task_nodes(load_yaml("operations/ansible/backup-monitor.yml")))
         schedule_tasks = [
             task
@@ -2742,6 +2822,39 @@ exit 0
                 for placeholder, value in replacements.items():
                     argument = argument.replace(placeholder, value)
                 rendered_argv.append(argument)
+            rendered_argv[0] = aws_cli_executable()
+
+            operation = rendered_argv[2]
+            schedule_name = argv_value(rendered_argv, "--name")
+            raw_target = argv_value(rendered_argv, "--target")
+            try:
+                target = json.loads(raw_target)
+            except json.JSONDecodeError as failure:
+                failures.append(f"{operation} {schedule_name}: Target is not JSON: {failure}")
+                continue
+
+            if set(target) != {"Arn", "RoleArn", "RetryPolicy", "Input"}:
+                failures.append(f"{operation} {schedule_name}: unsupported or missing Target fields")
+            if not isinstance(target.get("Input"), str):
+                failures.append(f"{operation} {schedule_name}: Target.Input must be a JSON string")
+            else:
+                try:
+                    decoded_input = json.loads(target["Input"])
+                except json.JSONDecodeError as failure:
+                    failures.append(f"{operation} {schedule_name}: Target.Input is invalid JSON: {failure}")
+                else:
+                    expected_phase = "daily" if schedule_name.endswith("0430") else "unresolved"
+                    if decoded_input != {"phase": expected_phase}:
+                        failures.append(f"{operation} {schedule_name}: unexpected Target.Input payload")
+            if target.get("RetryPolicy") != {
+                "MaximumEventAgeInSeconds": 86400,
+                "MaximumRetryAttempts": 3,
+            }:
+                failures.append(f"{operation} {schedule_name}: invalid nested Target.RetryPolicy")
+            if target.get("Arn") != replacements["{{ backup_monitor_lambda_arn }}"]:
+                failures.append(f"{operation} {schedule_name}: invalid Target.Arn")
+            if target.get("RoleArn") != replacements["{{ backup_monitor_scheduler_role_arn }}"]:
+                failures.append(f"{operation} {schedule_name}: invalid Target.RoleArn")
 
             result = subprocess.run(
                 [*rendered_argv, "--generate-cli-skeleton", "output"],
@@ -2752,13 +2865,15 @@ exit 0
             )
             if result.returncode != 0:
                 failures.append(
-                    f"{rendered_argv[2]} {argv_value(rendered_argv, '--name')}: {result.stderr.strip()}"
+                    f"{operation} {schedule_name}: complete AWS CLI argument vector "
+                    f"failed serialization validation: {result.stderr.strip()}"
                 )
 
         self.assertEqual(
             [],
             failures,
-            "EventBridge Target.Input must be serialized as the string required by the AWS CLI: "
+            "EventBridge create/update arguments must pass complete AWS CLI serialization "
+            "validation with a JSON Target and string-encoded Input: "
             + "; ".join(failures),
         )
 
@@ -5602,12 +5717,7 @@ exit 0
             "operations/recovery/restore/restore.sh",
             "operations/recovery/verify-restoration/verify-restoration.sh",
         ):
-            indexed_script = subprocess.run(
-                ["git", "show", f":{relative_path}"],
-                cwd=ROOT,
-                capture_output=True,
-                timeout=30,
-            )
+            indexed_script = git_show_index(relative_path)
             if indexed_script.returncode != 0:
                 diagnostic = indexed_script.stderr.decode("utf-8", errors="replace").strip().replace("\n", " | ")
                 violations.append(f"{relative_path} could not be read from the Git index: {diagnostic}")
@@ -5970,10 +6080,7 @@ exit 0
         )
 
     def test_better_stack_post_network_readiness_consumes_every_target_page(self):
-        production_play = next(
-            play for play in load_yaml("operations/ansible/site.yml")
-            if play.get("hosts") == "production"
-        )
+        production_play = production_monitoring_play()
         tasks = production_play["tasks"]
         names = [task.get("name") for task in tasks]
         connect_index = names.index(
@@ -6044,10 +6151,7 @@ exit 0
             )
 
     def test_better_stack_target_reconciliation_holds_one_exclusive_failure_safe_lock(self):
-        production_play = next(
-            play for play in load_yaml("operations/ansible/site.yml")
-            if play.get("hosts") == "production"
-        )
+        production_play = production_monitoring_play()
         persisted_state_names = {
             "Persist the applied PostgreSQL target credential fingerprint before chart mutation",
             "Persist the applied PostgreSQL target credential fingerprint",
@@ -6169,10 +6273,7 @@ exit 0
             ))
 
     def test_better_stack_target_lock_recovers_only_an_abandoned_owner_or_expired_lease(self):
-        production_play = next(
-            play for play in load_yaml("operations/ansible/site.yml")
-            if play.get("hosts") == "production"
-        )
+        production_play = production_monitoring_play()
         lock_sections = []
 
         def inspect(items):

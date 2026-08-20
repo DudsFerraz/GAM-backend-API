@@ -319,19 +319,21 @@ class ProductionHostBaselineStructuralTest {
     }
 
     @Test
-    @DisplayName("REQ-OPS-010 - idempotency check -> baseline can be replayed in check mode")
+    @DisplayName("REQ-OPS-010 - idempotency check -> successful real apply is followed by a real replay")
     void baselineShouldProvideARepeatableIdempotencyCheck() throws IOException {
         Path check = requiredSingleFile(
                 ANSIBLE_ROOT,
                 path -> path.getFileName().toString().matches("(?i).*idempot.*")
         );
         String content = read(check);
+        List<String> invocations = playbookInvocations(content);
 
         assertThat(content)
                 .containsPattern("(?is)ansible-playbook")
-                .containsPattern("(?is)--check")
                 .containsPattern("(?is)--diff");
-        assertThat(count(content, "(?is)ansible-playbook")).isGreaterThanOrEqualTo(2);
+        assertThat(invocations).hasSizeGreaterThanOrEqualTo(2);
+        assertThat(invocations.subList(0, 2))
+                .allSatisfy(invocation -> assertThat(invocation).doesNotContain("--check"));
     }
 
     @Test
@@ -357,7 +359,10 @@ class ProductionHostBaselineStructuralTest {
 
         assertThat(invocations).hasSizeGreaterThanOrEqualTo(2);
         assertThat(invocations.get(0)).doesNotContain("--check");
-        assertThat(invocations.get(1)).contains("--check");
+        assertThat(invocations.get(1))
+                .doesNotContain("--check")
+                .contains("site.yml")
+                .contains("--diff");
     }
 
     @Test

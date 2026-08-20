@@ -1,8 +1,11 @@
 ---
 - name: Deploy an approved GAM release pair
   hosts: gam_production
+  remote_user: "{{ steady_state_user }}"
   become: true
-  gather_facts: true
+  # The full-site baseline already gathered host facts. Avoid an implicit task
+  # between inherited lock acquisition and the guarded imported pre-tasks.
+  gather_facts: false
 
   vars:
     production_root: /opt/gam
@@ -17,9 +20,13 @@
     frontend_release_root: "{{ frontend_root }}/releases"
     frontend_current_link: "{{ frontend_root }}/current"
     frontend_previous_link: "{{ frontend_root }}/previous"
-    frontend_fixture_root: "{{ playbook_dir }}/../../../src/test/resources/production/fixtures"
-    frontend_archive_source: "{{ frontend_fixture_root }}/{{ selected_release.frontend.artifact }}"
-    frontend_checksum_source: "{{ frontend_fixture_root }}/{{ selected_release.frontend.artifact }}.sha256"
+    controller_release_root: >-
+      {{ lookup('env', 'GAM_RELEASE_STAGING_ROOT')
+      | default('/tmp/gam-production-release-assets', true) }}
+    controller_release_directory: "{{ controller_release_root }}/{{ release_id }}"
+    frontend_archive_source: "{{ controller_release_directory }}/{{ selected_release.frontend.artifact }}"
+    frontend_checksum_source: "{{ controller_release_directory }}/{{ selected_release.frontend.artifact }}.sha256"
+    github_token: "{{ lookup('env', 'GH_TOKEN') }}"
     gam_public_origin: "{{ lookup('env', 'GAM_PUBLIC_ORIGIN') }}"
     gam_operator_cidrs: []
     commissioning_enabled: true
@@ -30,122 +37,186 @@
       wget -qO- http://127.0.0.1:8080/health
 
   pre_tasks:
-    - name: Load the release-manifest model
-      ansible.builtin.include_vars:
-        file: "{{ release_manifest_source }}"
-        name: selected_release
+    # site.yml owns the "Acquire exclusive deployment lock" task and rejects
+    # "another production deployment" when its atomic
+    # mkdir "{{ deployment_lock_directory }}" cannot succeed. It then runs
+    # "Mark deployment lock as acquired" before importing this playbook, so
+    # this play continues the same transaction instead of acquiring a second lock.
+    - name: Verify inherited Developer approval and uninterrupted full-site deployment lock ownership
+      block:
+        - name: Assert inherited Developer approval and deployment lock ownership
+          ansible.builtin.assert:
+            that:
+              - developer_approval | lower == 'approved'
+              - developer_approval_record | length > 0
+              - deployment_lock_acquired | default(false) | bool
+            fail_msg: The approved full-site deployment must retain its Developer approval record and exclusive lock before release convergence.
+      rescue:
+        - name: Release inherited deployment lock after ownership validation failure
+          ansible.builtin.file:
+            path: "{{ deployment_lock_directory }}"
+            state: absent
+          changed_when: false
+          when: deployment_lock_acquired | default(false) | bool
 
-    - name: Validate release policy and identifier before deriving paths
-      ansible.builtin.assert:
-        that:
-          - selected_release.compatibility.database_change is defined
-          - selected_release.compatibility.database_rollback_compatible is defined
-          - selected_release.compatibility.database_change is boolean
-          - selected_release.compatibility.database_rollback_compatible is boolean
-          - selected_release.compatibility.pair is defined
-          - selected_release.compatibility.pair is match('^[a-z0-9][a-z0-9._-]{0,127}$')
-        fail_msg: The release pair and database rollback policy must be explicit and safe before deployment.
+        - name: Stop after inherited deployment ownership validation failure
+          ansible.builtin.fail:
+            msg: Imported release convergence requires the approved full-site deployment lock.
 
-    - name: Derive release transaction state
-      ansible.builtin.set_fact:
-        release_pair: "{{ selected_release.compatibility.pair }}"
-        release_id: >-
-          {{ selected_release.compatibility.pair }}-{{
-            (
-              selected_release.format_version ~ '|' ~
-              selected_release.backend.image ~ '|' ~
-              selected_release.backend.digest ~ '|' ~
-              selected_release.backend.release_commit ~ '|' ~
-              selected_release.frontend.repository ~ '|' ~
-              selected_release.frontend.tag ~ '|' ~
-              selected_release.frontend.artifact ~ '|' ~
-              selected_release.frontend.sha256 ~ '|' ~
-              selected_release.frontend.release_commit
-            ) | hash('sha256')
-          }}
-        database_change_required: >-
-          {{ selected_release.compatibility.database_change | default(false) | bool }}
-        database_rollback_compatible: >-
-          {{ selected_release.compatibility.database_rollback_compatible |
-             default(not (selected_release.compatibility.database_change | default(false) | bool)) |
-             bool }}
-        deployment_lock_acquired: false
-        database_migration_applied: false
-        failed_release_record_failed: false
-        failed_release_record_error: ""
-        maintenance_response_enabled: false
-        release_changed: false
-        rollback_current_link_switched: false
+    - name: Validate imported release inputs under the inherited deployment lock
+      block:
+        - name: Load the release-manifest model
+          ansible.builtin.include_vars:
+            file: "{{ release_manifest_source }}"
+            name: selected_release
 
-    - name: Validate immutable release-manifest identity
-      ansible.builtin.assert:
-        that:
-          - selected_release.format_version is integer
-          - selected_release.format_version == 1
-          - selected_release.backend.image is match('^ghcr\\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$')
-          - selected_release.backend.digest is match('^sha256:[0-9a-f]{64}$')
-          - selected_release.backend.image.split('@') | length == 2
-          - selected_release.backend.image.split('@')[1] == selected_release.backend.digest
-          - selected_release.frontend.repository is match('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
-          - selected_release.frontend.tag is match('^v[0-9]+\\.[0-9]+\\.[0-9]+$')
-          - selected_release.frontend.artifact == 'gam-frontend-' ~ selected_release.frontend.tag ~ '.tar.gz'
-          - selected_release.frontend.sha256 is match('^[0-9a-f]{64}$')
-          - selected_release.backend.release_commit is match('^[0-9a-f]{40}$')
-          - selected_release.frontend.release_commit is match('^[0-9a-f]{40}$')
-          - selected_release.rollback.minimum_days is integer
-          - selected_release.rollback.minimum_days >= 14
-          - selected_release.rollback.minimum_verified_releases is integer
-          - selected_release.rollback.minimum_verified_releases >= 2
-          - selected_release.rollback.retain_backend_digest is sameas true
-          - selected_release.rollback.retain_frontend_archive is sameas true
-          - selected_release.rollback.retain_frontend_checksum is sameas true
-          - selected_release.rollback.retain_manifest is sameas true
-          - selected_release.rollback.retain_fingerprinted_assets is sameas true
-          - selected_release.previous.retained is sameas true
-        fail_msg: Release identity is not an immutable, rollback-retainable pair.
+        - name: Validate release policy and identifier before deriving paths
+          ansible.builtin.assert:
+            that:
+              - selected_release.compatibility.database_change is defined
+              - selected_release.compatibility.database_rollback_compatible is defined
+              - selected_release.compatibility.database_change is boolean
+              - selected_release.compatibility.database_rollback_compatible is boolean
+              - selected_release.compatibility.pair is defined
+              - selected_release.compatibility.pair is match('^[a-z0-9][a-z0-9._-]{0,127}$')
+            fail_msg: The release pair and database rollback policy must be explicit and safe before deployment.
 
-    - name: Require deployment inputs without selecting an official domain
-      ansible.builtin.assert:
-        that:
-          - gam_public_origin | length > 0
-          - gam_operator_cidrs | length > 0
-        fail_msg: GAM_PUBLIC_ORIGIN and the operator CIDR allowlist are explicit deployment inputs.
+        - name: Derive release transaction state
+          ansible.builtin.set_fact:
+            release_pair: "{{ selected_release.compatibility.pair }}"
+            release_id: >-
+              {{ selected_release.compatibility.pair }}-{{
+                (
+                  selected_release.format_version ~ '|' ~
+                  selected_release.backend.image ~ '|' ~
+                  selected_release.backend.digest ~ '|' ~
+                  selected_release.backend.release_commit ~ '|' ~
+                  selected_release.frontend.repository ~ '|' ~
+                  selected_release.frontend.tag ~ '|' ~
+                  selected_release.frontend.artifact ~ '|' ~
+                  selected_release.frontend.sha256 ~ '|' ~
+                  selected_release.frontend.release_commit
+                ) | hash('sha256')
+              }}
+            database_change_required: >-
+              {{ selected_release.compatibility.database_change | default(false) | bool }}
+            database_rollback_compatible: >-
+              {{ selected_release.compatibility.database_rollback_compatible |
+                 default(not (selected_release.compatibility.database_change | default(false) | bool)) |
+                 bool }}
+            database_migration_applied: false
+            failed_release_record_failed: false
+            failed_release_record_error: ""
+            maintenance_response_enabled: false
+            release_changed: false
+            rollback_current_link_switched: false
+            active_release_compose_override: "{{ frontend_current_link }}/compose.override.yml"
 
-    - name: Require explicit Developer approval
-      ansible.builtin.assert:
-        that:
-          - developer_approval | lower == 'approved'
-          - developer_approval_record | length > 0
-        fail_msg: A Developer approval token and approval record are required before mutation.
+        - name: Validate immutable release-manifest identity
+          ansible.builtin.assert:
+            that:
+              - selected_release.format_version is integer
+              - selected_release.format_version == 1
+              - selected_release.backend.image is match('^ghcr\\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$')
+              - selected_release.backend.digest is match('^sha256:[0-9a-f]{64}$')
+              - selected_release.backend.image.split('@') | length == 2
+              - selected_release.backend.image.split('@')[1] == selected_release.backend.digest
+              - selected_release.frontend.repository is match('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
+              - selected_release.frontend.tag is match('^v[0-9]+\\.[0-9]+\\.[0-9]+$')
+              - selected_release.frontend.artifact == 'gam-frontend-' ~ selected_release.frontend.tag ~ '.tar.gz'
+              - selected_release.frontend.sha256 is match('^[0-9a-f]{64}$')
+              - selected_release.backend.release_commit is match('^[0-9a-f]{40}$')
+              - selected_release.frontend.release_commit is match('^[0-9a-f]{40}$')
+              - selected_release.rollback.minimum_days is integer
+              - selected_release.rollback.minimum_days >= 14
+              - selected_release.rollback.minimum_verified_releases is integer
+              - selected_release.rollback.minimum_verified_releases >= 2
+              - selected_release.rollback.retain_backend_digest is sameas true
+              - selected_release.rollback.retain_frontend_archive is sameas true
+              - selected_release.rollback.retain_frontend_checksum is sameas true
+              - selected_release.rollback.retain_manifest is sameas true
+              - selected_release.rollback.retain_fingerprinted_assets is sameas true
+              - selected_release.previous.retained is sameas true
+            fail_msg: Release identity is not an immutable, rollback-retainable pair.
 
-    - name: Require published non-prerelease immutable frontend release metadata
-      ansible.builtin.assert:
-        that:
-          - selected_release.frontend.published | bool
-          - not selected_release.frontend.prerelease | bool
-          - selected_release.frontend.immutable | bool
-        fail_msg: The selected frontend release must be published, non-prerelease, and immutable.
+        - name: Require deployment inputs without selecting an official domain
+          ansible.builtin.assert:
+            that:
+              - gam_public_origin | length > 0
+              - gam_operator_cidrs | length > 0
+              - github_token | length > 0
+            fail_msg: GAM_PUBLIC_ORIGIN, the operator CIDR allowlist, and GH_TOKEN are explicit deployment inputs.
+          no_log: true
+
+        - name: Require published non-prerelease immutable frontend release metadata
+          ansible.builtin.assert:
+            that:
+              - selected_release.frontend.published | bool
+              - not selected_release.frontend.prerelease | bool
+              - selected_release.frontend.immutable | bool
+            fail_msg: The selected frontend release must be published, non-prerelease, and immutable.
+
+        - name: Inspect the active release before acquiring the deployment lock
+          ansible.builtin.stat:
+            path: "{{ frontend_current_link }}"
+            follow: false
+          register: active_release_link
+
+        - name: Select whether the immutable release transaction is required
+          ansible.builtin.set_fact:
+            release_transaction_required: >-
+              {{
+                not (active_release_link.stat.islnk | default(false)) or
+                (active_release_link.stat.lnk_source | default('')) !=
+                (frontend_release_root ~ '/' ~ release_id)
+              }}
+      rescue:
+        - name: Release inherited deployment lock after release-input validation failure
+          ansible.builtin.file:
+            path: "{{ deployment_lock_directory }}"
+            state: absent
+          changed_when: false
+          when: deployment_lock_acquired | default(false) | bool
+
+        - name: Stop after imported release-input validation failure
+          ansible.builtin.fail:
+            msg: Imported release inputs failed validation; the inherited deployment lock was released.
 
   tasks:
+    - name: Read the managed Compose runtime environment before convergence
+      ansible.builtin.slurp:
+        src: "{{ compose_env_file }}"
+      register: managed_production_env
+      failed_when: false
+      changed_when: false
+
+    - name: Preserve the commissioning gate in the managed runtime environment
+      ansible.builtin.set_fact:
+        managed_commissioning_gate_enabled: >-
+          {{
+            managed_production_env.content | default('') | b64decode
+            | regex_findall('(?m)^GAM_COMMISSIONING_ENABLED=(true|false)$')
+            | first
+            | default(commissioning_enabled | bool | ternary('true', 'false'), true)
+          }}
+
+    - name: Select whether the already-active runtime requires disruptive convergence
+      ansible.builtin.set_fact:
+        same_release_runtime_convergence_required: >-
+          {{
+            production_compose_configuration_install.changed | default(false) | bool or
+            production_secret_input_install.changed | default(false) | bool or
+            (managed_production_env.content | default('') | b64decode) !=
+            ('GAM_PUBLIC_ORIGIN=' ~ gam_public_origin ~ '\n' ~
+             'GAM_OPERATOR_CIDRS=' ~ (gam_operator_cidrs | join(' ')) ~ '\n' ~
+             'GAM_COMMISSIONING_ENABLED=' ~ managed_commissioning_gate_enabled ~ '\n' ~
+             'GAM_MAINTENANCE_ENABLED=false\n' ~
+             'POSTGRES_DB=gam_api\n' ~
+             'POSTGRES_USER=gam\n')
+          }}
+
     - name: Run the release transaction
       block:
-        - name: Acquire exclusive deployment lock
-          ansible.builtin.shell: |
-            set -eu
-            install -d -m 0750 /run
-            if ! mkdir "{{ deployment_lock_directory }}"; then
-              echo "another production deployment already owns the exclusive deployment lock" >&2
-              exit 75
-            fi
-          args:
-            executable: /bin/sh
-          register: deployment_lock_result
-          changed_when: true
-
-        - name: Mark deployment lock as acquired
-          ansible.builtin.set_fact:
-            deployment_lock_acquired: true
-
         - name: Write exclusive deployment lock owner
           ansible.builtin.shell: |
             set -eu
@@ -166,6 +237,20 @@
             - "{{ production_root }}/release-records"
             - "{{ production_root }}/backups"
             - "{{ frontend_release_root }}"
+
+        - name: Converge the managed production Compose runtime environment
+          ansible.builtin.copy:
+            dest: "{{ compose_env_file }}"
+            owner: root
+            group: root
+            mode: "0640"
+            content: |
+              GAM_PUBLIC_ORIGIN={{ gam_public_origin }}
+              GAM_OPERATOR_CIDRS={{ gam_operator_cidrs | join(' ') }}
+              GAM_COMMISSIONING_ENABLED={{ managed_commissioning_gate_enabled }}
+              GAM_MAINTENANCE_ENABLED=false
+              POSTGRES_DB=gam_api
+              POSTGRES_USER=gam
 
         - name: Inspect the latest successful backup marker
           ansible.builtin.stat:
@@ -208,6 +293,25 @@
           ansible.builtin.set_fact:
             active_release_compose_override: "{{ frontend_release_root }}/{{ release_id }}/compose.override.yml"
 
+        - name: Converge the production PostgreSQL prerequisite through the approved release sequence
+          ansible.builtin.command:
+            argv:
+              - docker
+              - compose
+              - --env-file
+              - "{{ compose_env_file }}"
+              - -f
+              - "{{ compose_file }}"
+              - up
+              - --detach
+              - --wait
+              - postgres
+          register: production_postgresql_compose_convergence
+          changed_when: >-
+            (production_postgresql_compose_convergence.stdout ~ '\n'
+            ~ production_postgresql_compose_convergence.stderr)
+            is search('(?im)\b(created|recreated|started|pulled|built)\b')
+
         - name: Flyway gate
           ansible.builtin.command:
             argv:
@@ -230,12 +334,69 @@
           when: database_change_required | bool
           changed_when: false
 
-        - name: Compute the fixture frontend archive digest
+        - name: Create the controller release staging directory
+          ansible.builtin.file:
+            path: "{{ controller_release_directory }}"
+            state: directory
+            mode: "0700"
+          delegate_to: localhost
+          become: false
+
+        - name: Verify selected immutable GitHub Release metadata on the controller
+          ansible.builtin.command:
+            argv:
+              - gh
+              - api
+              - --method
+              - GET
+              - "repos/{{ selected_release.frontend.repository }}/releases/tags/{{ selected_release.frontend.tag }}"
+          environment:
+            GH_TOKEN: "{{ github_token }}"
+          delegate_to: localhost
+          become: false
+          register: github_release_metadata_result
+          changed_when: false
+          check_mode: false
+          no_log: true
+
+        - name: Validate selected immutable GitHub Release metadata
+          ansible.builtin.assert:
+            that:
+              - (github_release_metadata_result.stdout | from_json).tag_name == selected_release.frontend.tag
+              - not (github_release_metadata_result.stdout | from_json).draft | bool
+              - not (github_release_metadata_result.stdout | from_json).prerelease | bool
+              - (github_release_metadata_result.stdout | from_json).immutable | default(false) | bool
+            fail_msg: The selected frontend release must exist as a published non-prerelease immutable GitHub Release.
+
+        - name: Download the selected immutable GitHub Release assets on the controller
+          ansible.builtin.command:
+            argv:
+              - gh
+              - release
+              - download
+              - "{{ selected_release.frontend.tag }}"
+              - --repo
+              - "{{ selected_release.frontend.repository }}"
+              - --pattern
+              - "{{ selected_release.frontend.artifact }}"
+              - --pattern
+              - "{{ selected_release.frontend.artifact }}.sha256"
+              - --dir
+              - "{{ controller_release_directory }}"
+              - --clobber
+          environment:
+            GH_TOKEN: "{{ github_token }}"
+          delegate_to: localhost
+          become: false
+          no_log: true
+
+        - name: Compute the controller-downloaded frontend archive digest
           ansible.builtin.command:
             cmd: sha256sum "{{ frontend_archive_source }}"
           delegate_to: localhost
           register: frontend_archive_digest
           changed_when: false
+          check_mode: false
 
         - name: Verify frontend release metadata and archive checksum bytes
           ansible.builtin.set_fact:
@@ -273,7 +434,7 @@
           delegate_to: localhost
           changed_when: false
 
-        - name: Transfer the verified fixture frontend archive
+        - name: Transfer the verified controller-downloaded frontend archive
           ansible.builtin.copy:
             src: "{{ frontend_archive_source }}"
             dest: "{{ frontend_release_root }}/{{ release_id }}/{{ selected_release.frontend.artifact }}"
@@ -302,6 +463,7 @@
             cmd: sha256sum "{{ frontend_release_root }}/{{ release_id }}/{{ selected_release.frontend.artifact }}"
           register: transferred_frontend_digest
           changed_when: false
+          check_mode: false
 
         - name: Assert transferred frontend archive remains immutable
           ansible.builtin.assert:
@@ -339,6 +501,7 @@
               GAM_MAINTENANCE_ENABLED=true
               POSTGRES_DB=gam_api
               POSTGRES_USER=gam
+          when: not ansible_check_mode
           notify: Reload Caddy after maintenance transition
 
         - name: Mark maintenance response as enabled for the transaction
@@ -529,11 +692,12 @@
             validate_certs: true
           delegate_to: localhost
           register: public_health
+          # Ansible flattens Content-Type and Cache-Control into lowercase result keys.
           failed_when: >-
             public_health.status != 200 or
-            (public_health.content | trim) != '{"status":"UP"}' or
-            (public_health.headers['content-type'] | default('') | lower) is not match('^application/json') or
-            (public_health.headers['cache-control'] | default('') | lower) != 'no-store'
+            public_health.content != '{"status":"UP"}' or
+            (public_health.content_type | default('') | lower) != 'application/json' or
+            (public_health.cache_control | default('') | lower) != 'no-store'
 
         - name: Record release result
           ansible.builtin.lineinfile:
@@ -704,10 +868,11 @@
                 status_code: 200
                 validate_certs: true
               delegate_to: localhost
+              # Ansible flattens Content-Type and Cache-Control into lowercase result keys.
               failed_when: >-
-                (rollback_health.content | trim) != '{"status":"UP"}' or
-                (rollback_health.headers['content-type'] | default('') | lower) is not match('^application/json') or
-                (rollback_health.headers['cache-control'] | default('') | lower) != 'no-store'
+                rollback_health.content != '{"status":"UP"}' or
+                (rollback_health.content_type | default('') | lower) != 'application/json' or
+                (rollback_health.cache_control | default('') | lower) != 'no-store'
               register: rollback_health
 
             - name: Mark maintenance response as disabled after compatible rollback
@@ -774,9 +939,146 @@
             path: "{{ deployment_lock_directory }}"
             state: absent
           when: >-
-            deployment_lock_acquired | bool or
-            (deployment_lock_result is defined and
-             (deployment_lock_result.rc | default(1) | int) == 0)
+            deployment_lock_acquired | bool
+      when: release_transaction_required | bool
+
+    - name: Converge the already-active immutable release under the deployment lock
+      block:
+        - name: Write same-release deployment lock owner
+          ansible.builtin.shell: |
+            set -eu
+            printf '%s\n' "pid=$$ release={{ release_id }}" > "{{ deployment_lock_directory }}/owner"
+          args:
+            executable: /bin/sh
+          changed_when: false
+
+        - name: Enable maintenance before same-release runtime convergence
+          ansible.builtin.copy:
+            dest: "{{ compose_env_file }}"
+            owner: root
+            group: root
+            mode: "0640"
+            content: |
+              GAM_PUBLIC_ORIGIN={{ gam_public_origin }}
+              GAM_OPERATOR_CIDRS={{ gam_operator_cidrs | join(' ') }}
+              GAM_COMMISSIONING_ENABLED={{ managed_commissioning_gate_enabled }}
+              GAM_MAINTENANCE_ENABLED=true
+              POSTGRES_DB=gam_api
+              POSTGRES_USER=gam
+          when: same_release_runtime_convergence_required | bool
+
+        - name: Converge running services for the already-active immutable release
+          ansible.builtin.command:
+            argv:
+              - docker
+              - compose
+              - --env-file
+              - "{{ compose_env_file }}"
+              - -f
+              - "{{ compose_file }}"
+              - -f
+              - "{{ frontend_current_link }}/compose.override.yml"
+              - up
+              - -d
+              - --remove-orphans
+              - postgres
+              - backend
+              - caddy
+          register: active_release_compose_convergence
+          changed_when: >-
+            (active_release_compose_convergence.stdout ~ '\n'
+            ~ active_release_compose_convergence.stderr)
+            is search('(?im)\b(created|recreated|started|pulled|built|removed)\b')
+          when: same_release_runtime_convergence_required | bool
+
+        - name: Recreate Caddy when its versioned configuration changed during replay
+          ansible.builtin.command:
+            argv:
+              - docker
+              - compose
+              - --env-file
+              - "{{ compose_env_file }}"
+              - -f
+              - "{{ compose_file }}"
+              - -f
+              - "{{ frontend_current_link }}/compose.override.yml"
+              - up
+              - -d
+              - --force-recreate
+              - caddy
+          when:
+            - same_release_runtime_convergence_required | bool
+            - production_compose_configuration_install is defined
+            - production_compose_configuration_install.changed | default(false) | bool
+
+        - name: Verify the already-active immutable release during replay
+          ansible.builtin.command:
+            argv:
+              - docker
+              - compose
+              - --env-file
+              - "{{ compose_env_file }}"
+              - -f
+              - "{{ compose_file }}"
+              - -f
+              - "{{ frontend_current_link }}/compose.override.yml"
+              - exec
+              - -T
+              - backend
+              - /bin/sh
+              - -ec
+              - "{{ backend_private_health_command }}"
+          changed_when: false
+
+        - name: Disable maintenance after same-release health verification
+          ansible.builtin.lineinfile:
+            path: "{{ compose_env_file }}"
+            regexp: '^GAM_MAINTENANCE_ENABLED='
+            line: GAM_MAINTENANCE_ENABLED=false
+          notify: Reload Caddy after maintenance transition
+
+        - name: Apply successful same-release maintenance transition
+          ansible.builtin.meta: flush_handlers
+
+        - name: Verify public health after same-release maintenance transition
+          ansible.builtin.uri:
+            url: "{{ gam_public_origin }}/api/health"
+            method: GET
+            headers:
+              Accept: application/json
+            return_content: true
+            status_code: 200
+            validate_certs: true
+          delegate_to: localhost
+          register: active_release_public_health
+          failed_when: >-
+            active_release_public_health.status != 200 or
+            active_release_public_health.content != '{"status":"UP"}' or
+            (active_release_public_health.content_type | default('') | lower) != 'application/json' or
+            (active_release_public_health.cache_control | default('') | lower) != 'no-store'
+      rescue:
+        - name: Retain maintenance after same-release convergence failure
+          ansible.builtin.lineinfile:
+            path: "{{ compose_env_file }}"
+            regexp: '^GAM_MAINTENANCE_ENABLED='
+            line: GAM_MAINTENANCE_ENABLED=true
+          notify: Reload Caddy after maintenance transition
+
+        - name: Apply failed same-release maintenance transition
+          ansible.builtin.meta: flush_handlers
+
+        - name: Stop after locked same-release convergence failure
+          ansible.builtin.fail:
+            msg: The already-active immutable release did not converge under the exclusive deployment lock.
+      always:
+        - name: Release deployment lock
+          ansible.builtin.file:
+            path: "{{ deployment_lock_directory }}"
+            state: absent
+          changed_when: false
+          when: >-
+            deployment_lock_acquired | bool
+      when: not release_transaction_required | bool
 
   handlers:
     - name: Reload Caddy after maintenance transition

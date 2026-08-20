@@ -60,7 +60,8 @@ ALERTS = (
      "GAM filesystem usage reached the critical threshold",
     {"environment": "production", "service": "filesystem", "severity": "critical"}),
 )
-PROXY_ENDPOINT = "http://proxy.internal:2019/metrics"
+PROXY_ENDPOINT = "http://proxy.internal:2020/metrics"
+CADDY_ADMIN_ENDPOINT = "http://proxy.internal:2019/metrics"
 BACKEND_ENDPOINT = "http://backend.internal:8080/actuator/prometheus"
 POSTGRES_USERNAME = "betterstack_metrics"
 POSTGRES_PASSWORD = "generated-postgresql-metrics-secret"
@@ -425,10 +426,18 @@ class FakeBetterStackHandler(BaseHTTPRequestHandler):
         if kind == "prometheus" or (not creation and "service" in body):
             allowed = {"kind", "host", "service", "endpoint"} if creation else {"host", "service", "endpoint"}
             required = allowed
-            return (
+            valid_prometheus_shape = (
                 cls._has_only(body, allowed, required)
                 and re.match(r"^https?://[^/]+/", body.get("endpoint", "")) is not None
             )
+            if not valid_prometheus_shape:
+                return False
+            if body.get("service") == "proxy":
+                return (
+                    body.get("host") == "proxy.internal"
+                    and body.get("endpoint") == PROXY_ENDPOINT
+                )
+            return True
         if kind == "postgres" or not creation:
             allowed = (
                 {"kind", "host", "port", "username", "password", "ssl_mode"}
@@ -845,8 +854,20 @@ class FakeBetterStackServer(ThreadingHTTPServer):
 
 def production_tasks() -> list[dict[str, Any]]:
     document = yaml.safe_load(SITE.read_text(encoding="utf-8"))
-    play = next(item for item in document if item.get("hosts") == "production")
-    return play["tasks"]
+    monitoring_plays = [
+        play
+        for play in document
+        if play.get("hosts") == "production"
+        and any(
+            task.get("name") == "Discover Better Stack collectors by stable provider name"
+            for task in play.get("tasks", [])
+        )
+    ]
+    if len(monitoring_plays) != 1:
+        raise AssertionError(
+            "site.yml must contain exactly one production play that owns Better Stack reconciliation"
+        )
+    return monitoring_plays[0]["tasks"]
 
 
 def task_slice(first_name: str, last_name: str) -> list[dict[str, Any]]:
@@ -1344,7 +1365,7 @@ def scenario_environment(
         "BETTER_STACK_POSTGRESQL_TARGET_PORT": "5432",
         "BETTER_STACK_POSTGRESQL_TARGET_USERNAME": POSTGRES_USERNAME,
         "BETTER_STACK_POSTGRESQL_TARGET_PASSWORD": POSTGRES_PASSWORD,
-        "GAM_PRODUCTION_ORIGIN": "https://gam.example.org",
+        "GAM_PUBLIC_ORIGIN": "https://gam.example.org",
         "NO_PROXY": "127.0.0.1,localhost",
         "no_proxy": "127.0.0.1,localhost",
     })
@@ -1456,6 +1477,32 @@ class BetterStackProviderScenarioTest(unittest.TestCase):
         payload = json.loads(response.read().decode("utf-8") or "{}")
         connection.close()
         return response.status, payload
+
+    def test_proxy_target_rejects_caddy_admin_and_accepts_private_metrics_listener(self) -> None:
+        stale_admin_target = {
+            "kind": "prometheus",
+            "host": "proxy.internal",
+            "service": "proxy",
+            "endpoint": CADDY_ADMIN_ENDPOINT,
+        }
+
+        stale_status, stale_payload = self.provider_request(
+            "POST",
+            "/api/v1/collectors/collector-1/targets",
+            stale_admin_target,
+        )
+
+        self.assertEqual(422, stale_status, stale_payload)
+        self.assertEqual([], self.state.targets)
+
+        supported_status, supported_payload = self.provider_request(
+            "POST",
+            "/api/v1/collectors/collector-1/targets",
+            {**stale_admin_target, "endpoint": PROXY_ENDPOINT},
+        )
+
+        self.assertEqual(201, supported_status, supported_payload)
+        self.assertEqual(PROXY_ENDPOINT, self.state.targets[0]["attributes"]["endpoint"])
 
     def test_two_pass_commissioning_stops_for_custody_then_converges_from_provider_pages(self) -> None:
         commissioning = task_slice(

@@ -31,8 +31,202 @@
     - name: Apply the AWS EventBridge and Lambda backup monitor contract
       ansible.builtin.include_tasks: backup-monitor.yml
 
+- name: Prepare the production host for the approved release sequence
+  hosts: production
+  remote_user: "{{ steady_state_user }}"
+  become: true
+  vars_files:
+    - group_vars/production.yml
+  tasks:
+    - name: Install PostgreSQL TLS validation dependencies
+      ansible.builtin.package:
+        name: openssl
+        state: present
+
+    - name: Create the restricted PostgreSQL TLS directory
+      ansible.builtin.file:
+        path: "{{ postgres_tls_directory }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Create production Compose configuration directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      loop:
+        - path: "{{ production_root }}"
+          mode: "0750"
+        - path: "{{ production_root }}/runtime"
+          mode: "0750"
+        - path: "{{ production_root }}/secrets"
+          mode: "0700"
+
+    - name: Initialize deployment lock ownership
+      ansible.builtin.set_fact:
+        deployment_lock_acquired: false
+
+    - name: Require explicit Developer approval
+      ansible.builtin.assert:
+        that:
+          - lookup('env', 'GAM_DEPLOYMENT_APPROVAL') | lower == 'approved'
+          - lookup('env', 'GAM_DEPLOYMENT_APPROVAL_RECORD') | length > 0
+        fail_msg: A Developer approval token and approval record are required before mutation.
+      no_log: true
+
+    - name: Install approved production inputs under the deployment lock
+      block:
+        - name: Acquire exclusive deployment lock
+          ansible.builtin.shell: |
+            set -eu
+            install -d -m 0750 /run
+            if ! mkdir "/run/gam-production-deploy.lock"; then
+              echo "another production deployment already owns the exclusive deployment lock" >&2
+              exit 75
+            fi
+          args:
+            executable: /bin/sh
+          register: production_configuration_lock_result
+          changed_when: false
+
+        - name: Mark versioned configuration lock as acquired
+          ansible.builtin.set_fact:
+            deployment_lock_acquired: true
+
+        - name: Install the externally custodied production secret input
+          ansible.builtin.include_role:
+            name: secret-inputs
+
+        - name: Install the PostgreSQL TLS certificate from external custody
+          ansible.builtin.copy:
+            src: "{{ postgres_tls_certificate_source_file }}"
+            dest: "{{ postgres_tls_directory }}/server.crt"
+            owner: root
+            group: root
+            mode: "0644"
+          no_log: true
+
+        - name: Install the PostgreSQL TLS private key from external custody
+          ansible.builtin.copy:
+            src: "{{ postgres_tls_private_key_source_file }}"
+            dest: "{{ postgres_tls_directory }}/server.key"
+            owner: root
+            group: "{{ postgres_container_group_id }}"
+            mode: "0640"
+          no_log: true
+
+        - name: Read the PostgreSQL certificate public key
+          ansible.builtin.command:
+            argv:
+              - openssl
+              - x509
+              - -in
+              - "{{ postgres_tls_directory }}/server.crt"
+              - -pubkey
+              - -noout
+              - -checkend
+              - "0"
+          register: postgres_tls_certificate_public_key
+          changed_when: false
+          no_log: true
+
+        - name: Read the PostgreSQL private key public component
+          ansible.builtin.command:
+            argv:
+              - openssl
+              - pkey
+              - -in
+              - "{{ postgres_tls_directory }}/server.key"
+              - -pubout
+          register: postgres_tls_private_key_public_key
+          changed_when: false
+          no_log: true
+
+        - name: Verify the PostgreSQL TLS certificate and private key match
+          ansible.builtin.assert:
+            that:
+              - >-
+                postgres_tls_certificate_public_key.stdout | trim
+                == postgres_tls_private_key_public_key.stdout | trim
+            fail_msg: The PostgreSQL TLS certificate and private key do not match.
+          no_log: true
+
+        - name: Install versioned production Compose configuration
+          ansible.builtin.copy:
+            src: "{{ item.src }}"
+            dest: "{{ item.dest }}"
+            owner: root
+            group: root
+            mode: "0644"
+          loop:
+            - src: "{{ playbook_dir }}/../../deploy/production/compose.yml"
+              dest: "{{ production_compose_file }}"
+            - src: "{{ playbook_dir }}/../../deploy/production/Caddyfile"
+              dest: "{{ production_root }}/Caddyfile"
+          register: production_compose_configuration_install
+      rescue:
+        - name: Remove deployment lock after release-input preparation failure
+          ansible.builtin.file:
+            path: /run/gam-production-deploy.lock
+            state: absent
+          changed_when: false
+          when: >-
+            deployment_lock_acquired | bool or
+            (production_configuration_lock_result is defined and
+             (production_configuration_lock_result.rc | default(1) | int) == 0)
+
+        - name: Stop after locked versioned configuration convergence failure
+          ansible.builtin.fail:
+            msg: Versioned production Compose configuration did not converge under the exclusive deployment lock.
+
+    - name: Install recoverable production Compose environment inputs
+      ansible.builtin.copy:
+        src: "{{ production_recoverable_secret_file }}"
+        dest: "{{ item }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0600"
+      loop:
+        - "{{ production_root }}/secrets/postgres.env"
+        - "{{ production_root }}/secrets/backend.env"
+      register: production_secret_input_install
+      failed_when: false
+      no_log: true
+
+    - name: Detect recoverable production secret-input installation failure
+      ansible.builtin.set_fact:
+        production_secret_input_install_failed: >-
+          {{
+            production_secret_input_install.results | default([])
+            | selectattr('failed', 'defined')
+            | selectattr('failed')
+            | list
+            | length > 0
+          }}
+      no_log: true
+
+    - name: Remove deployment lock after secret-input installation failure
+      ansible.builtin.file:
+        path: /run/gam-production-deploy.lock
+        state: absent
+      changed_when: false
+      when: production_secret_input_install_failed | bool
+
+    - name: Stop after recoverable production secret-input installation failure
+      ansible.builtin.fail:
+        msg: Recoverable production secret inputs did not converge under the exclusive deployment lock.
+      when: production_secret_input_install_failed | bool
+
+- import_playbook: ../../deploy/production/ansible/deploy-release.yml
+
 - name: Provision GAM production backup, recovery, AWS, and monitoring behavior
   hosts: production
+  remote_user: "{{ steady_state_user }}"
   become: true
   vars_files:
     - group_vars/production.yml
@@ -50,7 +244,7 @@
         that:
           - aws_account_id | length > 0
           - vps_public_source_ip | length > 0
-          - production_origin | length > 0
+          - gam_public_origin | length > 0
           - developer_age_recipient | length > 0
           - client_age_recipient | length > 0
           - better_stack_api_url | length > 0
@@ -88,67 +282,239 @@
         state: present
 
   tasks:
-    - name: Create the restricted PostgreSQL TLS directory
-      ansible.builtin.file:
-        path: "{{ postgres_tls_directory }}"
-        state: directory
-        owner: root
-        group: root
-        mode: "0700"
-
-    - name: Install the PostgreSQL TLS certificate from external custody
-      ansible.builtin.copy:
-        src: "{{ postgres_tls_certificate_source_file }}"
-        dest: "{{ postgres_tls_directory }}/server.crt"
-        owner: root
-        group: root
-        mode: "0644"
-      no_log: true
-
-    - name: Install the PostgreSQL TLS private key from external custody
-      ansible.builtin.copy:
-        src: "{{ postgres_tls_private_key_source_file }}"
-        dest: "{{ postgres_tls_directory }}/server.key"
-        owner: root
-        group: "{{ postgres_container_group_id }}"
-        mode: "0640"
-      no_log: true
-
-    - name: Read the PostgreSQL certificate public key
+    - name: Discover the running production PostgreSQL container
       ansible.builtin.command:
         argv:
-          - openssl
-          - x509
-          - -in
-          - "{{ postgres_tls_directory }}/server.crt"
-          - -pubkey
-          - -noout
-          - -checkend
-          - "0"
-      register: postgres_tls_certificate_public_key
+          - docker
+          - ps
+          - --quiet
+          - --filter
+          - label=com.docker.compose.project=gam-production
+          - --filter
+          - label=com.docker.compose.service=postgres
+          - --filter
+          - status=running
+      register: production_postgresql_container
       changed_when: false
+      failed_when: >-
+        production_postgresql_container.rc != 0
+        or production_postgresql_container.stdout_lines | length != 1
+      check_mode: false
+
+    - name: Inspect PostgreSQL monitoring prerequisites before reconciliation
+      ansible.builtin.shell:
+        executable: /bin/sh
+        cmd: |
+          set -eu
+          docker exec --interactive \
+            --env GAM_MONITOR_USERNAME \
+            --env GAM_MONITOR_CREDENTIAL_FINGERPRINT \
+            "{{ production_postgresql_container.stdout | trim }}" \
+            sh -ceu '
+              exec psql \
+                --username "$POSTGRES_USER" \
+                --dbname "$POSTGRES_DB" \
+                --tuples-only \
+                --no-align \
+                --set=ON_ERROR_STOP=1 \
+                --set=monitor_username="$GAM_MONITOR_USERNAME" \
+                --set=credential_comment="gam-monitor-credentials-sha256:$GAM_MONITOR_CREDENTIAL_FINGERPRINT"
+            ' <<'SQL'
+          SELECT concat_ws('|',
+            CASE WHEN EXISTS (
+              SELECT 1 FROM pg_roles WHERE rolname = :'monitor_username'
+            ) THEN 'role=present' ELSE 'role=missing' END,
+            CASE WHEN EXISTS (
+              SELECT 1
+              FROM pg_auth_members membership
+              JOIN pg_roles member_role ON member_role.oid = membership.member
+              JOIN pg_roles granted_role ON granted_role.oid = membership.roleid
+              WHERE member_role.rolname = :'monitor_username'
+                AND granted_role.rolname = 'pg_monitor'
+            ) THEN 'pg_monitor=granted' ELSE 'pg_monitor=missing' END,
+            CASE WHEN EXISTS (
+              SELECT 1
+              FROM pg_roles
+              WHERE rolname = :'monitor_username'
+                AND has_database_privilege(oid, current_database(), 'CONNECT')
+            ) THEN 'connect=granted' ELSE 'connect=missing' END,
+            CASE WHEN EXISTS (
+              SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements'
+            ) THEN 'extension=present' ELSE 'extension=missing' END,
+            CASE WHEN 'pg_stat_statements' = ANY (
+              regexp_split_to_array(current_setting('shared_preload_libraries'), E'\\s*,\\s*')
+            ) THEN 'preload=enabled' ELSE 'preload=missing' END,
+            CASE WHEN EXISTS (
+              SELECT 1
+              FROM pg_roles
+              WHERE rolname = :'monitor_username'
+                AND coalesce(shobj_description(oid, 'pg_authid'), '') = :'credential_comment'
+            ) THEN 'credentials=current' ELSE 'credentials=stale' END
+          );
+          SQL
+      environment:
+        GAM_MONITOR_USERNAME: "{{ better_stack_postgresql_target_username | string }}"
+        GAM_MONITOR_CREDENTIAL_FINGERPRINT: >-
+          {{ better_stack_postgresql_target_password | hash('sha256') }}
+      register: postgresql_monitoring_state_before
+      changed_when: false
+      check_mode: false
       no_log: true
 
-    - name: Read the PostgreSQL private key public component
-      ansible.builtin.command:
-        argv:
-          - openssl
-          - pkey
-          - -in
-          - "{{ postgres_tls_directory }}/server.key"
-          - -pubout
-      register: postgres_tls_private_key_public_key
-      changed_when: false
+    - name: Reconcile PostgreSQL monitoring role, grants, extension, and credentials
+      ansible.builtin.shell:
+        executable: /bin/sh
+        cmd: |
+          set -eu
+          docker exec --interactive \
+            --env GAM_MONITOR_USERNAME \
+            --env GAM_MONITOR_PASSWORD \
+            --env GAM_MONITOR_CREDENTIAL_FINGERPRINT \
+            "{{ production_postgresql_container.stdout | trim }}" \
+            sh -ceu '
+              exec psql \
+                --username "$POSTGRES_USER" \
+                --dbname "$POSTGRES_DB" \
+                --set=ON_ERROR_STOP=1 \
+                --set=monitor_username="$GAM_MONITOR_USERNAME" \
+                --set=monitor_password="$GAM_MONITOR_PASSWORD" \
+                --set=credential_comment="gam-monitor-credentials-sha256:$GAM_MONITOR_CREDENTIAL_FINGERPRINT"
+            ' <<'SQL'
+          BEGIN;
+          SELECT format('CREATE ROLE %I LOGIN', :'monitor_username')
+          WHERE NOT EXISTS (
+            SELECT 1 FROM pg_roles WHERE rolname = :'monitor_username'
+          ) \gexec
+          SELECT format(
+            'ALTER ROLE %I LOGIN PASSWORD %L',
+            :'monitor_username',
+            :'monitor_password'
+          )
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM pg_roles
+            WHERE rolname = :'monitor_username'
+              AND coalesce(shobj_description(oid, 'pg_authid'), '') = :'credential_comment'
+          ) \gexec
+          SELECT format(
+            'COMMENT ON ROLE %I IS %L',
+            :'monitor_username',
+            :'credential_comment'
+          )
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM pg_roles
+            WHERE rolname = :'monitor_username'
+              AND coalesce(shobj_description(oid, 'pg_authid'), '') = :'credential_comment'
+          ) \gexec
+          SELECT format('GRANT pg_monitor TO %I', :'monitor_username')
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM pg_auth_members membership
+            JOIN pg_roles member_role ON member_role.oid = membership.member
+            JOIN pg_roles granted_role ON granted_role.oid = membership.roleid
+            WHERE member_role.rolname = :'monitor_username'
+              AND granted_role.rolname = 'pg_monitor'
+          ) \gexec
+          SELECT format(
+            'GRANT CONNECT ON DATABASE %I TO %I',
+            current_database(),
+            :'monitor_username'
+          )
+          WHERE NOT has_database_privilege(
+            :'monitor_username', current_database(), 'CONNECT'
+          ) \gexec
+          CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+          COMMIT;
+          SQL
+      environment:
+        GAM_MONITOR_USERNAME: "{{ better_stack_postgresql_target_username | string }}"
+        GAM_MONITOR_PASSWORD: "{{ better_stack_postgresql_target_password | string }}"
+        GAM_MONITOR_CREDENTIAL_FINGERPRINT: >-
+          {{ better_stack_postgresql_target_password | hash('sha256') }}
+      when: >-
+        postgresql_monitoring_state_before.stdout | trim !=
+        'role=present|pg_monitor=granted|connect=granted|extension=present|preload=enabled|credentials=current'
+      changed_when: true
       no_log: true
 
-    - name: Verify the PostgreSQL TLS certificate and private key match
+    - name: Inspect PostgreSQL monitoring prerequisites after reconciliation
+      ansible.builtin.shell:
+        executable: /bin/sh
+        cmd: |
+          set -eu
+          docker exec --interactive \
+            --env GAM_MONITOR_USERNAME \
+            --env GAM_MONITOR_CREDENTIAL_FINGERPRINT \
+            "{{ production_postgresql_container.stdout | trim }}" \
+            sh -ceu '
+              exec psql \
+                --username "$POSTGRES_USER" \
+                --dbname "$POSTGRES_DB" \
+                --tuples-only \
+                --no-align \
+                --set=ON_ERROR_STOP=1 \
+                --set=monitor_username="$GAM_MONITOR_USERNAME" \
+                --set=credential_comment="gam-monitor-credentials-sha256:$GAM_MONITOR_CREDENTIAL_FINGERPRINT"
+            ' <<'SQL'
+          SELECT concat_ws('|',
+            CASE WHEN EXISTS (
+              SELECT 1 FROM pg_roles WHERE rolname = :'monitor_username'
+            ) THEN 'role=present' ELSE 'role=missing' END,
+            CASE WHEN EXISTS (
+              SELECT 1
+              FROM pg_auth_members membership
+              JOIN pg_roles member_role ON member_role.oid = membership.member
+              JOIN pg_roles granted_role ON granted_role.oid = membership.roleid
+              WHERE member_role.rolname = :'monitor_username'
+                AND granted_role.rolname = 'pg_monitor'
+            ) THEN 'pg_monitor=granted' ELSE 'pg_monitor=missing' END,
+            CASE WHEN EXISTS (
+              SELECT 1 FROM pg_roles WHERE rolname = :'monitor_username'
+            ) AND has_database_privilege(
+              :'monitor_username', current_database(), 'CONNECT'
+            ) THEN 'connect=granted' ELSE 'connect=missing' END,
+            CASE WHEN EXISTS (
+              SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements'
+            ) THEN 'extension=present' ELSE 'extension=missing' END,
+            CASE WHEN 'pg_stat_statements' = ANY (
+              regexp_split_to_array(current_setting('shared_preload_libraries'), E'\\s*,\\s*')
+            ) THEN 'preload=enabled' ELSE 'preload=missing' END,
+            CASE WHEN EXISTS (
+              SELECT 1
+              FROM pg_roles
+              WHERE rolname = :'monitor_username'
+                AND coalesce(shobj_description(oid, 'pg_authid'), '') = :'credential_comment'
+            ) THEN 'credentials=current' ELSE 'credentials=stale' END
+          );
+          SQL
+      environment:
+        GAM_MONITOR_USERNAME: "{{ better_stack_postgresql_target_username | string }}"
+        GAM_MONITOR_CREDENTIAL_FINGERPRINT: >-
+          {{ better_stack_postgresql_target_password | hash('sha256') }}
+      register: postgresql_monitoring_state_after
+      changed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: Verify PostgreSQL monitoring role, grants, extension, and preload state
       ansible.builtin.assert:
         that:
           - >-
-            postgres_tls_certificate_public_key.stdout | trim
-            == postgres_tls_private_key_public_key.stdout | trim
-        fail_msg: The PostgreSQL TLS certificate and private key do not match.
+            postgresql_monitoring_state_after.stdout | trim ==
+            'role=present|pg_monitor=granted|connect=granted|extension=present|preload=enabled|credentials=current'
+        fail_msg: >-
+          PostgreSQL monitoring prerequisites must converge before the Better
+          Stack database target is accepted.
       no_log: true
+
+    - name: Report verified PostgreSQL monitoring state for commissioning evidence
+      ansible.builtin.debug:
+        msg: >-
+          PostgreSQL monitoring state verified: pg_roles pg_auth_members
+          pg_monitor has_database_privilege pg_extension pg_stat_statements
+          shared_preload_libraries
+      changed_when: false
 
     - name: Create the machine backup service group on a clean host
       ansible.builtin.group:
@@ -2702,7 +3068,7 @@
         body_format: json
         body:
           pronounceable_name: GAM production availability
-          url: "{{ production_origin }}/api/health"
+          url: "{{ gam_public_origin }}/api/health"
           monitor_type: keyword
           required_keyword: '{"status":"UP"}'
           http_method: GET
@@ -2715,7 +3081,7 @@
       when: >-
         item.attributes.pronounceable_name | default('') == 'GAM production availability'
         and (
-          item.attributes.url | default('') != production_origin + '/api/health'
+          item.attributes.url | default('') != gam_public_origin + '/api/health'
           or item.attributes.monitor_type | default('') != 'keyword'
           or item.attributes.required_keyword | default('') != '{"status":"UP"}'
           or item.attributes.http_method != 'get'
@@ -2736,7 +3102,7 @@
         body_format: json
         body:
           pronounceable_name: GAM production TLS certificate
-          url: "{{ production_origin }}"
+          url: "{{ gam_public_origin }}"
           monitor_type: status
           check_frequency: 3600
           ssl_expiration: 30
@@ -2748,7 +3114,7 @@
       when:
         - item.attributes.pronounceable_name | default('') == 'GAM production TLS certificate'
         - >-
-          item.attributes.url | default('') != production_origin
+          item.attributes.url | default('') != gam_public_origin
           or item.attributes.monitor_type | default('') != 'status'
           or item.attributes.check_frequency | int != 3600
           or item.attributes.ssl_expiration | int != 30
@@ -2767,7 +3133,7 @@
         body_format: json
         body:
           pronounceable_name: GAM production availability
-          url: "{{ production_origin }}/api/health"
+          url: "{{ gam_public_origin }}/api/health"
           monitor_type: keyword
           required_keyword: '{"status":"UP"}'
           http_method: GET
@@ -2792,7 +3158,7 @@
         body_format: json
         body:
           pronounceable_name: GAM production TLS certificate
-          url: "{{ production_origin }}"
+          url: "{{ gam_public_origin }}"
           monitor_type: status
           check_frequency: 3600
           ssl_expiration: 30
@@ -2876,7 +3242,7 @@
           - >-
             better_stack_monitors_readback.json.data | default([])
             | selectattr('attributes.pronounceable_name', 'equalto', 'GAM production availability')
-            | selectattr('attributes.url', 'equalto', production_origin + '/api/health')
+            | selectattr('attributes.url', 'equalto', gam_public_origin + '/api/health')
             | selectattr('attributes.monitor_type', 'equalto', 'keyword')
             | selectattr('attributes.check_frequency', 'equalto', 300)
             | selectattr('attributes.email', 'equalto', true)
@@ -2888,7 +3254,7 @@
           - >-
             better_stack_monitors_readback.json.data | default([])
             | selectattr('attributes.pronounceable_name', 'equalto', 'GAM production TLS certificate')
-            | selectattr('attributes.url', 'equalto', production_origin)
+            | selectattr('attributes.url', 'equalto', gam_public_origin)
             | selectattr('attributes.monitor_type', 'equalto', 'status')
             | selectattr('attributes.check_frequency', 'equalto', 3600)
             | selectattr('attributes.email', 'equalto', true)

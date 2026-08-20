@@ -221,7 +221,7 @@ class ProductionReviewReturnInfrastructureStructuralTest {
         String flywayGate = section(
                 playbook,
                 "flyway gate",
-                "compute the fixture frontend archive digest"
+                "compute the controller-downloaded frontend archive digest"
         );
         String state = requiredFile(FLYWAY_SELECTED_OVERRIDE_STATE).toLowerCase();
         int overrideCreation = playbook.indexOf("create the rollback compose override for this pair");
@@ -321,7 +321,7 @@ class ProductionReviewReturnInfrastructureStructuralTest {
         String flywayGate = section(
                 playbook,
                 "flyway gate",
-                "compute the fixture frontend archive digest"
+                "compute the controller-downloaded frontend archive digest"
         );
         Map<String, String> state = readState(BACKUP_BRANCH_STATE);
 

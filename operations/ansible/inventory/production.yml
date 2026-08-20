@@ -16,3 +16,6 @@ all:
           - "{{ lookup('ansible.builtin.env', 'GAM_SSH_ALLOWED_CIDR') }}"
         operations_public_key_file: "{{ lookup('ansible.builtin.env', 'GAM_OPERATIONS_PUBLIC_KEY_FILE') }}"
         secret_input_source_file: "{{ lookup('ansible.builtin.env', 'GAM_SECRET_INPUT_FILE', default='') }}"
+    gam_production:
+      children:
+        production:

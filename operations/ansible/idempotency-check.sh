@@ -34,19 +34,28 @@ apply_log="$(mktemp)"
 replay_log="$(mktemp)"
 firewall_state_log="$(mktemp)"
 trap 'rm -f -- "$apply_log" "$replay_log" "$firewall_state_log"' EXIT
+postgresql_monitoring_state_marker='PostgreSQL monitoring state verified: pg_roles pg_auth_members pg_monitor has_database_privilege pg_extension pg_stat_statements shared_preload_libraries'
+operator_cidrs_json="${GAM_OPERATOR_CIDRS:?GAM_OPERATOR_CIDRS is required}"
+site_play_vars="{\"gam_operator_cidrs\":${operator_cidrs_json}}"
 
 if ! ansible-playbook \
   -i inventory/production.yml \
-  playbooks/production-host-baseline.yml \
+  site.yml \
+  --extra-vars "$site_play_vars" \
   "${ansible_connection_args[@]}" \
   --diff \
   2>&1 | tee "$apply_log"; then
-  echo 'Initial host-baseline apply failed.' >&2
+  echo 'Initial production-site apply failed.' >&2
   exit 1
 fi
 
 if ! test -s "$apply_log" || ! grep -Eqi 'secret input convergence verified|/etc/gam/secrets' "$apply_log"; then
-  echo 'Initial host-baseline apply did not verify secret input convergence.' >&2
+  echo 'Initial production-site apply did not verify secret input convergence.' >&2
+  exit 1
+fi
+
+if ! grep -Fq "$postgresql_monitoring_state_marker" "$apply_log"; then
+  echo 'Initial production-site apply did not verify PostgreSQL monitoring state.' >&2
   exit 1
 fi
 
@@ -106,18 +115,23 @@ fi
 
 if ! ansible-playbook \
   -i inventory/production.yml \
-  playbooks/production-host-baseline.yml \
+  site.yml \
+  --extra-vars "$site_play_vars" \
   --skip-tags bootstrap \
   --user gamops \
   "${ansible_connection_args[@]}" \
-  --check \
   --diff \
   2>&1 | tee "$replay_log"; then
-  echo 'Host-baseline replay check failed.' >&2
+  echo 'Production-site replay failed.' >&2
   exit 1
 fi
 
-if ! grep -Eq 'changed=0' "$replay_log"; then
-  echo 'Host-baseline replay check failed: expected changed=0.' >&2
+if grep -Eq 'changed=[1-9][0-9]*' "$replay_log" || ! grep -Eq 'changed=0' "$replay_log"; then
+  echo 'Production-site replay failed: expected changed=0.' >&2
+  exit 1
+fi
+
+if ! grep -Fq "$postgresql_monitoring_state_marker" "$replay_log"; then
+  echo 'Production-site replay did not verify PostgreSQL monitoring state.' >&2
   exit 1
 fi

@@ -2,7 +2,7 @@
 # Better Stack is the independent public availability and metrics provider.
 provider: better stack
 availability:
-  url: "{{ production_origin }}/api/health"
+  url: "{{ gam_public_origin }}/api/health"
   http_method: GET
   expected_status: 200
   required_keyword: '{"status":"UP"}'
