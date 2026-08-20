@@ -54,6 +54,14 @@ Correct a broken new test or fixture within Agent T. When safe test design
 cannot continue, return the matching escalation outcome from the result
 contract.
 
+When Agent O's assignment records that an Accepted Requirement explicitly
+changes, supersedes, or removes the rule in an obsolete test, Agent T may
+correct, replace, or delete that obsolete assertion without repeated developer
+approval. Preserve or strengthen coverage of every behavior that remains
+required. Delete without replacement only when the assertion exclusively
+protects explicitly removed behavior. Requirement silence, inference, or a
+material coverage reduction requires escalation; it is not authority to delete.
+
 ### 4. Expanded coverage
 
 In `t_expanded`, evaluate whether feature risk calls for additional coverage.
@@ -115,3 +123,5 @@ stop.
 
 - Do not implement production code.
 - Do not rewrite accepted requirements inside a test-design session.
+- Do not weaken tests or remove still-required coverage to obtain a passing
+  result.

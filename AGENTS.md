@@ -94,8 +94,10 @@ Before changing code or tests, read only the guideline files relevant to the wor
 
 - Never delete, disable, skip, or weaken tests merely to make the test suite pass.
 - If a test fails, fix the production code, test fixture, or documented requirement mismatch so the intended behavior is preserved.
-- Removing or materially weakening a test requires explicit developer approval before the change is made.
-- When a test appears obsolete or incorrect, report the rationale and wait for approval instead of deleting it.
+- Removing or materially weakening required coverage requires explicit developer approval before the change is made.
+- In an Agent O workflow, when an Accepted Requirement explicitly changes, supersedes, or removes the rule asserted by an obsolete test, Agent O may authorize Agent T to correct, replace, or delete that obsolete assertion without repeated developer approval. Agent T must preserve or strengthen coverage of every behavior that remains required; deletion without replacement is allowed only when the assertion exclusively protects explicitly removed behavior.
+- Requirement silence is not removal. Any deletion based on silence, inference, conflicting accepted artifacts, or a material reduction in required coverage requires developer resolution.
+- Outside that explicit Accepted-Requirement exception, when a test appears obsolete or incorrect, report the rationale and wait for approval instead of deleting it.
 
 ## Git policy
 

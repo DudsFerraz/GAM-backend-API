@@ -11,7 +11,11 @@ This package is authoritative for the cross-role workflow:
 
 - `references/role-boundaries.md` defines role identity, ownership, and
   role-skill authority.
-- `references/role-result-contract.md` defines result shapes and outcomes.
+- `references/gam-role-result.schema.json` is the sole machine-readable
+  `gam-role-result/v1` definition. It owns result shapes, role/phase outcomes,
+  details, and `human_intervention_required` invariants.
+- `references/role-result-contract.md` explains how roles and Agent O consume
+  the canonical schema without redefining it.
 - The legal-transition table below maps outcomes to targets.
 - `references/agent-t-agent-d-loop.md` defines correction-cycle accounting and
   loop completion criteria.
@@ -19,6 +23,18 @@ This package is authoritative for the cross-role workflow:
   developer reply resolves an escalation and resumes the same workflow.
 
 Read the owner for every concern used in the current turn.
+
+Accepted Requirement Specifications govern the orchestration behavior they
+define. Skills, prompts, assignments, tests, and workflow state are conforming
+artifacts. When an accepted requirement unambiguously conflicts with a
+lower-priority artifact, apply the requirement and preserve the artifact
+mismatch for correction; escalate conflicts among accepted authoritative
+artifacts or genuinely ambiguous behavior.
+
+Every T, D, or R assignment exposes an exact `contract_projection` containing
+`schema_version: gam-role-result/v1`, target `role`, target `phase`,
+`allowed_outcomes`, `required_common_fields`, success-detail requirements, and
+applicable invariants. Only schema-valid results enter the transition table.
 
 ## Legal transitions
 

@@ -34,7 +34,9 @@ In addition to tests established by strict criteria, fundamental heuristics must
 
 Agents must not delete, disable, skip, or weaken tests to obtain a green build. A failing test is evidence to investigate: fix the production code, test fixture, environment setup, or documented requirement mismatch while preserving the intended behavior under test.
 
-Deleting or materially weakening a test is allowed only after explicit developer approval. If a test appears obsolete, duplicated, incorrect, or incompatible with the accepted requirements, report the rationale and wait for approval before changing or removing it.
+Removing or materially weakening required coverage requires explicit developer approval. In an Agent O workflow, when an Accepted Requirement explicitly changes, supersedes, or removes the rule asserted by an obsolete test, Agent O may authorize Agent T to correct, replace, or delete that obsolete assertion without repeated developer approval. Agent T must preserve or strengthen coverage of every behavior that remains required; deletion without replacement is allowed only when the assertion exclusively protects behavior that the Accepted Requirement explicitly removed.
+
+Requirement silence is not removal. Any deletion based on silence, inference, conflicting accepted artifacts, or a material reduction in required coverage requires developer resolution. Outside the explicit Accepted-Requirement exception, if a test appears obsolete, duplicated, incorrect, or incompatible with accepted requirements, report the rationale and wait for approval before changing or removing it.
 
 ---
 

@@ -44,7 +44,16 @@ Return one fenced `json` object with this shape:
   "verification": [],
   "scope_restrictions": [],
   "risks": [],
-  "developer_resolution": null
+  "developer_resolution": null,
+  "contract_projection": {
+    "schema_version": "gam-role-result/v1",
+    "role": "<exact target role>",
+    "phase": "<exact target phase>",
+    "allowed_outcomes": [],
+    "required_common_fields": [],
+    "success_details": {},
+    "invariants": []
+  }
 }
 ```
 
@@ -52,6 +61,12 @@ Return one fenced `json` object with this shape:
 
 - Preserve `workflow_id`, result identity, authoritative artifacts, relevant
   risks, and exact verification entries.
+- Derive `contract_projection` from
+  `$gam-agent-workflow/references/gam-role-result.schema.json`. Include only the
+  target role and phase's allowed outcomes, required common fields, success
+  detail shape, and applicable `human_intervention_required`, blocker,
+  artifact, and verification invariants. Do not independently redefine
+  `gam-role-result/v1` vocabulary.
 - Reuse the result contract's `artifacts` and `verification` item shapes.
 - Copy `scope_restrictions` from Agent O state unchanged.
 - For Agent T or Agent D, project only relevant `created` or `modified`

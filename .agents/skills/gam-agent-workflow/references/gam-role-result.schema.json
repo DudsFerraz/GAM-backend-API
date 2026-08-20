@@ -1,0 +1,368 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gam.local/contracts/gam-role-result.schema.json",
+  "title": "gam-role-result/v1",
+  "description": "Canonical GAM role-result contract. This definition replaces the defective v1 prose contract in place; no legacy fields, outcomes, aliases, or dual-schema behavior are supported.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "workflow_id",
+    "role",
+    "phase",
+    "outcome",
+    "artifacts",
+    "authoritative_artifacts",
+    "verification",
+    "blockers",
+    "risks",
+    "scope_deviations",
+    "human_intervention_required",
+    "details"
+  ],
+  "properties": {
+    "schema_version": { "const": "gam-role-result/v1" },
+    "workflow_id": { "type": "string", "minLength": 1 },
+    "role": { "enum": ["agent_t", "agent_d", "agent_r"] },
+    "phase": { "enum": ["t_initial", "t_expanded", "d_initial", "d_correction", "r_review"] },
+    "outcome": { "type": "string", "minLength": 1 },
+    "artifacts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/artifact" }
+    },
+    "authoritative_artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/repositoryReference" }
+    },
+    "verification": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/verification" }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?=.*Evidence:\\s*\\S)(?=.*Exact unresolved decision:\\s*\\S).+$"
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "scope_deviations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "human_intervention_required": { "type": "boolean" },
+    "details": { "type": "object" }
+  },
+  "additionalProperties": false,
+  "oneOf": [
+    { "$ref": "#/$defs/tInitialExpectedRed" },
+    { "$ref": "#/$defs/tInitialEscalation" },
+    { "$ref": "#/$defs/tExpandedIssue" },
+    { "$ref": "#/$defs/tExpandedComplete" },
+    { "$ref": "#/$defs/tExpandedEscalation" },
+    { "$ref": "#/$defs/dInitialSuccess" },
+    { "$ref": "#/$defs/dInitialEscalation" },
+    { "$ref": "#/$defs/dCorrectionSuccess" },
+    { "$ref": "#/$defs/dCorrectionEscalation" },
+    { "$ref": "#/$defs/rNoFindings" },
+    { "$ref": "#/$defs/rTestFinding" },
+    { "$ref": "#/$defs/rImplementationFinding" },
+    { "$ref": "#/$defs/rEscalation" }
+  ],
+  "$defs": {
+    "repositoryReference": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//).+$"
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["path", "kind", "change"],
+      "properties": {
+        "path": { "$ref": "#/$defs/repositoryReference" },
+        "kind": { "enum": ["test", "production", "documentation", "configuration"] },
+        "change": { "enum": ["created", "modified", "consulted"] }
+      },
+      "additionalProperties": false
+    },
+    "verification": {
+      "type": "object",
+      "required": ["command", "status", "observed", "signal"],
+      "properties": {
+        "command": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["passed", "failed", "blocked", "not_run"] },
+        "observed": { "type": "string", "minLength": 1 },
+        "signal": { "enum": ["expected_red", "unexpected_failure", "pass", "not_applicable"] }
+      },
+      "additionalProperties": false
+    },
+    "emptyObject": {
+      "type": "object",
+      "maxProperties": 0,
+      "additionalProperties": false
+    },
+    "expectedRedDetails": {
+      "type": "object",
+      "required": ["expected_red_signal"],
+      "properties": {
+        "expected_red_signal": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "completionDetails": {
+      "type": "object",
+      "required": ["completion_criteria_satisfied"],
+      "properties": {
+        "completion_criteria_satisfied": { "const": true }
+      },
+      "additionalProperties": false
+    },
+    "reviewDetails": {
+      "type": "object",
+      "required": ["findings"],
+      "properties": {
+        "findings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/finding" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "finding": {
+      "type": "object",
+      "required": ["classification", "evidence", "affected_artifacts", "summary"],
+      "properties": {
+        "classification": {
+          "enum": [
+            "verification_concern",
+            "missing_or_misleading_coverage",
+            "defect_without_adequate_failing_coverage",
+            "production_defect_with_adequate_coverage",
+            "unambiguous_implementation_issue"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "affected_artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/repositoryReference" }
+        },
+        "summary": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "normalResult": {
+      "properties": {
+        "human_intervention_required": { "const": false },
+        "blockers": { "maxItems": 0 },
+        "scope_deviations": { "maxItems": 0 },
+        "verification": {
+          "minItems": 1,
+          "contains": {
+            "type": "object",
+            "properties": {
+              "status": { "const": "passed" },
+              "signal": { "const": "pass" }
+            },
+            "required": ["status", "signal"]
+          },
+          "minContains": 1
+        }
+      }
+    },
+    "expectedRedResult": {
+      "properties": {
+        "human_intervention_required": { "const": false },
+        "blockers": { "maxItems": 0 },
+        "scope_deviations": { "maxItems": 0 },
+        "verification": {
+          "minItems": 1,
+          "contains": {
+            "type": "object",
+            "properties": {
+              "status": { "const": "failed" },
+              "signal": { "const": "expected_red" }
+            },
+            "required": ["status", "signal"]
+          },
+          "minContains": 1
+        },
+        "details": { "$ref": "#/$defs/expectedRedDetails" }
+      }
+    },
+    "escalationResult": {
+      "properties": {
+        "human_intervention_required": { "const": true },
+        "blockers": { "minItems": 1 },
+        "details": { "$ref": "#/$defs/emptyObject" }
+      }
+    },
+    "implementationResult": {
+      "allOf": [
+        { "$ref": "#/$defs/normalResult" },
+        {
+          "properties": {
+            "artifacts": {
+              "minItems": 1,
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "kind": { "enum": ["production", "configuration", "documentation"] },
+                  "change": { "enum": ["created", "modified"] }
+                },
+                "required": ["kind", "change"]
+              },
+              "minContains": 1
+            },
+            "details": { "$ref": "#/$defs/emptyObject" }
+          }
+        }
+      ]
+    },
+    "tInitialExpectedRed": {
+      "allOf": [
+        { "$ref": "#/$defs/expectedRedResult" },
+        { "properties": { "role": { "const": "agent_t" }, "phase": { "const": "t_initial" }, "outcome": { "const": "expected_red_confirmed" } } }
+      ]
+    },
+    "tInitialEscalation": {
+      "allOf": [
+        { "$ref": "#/$defs/escalationResult" },
+        { "properties": { "role": { "const": "agent_t" }, "phase": { "const": "t_initial" }, "outcome": { "enum": ["requirement_ambiguity", "test_authority_conflict", "no_valid_test_seam", "verification_blocker", "role_mismatch"] } } }
+      ]
+    },
+    "tExpandedIssue": {
+      "allOf": [
+        { "$ref": "#/$defs/expectedRedResult" },
+        { "properties": { "role": { "const": "agent_t" }, "phase": { "const": "t_expanded" }, "outcome": { "const": "production_issue_exposed" } } }
+      ]
+    },
+    "tExpandedComplete": {
+      "allOf": [
+        { "$ref": "#/$defs/normalResult" },
+        { "properties": { "role": { "const": "agent_t" }, "phase": { "const": "t_expanded" }, "outcome": { "const": "td_loop_complete" }, "details": { "$ref": "#/$defs/completionDetails" } } }
+      ]
+    },
+    "tExpandedEscalation": {
+      "allOf": [
+        { "$ref": "#/$defs/escalationResult" },
+        { "properties": { "role": { "const": "agent_t" }, "phase": { "const": "t_expanded" }, "outcome": { "enum": ["requirement_ambiguity", "test_authority_conflict", "no_valid_test_seam", "verification_blocker", "role_mismatch"] } } }
+      ]
+    },
+    "dInitialSuccess": {
+      "allOf": [
+        { "$ref": "#/$defs/implementationResult" },
+        { "properties": { "role": { "const": "agent_d" }, "phase": { "const": "d_initial" }, "outcome": { "const": "initial_implementation_satisfies_tests" } } }
+      ]
+    },
+    "dInitialEscalation": {
+      "allOf": [
+        { "$ref": "#/$defs/escalationResult" },
+        { "properties": { "role": { "const": "agent_d" }, "phase": { "const": "d_initial" }, "outcome": { "enum": ["test_authority_conflict", "architecture_decision_required", "verification_blocker", "role_mismatch"] } } }
+      ]
+    },
+    "dCorrectionSuccess": {
+      "allOf": [
+        { "$ref": "#/$defs/implementationResult" },
+        { "properties": { "role": { "const": "agent_d" }, "phase": { "const": "d_correction" }, "outcome": { "const": "production_issue_fixed" } } }
+      ]
+    },
+    "dCorrectionEscalation": {
+      "allOf": [
+        { "$ref": "#/$defs/escalationResult" },
+        { "properties": { "role": { "const": "agent_d" }, "phase": { "const": "d_correction" }, "outcome": { "enum": ["test_authority_conflict", "architecture_decision_required", "verification_blocker", "role_mismatch"] } } }
+      ]
+    },
+    "rNoFindings": {
+      "allOf": [
+        { "$ref": "#/$defs/normalResult" },
+        {
+          "properties": {
+            "role": { "const": "agent_r" },
+            "phase": { "const": "r_review" },
+            "outcome": { "const": "no_actionable_findings" },
+            "details": {
+              "allOf": [
+                { "$ref": "#/$defs/reviewDetails" },
+                { "properties": { "findings": { "maxItems": 0 } } }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "rTestFinding": {
+      "allOf": [
+        { "$ref": "#/$defs/normalResult" },
+        {
+          "properties": {
+            "role": { "const": "agent_r" },
+            "phase": { "const": "r_review" },
+            "outcome": { "const": "test_design_issue_found" },
+            "details": {
+              "allOf": [
+                { "$ref": "#/$defs/reviewDetails" },
+                {
+                  "properties": {
+                    "findings": {
+                      "minItems": 1,
+                      "contains": {
+                        "type": "object",
+                        "properties": { "classification": { "enum": ["missing_or_misleading_coverage", "defect_without_adequate_failing_coverage"] } },
+                        "required": ["classification"]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "rImplementationFinding": {
+      "allOf": [
+        { "$ref": "#/$defs/normalResult" },
+        {
+          "properties": {
+            "role": { "const": "agent_r" },
+            "phase": { "const": "r_review" },
+            "outcome": { "const": "implementation_issue_found" },
+            "details": {
+              "allOf": [
+                { "$ref": "#/$defs/reviewDetails" },
+                {
+                  "properties": {
+                    "findings": {
+                      "minItems": 1,
+                      "items": {
+                        "allOf": [
+                          { "$ref": "#/$defs/finding" },
+                          { "properties": { "classification": { "enum": ["production_defect_with_adequate_coverage", "unambiguous_implementation_issue"] } } }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "rEscalation": {
+      "allOf": [
+        { "$ref": "#/$defs/escalationResult" },
+        { "properties": { "role": { "const": "agent_r" }, "phase": { "const": "r_review" }, "outcome": { "enum": ["requirement_or_domain_ambiguity", "architecture_decision_required", "scope_decision_required", "permission_blocker", "verification_blocker", "role_mismatch"] } } }
+      ]
+    }
+  }
+}
