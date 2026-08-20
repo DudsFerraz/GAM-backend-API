@@ -40,6 +40,43 @@ Missing, blank, false, malformed, unsupported, or legacy configuration aborts
 Flyway before fixture mutation. The committed example deliberately contains
 no usable credential or fallback.
 
+## Task-local database lifecycle
+
+Each development task uses its own Docker Compose project and PostgreSQL named
+volume. The instance identifier is selected in this order:
+
+1. `GAM_DEV_INSTANCE_ID`, when explicitly configured;
+2. `CODEX_THREAD_ID`, for a Codex task; or
+3. `local`, for ordinary development outside Codex.
+
+An explicit instance identifier must contain only lowercase letters, digits,
+hyphens, and underscores. The PostgreSQL container publishes port `5432` to an
+automatically allocated loopback port. Spring Boot discovers that mapped port
+through its Docker Compose service connection, so concurrent tasks do not
+share a fixed host port or database volume.
+
+The first application start creates and starts the task's Compose resources.
+Later application reruns issue an idempotent Compose start and reuse the same
+running PostgreSQL container, network, and named database volume. Stopping the
+application does not stop those task resources. To inspect the allocated host
+port, use the project name derived from the resolved instance identifier:
+
+```powershell
+docker compose --project-name gam-api-<instance-id> port postgres 5432
+```
+
+When the task or worktree is finished, explicitly delete its retained database:
+
+```powershell
+java scripts/RemoveDevelopmentEnvironment.java
+```
+
+The helper resolves the instance identifier using the same precedence, prints
+the exact Compose project it will delete, and requires interactive confirmation.
+When running it outside the original task environment, pass the instance
+identifier as its sole argument. Do not retire an environment that another
+application process is using.
+
 ## Stable manifest
 
 The callback owns fixed UUIDv7 identities and explicit projection ranges:

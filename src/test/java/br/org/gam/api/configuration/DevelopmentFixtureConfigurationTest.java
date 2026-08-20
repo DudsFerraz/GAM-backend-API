@@ -17,6 +17,10 @@ import javax.tools.JavaCompiler;
 import javax.tools.ToolProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.MutablePropertySources;
+import org.springframework.core.env.PropertiesPropertySource;
+import org.springframework.core.env.PropertySourcesPropertyResolver;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.support.PropertiesLoaderUtils;
 
@@ -48,6 +52,67 @@ class DevelopmentFixtureConfigurationTest {
         assertThat(properties("application-dev.properties").getProperty("spring.flyway.locations"))
                 .contains("classpath:db/migration")
                 .contains("classpath:db/dev-migration");
+    }
+
+    @Test
+    @DisplayName("concurrent development tasks -> isolated Compose project, volume, and host port")
+    void concurrentDevelopmentTasksShouldUseIsolatedComposeResources() throws IOException {
+        Properties defaults = properties("application.properties");
+        String compose = Files.readString(Path.of("compose.yml"), StandardCharsets.UTF_8);
+
+        assertThat(defaults.getProperty("spring.docker.compose.arguments[0]"))
+                .isEqualTo("--project-name=gam-api-${GAM_DEV_INSTANCE_ID:${CODEX_THREAD_ID:local}}");
+        assertThat(compose)
+                .contains("\"127.0.0.1::5432\"")
+                .doesNotContain("\"5433:5432\"");
+    }
+
+    @Test
+    @DisplayName("development instance selection -> explicit override, Codex task, then local fallback")
+    void developmentInstanceSelectionShouldUseAcceptedPrecedence() throws IOException {
+        assertThat(resolvedComposeProjectArgument(Map.of(
+                "GAM_DEV_INSTANCE_ID", "explicit_instance",
+                "CODEX_THREAD_ID", "ignored-thread"
+        ))).isEqualTo("--project-name=gam-api-explicit_instance");
+        assertThat(resolvedComposeProjectArgument(Map.of(
+                "CODEX_THREAD_ID", "019ff6da-4c99-7502-9577-00bf7cfc8d6a"
+        ))).isEqualTo("--project-name=gam-api-019ff6da-4c99-7502-9577-00bf7cfc8d6a");
+        assertThat(resolvedComposeProjectArgument(Map.of()))
+                .isEqualTo("--project-name=gam-api-local");
+    }
+
+    @Test
+    @DisplayName("application rerun -> existing task Compose environment remains running")
+    void applicationRerunShouldReuseTaskComposeEnvironment() throws IOException {
+        Properties defaults = properties("application.properties");
+
+        assertThat(properties("application-dev.properties"))
+                .containsEntry("spring.docker.compose.lifecycle-management", "start-only");
+        assertThat(defaults.stringPropertyNames())
+                .noneMatch(name -> name.equals("spring.docker.compose.stop.command"))
+                .noneMatch(name -> name.startsWith("spring.docker.compose.stop.arguments"));
+    }
+
+    @Test
+    @DisplayName("finished development task -> explicit confirmed volume cleanup helper")
+    void finishedDevelopmentTaskShouldHaveExplicitCleanupHelper() throws IOException {
+        Path helper = Path.of("scripts", "RemoveDevelopmentEnvironment.java");
+        String source = Files.readString(helper, StandardCharsets.UTF_8);
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        Path output = Files.createTempDirectory("development-environment-cleanup-helper");
+
+        assertThat(compiler).as("JDK compiler").isNotNull();
+        assertThat(compiler.run(null, null, null, "-d", output.toString(), helper.toString()))
+                .isZero();
+        assertThat(source)
+                .contains(
+                        "System.getenv(\"GAM_DEV_INSTANCE_ID\")",
+                        "System.getenv(\"CODEX_THREAD_ID\")",
+                        "Console console = System.console()",
+                        "\"down\"",
+                        "\"--volumes\""
+                )
+                .doesNotContain("docker volume prune");
     }
 
     @Test
@@ -189,6 +254,7 @@ class DevelopmentFixtureConfigurationTest {
                 .contains(
                         "Development Fixture Policy and Dataset",
                         "java scripts/NewDevelopmentFixturePasswordHash.java",
+                        "java scripts/RemoveDevelopmentEnvironment.java",
                         "gam.dev-fixture.execution-enabled",
                         "gam.dev-fixture.password-hash",
                         "01950000-0001-7000-8000-000000000001",
@@ -201,6 +267,18 @@ class DevelopmentFixtureConfigurationTest {
 
     private static Properties properties(String resourcePath) throws IOException {
         return PropertiesLoaderUtils.loadProperties(new ClassPathResource(resourcePath));
+    }
+
+    private static String resolvedComposeProjectArgument(Map<String, Object> environment)
+            throws IOException {
+        Properties defaults = properties("application.properties");
+        MutablePropertySources propertySources = new MutablePropertySources();
+        propertySources.addFirst(new MapPropertySource("test-environment", environment));
+        propertySources.addLast(new PropertiesPropertySource("application-defaults", defaults));
+
+        return new PropertySourcesPropertyResolver(propertySources).resolveRequiredPlaceholders(
+                defaults.getProperty("spring.docker.compose.arguments[0]")
+        );
     }
 
     private static String resourceText(String resourcePath) throws IOException {
