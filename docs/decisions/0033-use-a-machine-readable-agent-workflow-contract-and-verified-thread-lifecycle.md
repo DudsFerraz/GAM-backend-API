@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -22,7 +22,9 @@ Observed workflow failures expose two coupled design weaknesses:
 
 The accepted planning direction requires requirements to govern workflow
 behavior, mechanical failures to recover without routine developer work, and
-fresh review independence to remain intact.
+fresh review independence to remain intact. The supported Codex runtime exposes
+no callable native close operation, so closure cannot remain a legal-transition
+precondition.
 
 ## Decision
 
@@ -53,16 +55,27 @@ be escalated.
 
 Agent O's native state will track every spawned thread identity and distinguish
 active, completed, interrupted, and confirmed-closed states. Agent R will be
-closed and its capacity release confirmed after each review pass. Interruption
-will be used only to stop an active turn and will never be treated as closure.
-Sticky T/D threads will remain open only while a legal transition can resume
-them and will be closed at terminal workflow cleanup.
+closed after each review pass only when the runtime exposes a supported native
+close operation. Otherwise, its completed thread will be recorded as retained
+completed and the legal transition will continue. Interruption will be used
+only to stop an active turn and will never be treated as closure. Every later
+review will still use a fresh Agent R thread. Sticky T/D threads will remain
+open while a legal transition can resume them; terminal closure is also best-
+effort and is not a workflow-completion precondition.
+
+The supported local Codex configuration will allow 20 open spawned-agent
+threads per session, excluding the primary thread. This is fixed operational
+headroom, not authorization for Agent O to change or bypass the limit during a
+workflow. Retained completed agents remain part of capacity accounting, and
+Agent O will escalate only when a required fresh spawn encounters actual native
+capacity exhaustion or another spawn failure.
 
 Unreliable continuation will require native evidence rather than elapsed time
 alone. T/D will receive one same-thread recovery attempt; an unreliable R will
-be interrupted, closed, and replaced with a fresh reviewer. Missing or failed
-native close capability will produce a platform lifecycle blocker rather than
-reviewer reuse.
+be interrupted when necessary, marked non-resumable, and replaced with a fresh
+reviewer when capacity permits. Missing or failed native close capability will
+be recorded accurately but will not block continuation or permit reviewer
+reuse.
 
 Accepted Requirement Specifications will govern orchestration behavior. Agent
 skills, custom-agent prompts, handoff envelopes, and validators will be treated
@@ -119,7 +132,7 @@ Cons:
 - Does not guarantee access to native close semantics.
 - Broadens the correction far beyond the identified gaps.
 
-### Option 5: Use a canonical schema with native lifecycle confirmation
+### Option 5: Use a canonical schema with capacity-aware best-effort lifecycle
 
 Pros:
 - Provides one enumerable contract for agents, assignments, and verification.
@@ -127,12 +140,24 @@ Pros:
 - Preserves role ownership through bounded same-agent re-emission.
 - Makes thread capacity and cleanup observable.
 - Retains fresh independent reviewers and sticky writer continuity.
+- Continues on runtimes that expose no callable close operation.
 
 Cons:
 - Requires schema-aware contract projections and repository verification.
 - Agent O must maintain more explicit lifecycle state.
-- Workflow continuation depends on Codex exposing a genuine close capability.
+- Retained completed threads may eventually exhaust even the increased limit.
 - Existing skill and prompt prose must be reconciled with the schema.
+
+### Option 6: Require native closure before every transition
+
+Pros:
+- Releases capacity immediately when the runtime supports closure.
+- Keeps native lifecycle state minimal.
+
+Cons:
+- Makes a missing platform operation an unsatisfiable workflow precondition.
+- Escalates after successful engineering work even when ample capacity remains.
+- Cannot be implemented reliably by repository prompts or requirements alone.
 
 ## Consequences
 
@@ -141,8 +166,10 @@ Positive consequences:
 - Role agents receive smaller, unambiguous outcome sets.
 - Mechanical defects normally recover without developer intervention.
 - Requirement-directed stale-test correction becomes routine orchestration.
-- Completed reviewer threads stop consuming the native session limit.
-- Capacity failures report the actual lifecycle capability problem.
+- Missing close capability no longer blocks valid workflow transitions.
+- Fixed capacity headroom supports repeated fresh independent reviews.
+- Capacity failures report actual native exhaustion rather than an absent
+  optional lifecycle operation.
 - Agent O cannot silently convert interruption into closure.
 
 Negative consequences:
@@ -150,8 +177,9 @@ Negative consequences:
 - Repository checks must prevent generated or documented projections from
   drifting.
 - Agent O requires bounded retry and lifecycle-reconciliation behavior.
-- A Codex environment without real close support cannot complete repeated fresh
-  reviews in one session and must surface that limitation.
+- Retained completed threads continue occupying native session capacity.
+- Very long workflows may still exhaust the fixed limit and require a new
+  session.
 
 ## Related requirements
 
@@ -169,6 +197,10 @@ Negative consequences:
 - `REQ-AGENT-012`
 - `REQ-AGENT-013`
 - `REQ-AGENT-014`
+- `REQ-AGENT-015`
+- `REQ-AGENT-016`
+- `REQ-AGENT-017`
+- `REQ-AGENT-018`
 
 ## Related diagrams
 

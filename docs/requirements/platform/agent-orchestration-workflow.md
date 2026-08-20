@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft
+Accepted
 
 ## Context
 
@@ -14,10 +14,11 @@ into developer work.
 
 The workflow currently depends on prose-only result contracts and native agent
 thread lifecycle operations. A completed or interrupted agent thread may remain
-open, malformed role results may use plausible but invalid vocabulary, and all
-validation failures may be routed through the same human-escalation path. These
-conditions can exhaust the native thread limit and make obvious corrections as
-expensive as genuine requirement or architecture decisions.
+open, and some Codex runtimes expose no callable close operation. Malformed role
+results may also use plausible but invalid vocabulary, and all validation
+failures may be routed through the same human-escalation path. These conditions
+can exhaust the native thread limit and make obvious corrections as expensive
+as genuine requirement or architecture decisions.
 
 This specification defines the required orchestration behavior. Once accepted,
 the agent skills, custom-agent prompts, assignments, and validation mechanisms
@@ -39,6 +40,8 @@ sources of workflow truth.
   confirmed closed and no longer occupies session capacity.
 - `interrupted agent`: An agent whose active turn was stopped. Interruption does
   not imply that its thread is closed.
+- `retained completed agent`: A completed agent with no active turn whose thread
+  remains open because the current runtime exposes no supported close operation.
 - `unreliable continuation`: An agent continuation for which native state and
   repeated progress checks show that safe role completion or resumption can no
   longer be relied upon.
@@ -110,15 +113,15 @@ Invalid examples:
 ### REQ-AGENT-003: Reserve human escalation for substantive blockers
 
 Agent O shall automatically perform routine routing, unambiguous
-requirement-directed test correction, mechanical result recovery, and native
-thread cleanup. These conditions shall not independently require human
-intervention.
+requirement-directed test correction, mechanical result recovery, lifecycle
+accounting, and best-effort native thread cleanup. These conditions shall not
+independently require human intervention.
 
 Agent O shall request human intervention only when:
 
 - a substantive blocker has no single accepted authoritative resolution;
-- a required platform permission or lifecycle capability remains unavailable
-  after safe native handling;
+- a required platform permission or non-deferred lifecycle capability remains
+  unavailable after safe native handling;
 - role-result correction attempts are exhausted or reveal inconsistent facts;
 - sticky T/D continuation recovery fails;
 - the correction-cycle limit is reached; or
@@ -252,45 +255,37 @@ confirmed. Agent O shall not infer closure from a completed result, an
 interruption response, disappearance from an active list, or its own prior
 cleanup request.
 
+A completed agent with no active turn may be recorded as retained completed
+when native closure is unavailable. That classification shall preserve accurate
+capacity accounting without blocking a transition that does not require the
+agent to run again.
+
 Rationale:
 Accurate capacity accounting requires native lifecycle evidence rather than
 conversation wording.
 
 ---
 
-### REQ-AGENT-010: Close every completed Agent R pass
+### REQ-AGENT-010: Close every completed Agent R pass (Superseded)
 
-After Agent R returns a result that is either validated or has exhausted its
-allowed correction attempts, Agent O shall close that Agent R thread and
-confirm closure before applying the next transition, completing the workflow,
-or reporting an escalation.
+Status: Superseded by `REQ-AGENT-015`.
 
-An active unreliable Agent R shall first be interrupted when necessary and then
-closed. Interruption alone shall never satisfy this requirement.
+This historical requirement required Agent O to close every completed Agent R
+thread and confirm capacity release before applying the next transition.
 
-Every subsequent independent review shall use a fresh Agent R thread. A prior
-completed reviewer shall not be reused as a capacity workaround.
-
-Rationale:
-Review passes are independent and non-resumable, so retaining their completed
-threads consumes capacity without serving a legal transition.
+It was superseded because the supported Codex runtime may expose no callable
+close operation, making mandatory closure an unsatisfiable workflow
+precondition.
 
 ---
 
-### REQ-AGENT-011: Preserve sticky T/D threads only while resumable
+### REQ-AGENT-011: Preserve sticky T/D threads only while resumable (Superseded)
 
-Agent T and Agent D shall retain their original thread identities while a legal
-current or future transition can resume them, including during a resolvable
-workflow escalation. They shall be closed when the workflow completes, is
-explicitly abandoned, or reaches a state in which the role can no longer be
-legally resumed.
+Status: Superseded by `REQ-AGENT-016`.
 
-Agent O shall perform and confirm terminal T/D cleanup before declaring the
-native workflow lifecycle complete.
-
-Rationale:
-T/D continuity preserves accumulated role context, while terminal cleanup
-prevents completed workflows from retaining unnecessary capacity.
+This historical requirement made confirmed terminal closure of sticky Agent T
+and Agent D threads a workflow-completion precondition. It was superseded so
+terminal cleanup remains best-effort when native closure is unavailable.
 
 ---
 
@@ -311,47 +306,121 @@ quiet and must not be duplicated or interrupted merely because they take time.
 
 ---
 
-### REQ-AGENT-013: Recover unreliable continuations by role
+### REQ-AGENT-013: Recover unreliable continuations by role (Superseded)
+
+Status: Superseded by `REQ-AGENT-017`.
+
+This historical requirement required an unreliable Agent R thread to be closed
+before a replacement could start. It was superseded because reviewer freshness
+does not require native deletion or closure of the prior completed turn.
+
+---
+
+### REQ-AGENT-014: Verify capacity before spawning (Superseded)
+
+Status: Superseded by `REQ-AGENT-018`.
+
+This historical requirement prohibited increased configured capacity and made
+missing close capability a platform lifecycle blocker. It was superseded by the
+approved fixed-capacity mitigation in `REQ-AGENT-018`.
+
+---
+
+### REQ-AGENT-015: Treat reviewer closure as best-effort
+
+After Agent R returns a validated result or exhausts its allowed result-
+correction attempts, Agent O shall capture the result and apply the legal
+transition without requiring native thread closure.
+
+When the current runtime exposes a supported close operation, Agent O shall
+attempt to close the non-resumable reviewer and record the observed result.
+When no supported close operation exists or the attempt fails, Agent O shall
+record the reviewer as retained completed and continue. Interruption shall
+never be reported as closure.
+
+Every subsequent independent review shall use a fresh Agent R thread. A prior
+completed reviewer shall not be resumed or reused as a capacity workaround.
+
+Rationale:
+Review independence requires a fresh reviewer context, not a native lifecycle
+operation that the runtime may not expose.
+
+---
+
+### REQ-AGENT-016: Preserve sticky T/D threads while resumable
+
+Agent T and Agent D shall retain their original thread identities while a legal
+current or future transition can resume them, including during a resolvable
+workflow escalation.
+
+When the workflow completes, is explicitly abandoned, or can no longer resume
+the role, Agent O shall attempt native closure if a supported close operation
+exists. Otherwise, Agent O shall record the thread as retained completed and
+may declare the workflow complete without misreporting closure.
+
+Rationale:
+T/D continuity preserves accumulated role context, while best-effort terminal
+cleanup avoids making an unavailable platform capability a completion gate.
+
+---
+
+### REQ-AGENT-017: Recover unreliable continuations by role
 
 When Agent T or Agent D becomes an unreliable continuation, Agent O shall
 interrupt the active turn when necessary and attempt one recovery on the same
 sticky role thread with the preserved assignment and workflow state. Agent O
 shall escalate if that same-thread recovery fails.
 
-When Agent R becomes an unreliable continuation, Agent O shall interrupt and
-close it, then start one fresh independent Agent R pass with the same validated
-review assignment. Agent O shall escalate if the reviewer cannot be closed or
-the replacement cannot be started safely.
+When Agent R becomes an unreliable continuation, Agent O shall interrupt its
+active turn when necessary, preserve the validated review assignment, mark the
+thread non-resumable, and start one fresh independent Agent R pass when native
+capacity permits. Closure of the prior reviewer is best-effort and shall not be
+a replacement precondition.
 
 Rationale:
-Writer roles require continuity; independent reviewer passes require freshness.
+Writer roles require continuity; independent reviewer passes require freshness,
+while native closure may be unavailable.
 
 ---
 
-### REQ-AGENT-014: Verify capacity before spawning
+### REQ-AGENT-018: Use fixed capacity headroom and report actual exhaustion
 
-Before spawning an agent, Agent O shall reconcile its lifecycle record with
-native thread state and close every open thread that has no legal future use.
-Agent O shall not increase the configured thread limit or reuse a completed
-reviewer to compensate for missing cleanup.
+The supported local Codex configuration for this workflow shall allow 20 open
+spawned-agent threads per session, excluding the primary thread. Agent O shall
+reconcile every recorded agent with native state before spawning and shall
+include retained completed threads in capacity accounting.
 
-If Codex exposes no actual close operation, a close request fails, or released
-capacity cannot be confirmed, Agent O shall return a platform lifecycle blocker
-with the affected thread identities and observed native state.
+Agent O shall not dynamically change or bypass the configured limit during an
+active workflow. Missing close capability alone shall not cause escalation.
+Agent O shall report a platform capacity blocker only when a required fresh
+agent cannot be spawned because the configured native capacity is actually
+exhausted or the spawn operation fails.
+
+The blocker shall identify all capacity-occupying thread identities, their
+observed states, and the required transition that could not start.
 
 Rationale:
-Capacity failure should identify the missing lifecycle capability instead of
-misrepresenting completed agents as an unavoidable lifetime task limit.
+A fixed limit of 20 provides bounded headroom for sticky T/D roles and repeated
+fresh reviews without depending on an unavailable close operation or permitting
+unbounded concurrency.
 
 ## Acceptance scenarios
 
 ```gherkin
-Scenario: Close a completed reviewer before the next correction cycle
+Scenario: Continue after a completed reviewer when closure is unavailable
   Given Agent R returned a valid test-design finding
+  And Codex exposes no supported close operation
   When Agent O routes the finding to Agent T
-  Then Agent O closes the completed Agent R thread first
-  And confirms that the reviewer no longer occupies native thread capacity
+  Then Agent O records the reviewer as retained completed
+  And does not report the reviewer as closed
   And a later review uses a fresh Agent R thread
+
+Scenario: Close a completed reviewer when the capability exists
+  Given Agent R returned a valid review result
+  And Codex exposes a supported close operation
+  When Agent O completes the review transition
+  Then Agent O attempts to close the completed Agent R thread
+  And records the native close result without blocking the transition
 
 Scenario: Do not confuse interruption with closure
   Given an Agent R turn was interrupted
@@ -397,12 +466,12 @@ Scenario: Recover an unreliable sticky writer
   Then Agent O attempts one recovery on the same Agent T thread
   And preserves the workflow assignment and state
 
-Scenario: Report unavailable close capability
-  Given a completed Agent R thread remains open
-  And Codex provides no successful native close operation
-  When Agent O prepares another fresh review
-  Then Agent O reports a platform lifecycle blocker
-  And does not reuse the completed reviewer
+Scenario: Report actual configured-capacity exhaustion
+  Given retained completed agents occupy all 20 configured spawned-thread slots
+  And the workflow requires a fresh Agent R
+  When the native spawn operation cannot create that reviewer
+  Then Agent O reports a platform capacity blocker
+  And identifies every capacity-occupying thread and its observed state
 
 Scenario: Keep native approvals outside Agent O
   Given a required action crosses a sandbox boundary
@@ -417,13 +486,16 @@ Scenario: Keep native approvals outside Agent O
 flowchart TD
     A[Role returns result] --> B{Canonical contract valid?}
     B -- Yes --> C{Agent R pass?}
-    C -- Yes --> D[Close R and confirm capacity release]
+    C -- Yes --> D{Supported close operation?}
     C -- No --> E[Apply legal transition]
-    D --> E
+    D -- Yes --> J[Attempt close and record result]
+    D -- No --> K[Record retained completed reviewer]
+    J --> E
+    K --> E
     B -- No --> F{Fewer than two correction attempts?}
     F -- Yes --> G[Same role re-emits against role and phase projection]
     G --> B
-    F -- No --> H[Close non-resumable thread]
+    F -- No --> H[Record non-resumable thread and attempt cleanup]
     H --> I[Escalate exact unresolved defect]
 ```
 
@@ -433,7 +505,9 @@ None.
 
 ## Out of scope
 
-- Increasing or dynamically bypassing Codex's configured native thread limit.
+- Dynamically changing or bypassing Codex's configured native thread limit
+  during an active workflow.
+- Unbounded agent-thread capacity beyond the approved fixed limit of 20.
 - Reusing a completed Agent R as a substitute for a fresh independent review.
 - Replacing Codex native orchestration with an external orchestrator.
 - Changing Codex Auto-review, sandbox, filesystem, network, or organization
