@@ -61,6 +61,13 @@ jobs:
       - name: Executar cenarios do provedor Better Stack com Ansible
         run: python operations/ansible/test_better_stack_provider_scenarios.py
 
+      - name: Executar limites do fluxo operacional de producao
+        run: python operations/ansible/test_production_runtime_boundaries.py
+
+      - name: Validar a sintaxe do site completo de producao
+        working-directory: operations/ansible
+        run: ansible-playbook --inventory inventory/production.yml site.yml --syntax-check
+
       # 2. Executamos os testes injetando as variáveis de ambiente
       #dasjhdsaid
       - name: Executar testes com Maven

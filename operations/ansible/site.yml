@@ -1,4 +1,51 @@
 ﻿---
+- name: Authorize and lock the canonical production workflow before mutation
+  hosts: gam_production
+  become: false
+  gather_facts: false
+  vars_files:
+    - group_vars/production.yml
+  tasks:
+    - name: Initialize deployment lock ownership
+      ansible.builtin.set_fact:
+        deployment_lock_acquired: false
+
+    - name: Require explicit Developer approval
+      ansible.builtin.assert:
+        that:
+          - lookup('env', 'GAM_DEPLOYMENT_APPROVAL') | lower == 'approved'
+          - lookup('env', 'GAM_DEPLOYMENT_APPROVAL_RECORD') | length > 0
+        fail_msg: A Developer approval token and approval record are required before mutation.
+      no_log: true
+
+    - name: Acquire exclusive deployment lock
+      ansible.builtin.shell: |
+        set -eu
+        install -d -m 0750 /run
+        owner_token="$(cat /proc/sys/kernel/random/uuid)"
+        test -n "$owner_token"
+        if ! mkdir "/run/gam-production-deploy.lock"; then
+          echo "another production deployment already owns the exclusive deployment lock" >&2
+          exit 75
+        fi
+        if ! (umask 077 && printf 'owner_token=%s\n' "$owner_token" > "/run/gam-production-deploy.lock/owner"); then
+          rm -f -- "/run/gam-production-deploy.lock/owner"
+          rmdir -- "/run/gam-production-deploy.lock"
+          exit 1
+        fi
+        printf '%s\n' "$owner_token"
+      args:
+        executable: /bin/sh
+      become: true
+      register: production_configuration_lock_result
+      changed_when: false
+
+    - name: Mark deployment lock as acquired
+      ansible.builtin.set_fact:
+        deployment_lock_acquired: true
+        deployment_lock_owner_token: >-
+          {{ production_configuration_lock_result.stdout | default('') | trim }}
+
 - import_playbook: playbooks/production-host-baseline.yml
 
 - name: Provision AWS recovery resources and independent backup monitoring
@@ -66,37 +113,8 @@
         - path: "{{ production_root }}/secrets"
           mode: "0700"
 
-    - name: Initialize deployment lock ownership
-      ansible.builtin.set_fact:
-        deployment_lock_acquired: false
-
-    - name: Require explicit Developer approval
-      ansible.builtin.assert:
-        that:
-          - lookup('env', 'GAM_DEPLOYMENT_APPROVAL') | lower == 'approved'
-          - lookup('env', 'GAM_DEPLOYMENT_APPROVAL_RECORD') | length > 0
-        fail_msg: A Developer approval token and approval record are required before mutation.
-      no_log: true
-
     - name: Install approved production inputs under the deployment lock
       block:
-        - name: Acquire exclusive deployment lock
-          ansible.builtin.shell: |
-            set -eu
-            install -d -m 0750 /run
-            if ! mkdir "/run/gam-production-deploy.lock"; then
-              echo "another production deployment already owns the exclusive deployment lock" >&2
-              exit 75
-            fi
-          args:
-            executable: /bin/sh
-          register: production_configuration_lock_result
-          changed_when: false
-
-        - name: Mark versioned configuration lock as acquired
-          ansible.builtin.set_fact:
-            deployment_lock_acquired: true
-
         - name: Install the externally custodied production secret input
           ansible.builtin.include_role:
             name: secret-inputs
@@ -170,9 +188,22 @@
           register: production_compose_configuration_install
       rescue:
         - name: Remove deployment lock after release-input preparation failure
-          ansible.builtin.file:
-            path: /run/gam-production-deploy.lock
-            state: absent
+          ansible.builtin.shell: |
+            set -eu
+            lock=/run/gam-production-deploy.lock
+            expected_token="{{ deployment_lock_owner_token | default('') }}"
+            if [ ! -e "$lock" ]; then
+              exit 0
+            fi
+            if [ -n "$expected_token" ]; then
+              current_owner="$(sed -n '1p' "$lock/owner" 2>/dev/null || true)"
+              if [ "$current_owner" != "owner_token=$expected_token" ]; then
+                exit 0
+              fi
+            fi
+            rm -rf -- "$lock"
+          args:
+            executable: /bin/sh
           changed_when: false
           when: >-
             deployment_lock_acquired | bool or
@@ -211,9 +242,22 @@
       no_log: true
 
     - name: Remove deployment lock after secret-input installation failure
-      ansible.builtin.file:
-        path: /run/gam-production-deploy.lock
-        state: absent
+      ansible.builtin.shell: |
+        set -eu
+        lock=/run/gam-production-deploy.lock
+        expected_token="{{ deployment_lock_owner_token | default('') }}"
+        if [ ! -e "$lock" ]; then
+          exit 0
+        fi
+        if [ -n "$expected_token" ]; then
+          current_owner="$(sed -n '1p' "$lock/owner" 2>/dev/null || true)"
+          if [ "$current_owner" != "owner_token=$expected_token" ]; then
+            exit 0
+          fi
+        fi
+        rm -rf -- "$lock"
+      args:
+        executable: /bin/sh
       changed_when: false
       when: production_secret_input_install_failed | bool
 
@@ -3538,4 +3582,99 @@
           Better Stack managed target readiness did not converge within
           {{ better_stack_post_network_targets.json.attempts }} bounded all-page attempts.
       no_log: true
+
+- name: Release the canonical production workflow lock after convergence or failure
+  hosts: production
+  remote_user: "{{ steady_state_user }}"
+  become: true
+  gather_facts: false
+  vars:
+    canonical_lock_cleanup_play: true
+  vars_files:
+    - group_vars/production.yml
+  pre_tasks:
+    - name: Clear failed-host state before terminal deployment-lock cleanup
+      ansible.builtin.meta: clear_host_errors
+  tasks:
+    - name: Validate deployment lock ownership through steady-state operations access
+      ansible.builtin.shell: |
+        set -eu
+        lock=/run/gam-production-deploy.lock
+        expected_token="{{ deployment_lock_owner_token | default('') }}"
+        if [ ! -e "$lock" ]; then
+          printf '%s\n' absent
+        elif [ -n "$expected_token" ] &&
+             [ "$(sed -n '1p' "$lock/owner" 2>/dev/null || true)" = "owner_token=$expected_token" ]; then
+          printf '%s\n' owned
+        else
+          printf '%s\n' foreign
+        fi
+      args:
+        executable: /bin/sh
+      changed_when: false
+      register: steady_state_deployment_lock_ownership
+      ignore_errors: true
+      ignore_unreachable: true
+      when: deployment_lock_acquired | default(false) | bool
+
+    - name: Release deployment lock through steady-state operations access
+      ansible.builtin.file:
+        path: /run/gam-production-deploy.lock
+        state: absent
+      changed_when: false
+      register: steady_state_deployment_lock_cleanup
+      ignore_errors: true
+      ignore_unreachable: true
+      when:
+        - deployment_lock_acquired | default(false) | bool
+        - >-
+          (deployment_lock_owner_token | default('') | length == 0) or
+          (steady_state_deployment_lock_ownership.stdout | default('') | trim == 'owned')
+
+    - name: Validate deployment lock ownership through acquiring root access
+      ansible.builtin.shell: |
+        set -eu
+        lock=/run/gam-production-deploy.lock
+        expected_token="{{ deployment_lock_owner_token | default('') }}"
+        if [ ! -e "$lock" ]; then
+          printf '%s\n' absent
+        elif [ -n "$expected_token" ] &&
+             [ "$(sed -n '1p' "$lock/owner" 2>/dev/null || true)" = "owner_token=$expected_token" ]; then
+          printf '%s\n' owned
+        else
+          printf '%s\n' foreign
+        fi
+      args:
+        executable: /bin/sh
+      remote_user: root
+      become: false
+      changed_when: false
+      register: root_deployment_lock_ownership
+      ignore_errors: true
+      ignore_unreachable: true
+      when:
+        - deployment_lock_acquired | default(false) | bool
+        - >-
+          steady_state_deployment_lock_ownership is failed or
+          steady_state_deployment_lock_ownership is unreachable or
+          steady_state_deployment_lock_cleanup is failed or
+          steady_state_deployment_lock_cleanup is unreachable
+
+    - name: Release deployment lock
+      ansible.builtin.file:
+        path: /run/gam-production-deploy.lock
+        state: absent
+      remote_user: root
+      become: false
+      changed_when: false
+      when:
+        - deployment_lock_acquired | default(false) | bool
+        - >-
+          steady_state_deployment_lock_ownership is failed or
+          steady_state_deployment_lock_ownership is unreachable or
+          steady_state_deployment_lock_cleanup is failed or
+          steady_state_deployment_lock_cleanup is unreachable
+        - >-
+          (deployment_lock_owner_token | default('') | length == 0) or
+          (root_deployment_lock_ownership.stdout | default('') | trim == 'owned')
 

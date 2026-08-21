@@ -52,12 +52,35 @@
               - deployment_lock_acquired | default(false) | bool
             fail_msg: The approved full-site deployment must retain its Developer approval record and exclusive lock before release convergence.
       rescue:
+        - name: Validate inherited deployment lock ownership after ownership validation failure
+          ansible.builtin.shell: |
+            set -eu
+            lock="{{ deployment_lock_directory }}"
+            expected_token="{{ deployment_lock_owner_token | default('') }}"
+            if [ ! -e "$lock" ]; then
+              printf '%s\n' absent
+            elif [ -n "$expected_token" ] &&
+                 [ "$(sed -n '1p' "$lock/owner" 2>/dev/null || true)" = "owner_token=$expected_token" ]; then
+              printf '%s\n' owned
+            else
+              printf '%s\n' foreign
+            fi
+          args:
+            executable: /bin/sh
+          changed_when: false
+          register: inherited_lock_ownership_after_validation_failure
+          when: deployment_lock_acquired | default(false) | bool
+
         - name: Release inherited deployment lock after ownership validation failure
           ansible.builtin.file:
             path: "{{ deployment_lock_directory }}"
             state: absent
           changed_when: false
-          when: deployment_lock_acquired | default(false) | bool
+          when:
+            - deployment_lock_acquired | default(false) | bool
+            - >-
+              (deployment_lock_owner_token | default('') | length == 0) or
+              (inherited_lock_ownership_after_validation_failure.stdout | default('') | trim == 'owned')
 
         - name: Stop after inherited deployment ownership validation failure
           ansible.builtin.fail:
@@ -107,8 +130,12 @@
             database_migration_applied: false
             failed_release_record_failed: false
             failed_release_record_error: ""
+            failed_same_release_record_failed: false
+            failed_same_release_record_error: ""
             maintenance_response_enabled: false
             release_changed: false
+            release_transaction_failed: true
+            same_release_transaction_failed: true
             rollback_current_link_switched: false
             active_release_compose_override: "{{ frontend_current_link }}/compose.override.yml"
 
@@ -171,12 +198,35 @@
                 (frontend_release_root ~ '/' ~ release_id)
               }}
       rescue:
+        - name: Validate inherited deployment lock ownership after release-input validation failure
+          ansible.builtin.shell: |
+            set -eu
+            lock="{{ deployment_lock_directory }}"
+            expected_token="{{ deployment_lock_owner_token | default('') }}"
+            if [ ! -e "$lock" ]; then
+              printf '%s\n' absent
+            elif [ -n "$expected_token" ] &&
+                 [ "$(sed -n '1p' "$lock/owner" 2>/dev/null || true)" = "owner_token=$expected_token" ]; then
+              printf '%s\n' owned
+            else
+              printf '%s\n' foreign
+            fi
+          args:
+            executable: /bin/sh
+          changed_when: false
+          register: inherited_lock_ownership_after_release_input_failure
+          when: deployment_lock_acquired | default(false) | bool
+
         - name: Release inherited deployment lock after release-input validation failure
           ansible.builtin.file:
             path: "{{ deployment_lock_directory }}"
             state: absent
           changed_when: false
-          when: deployment_lock_acquired | default(false) | bool
+          when:
+            - deployment_lock_acquired | default(false) | bool
+            - >-
+              (deployment_lock_owner_token | default('') | length == 0) or
+              (inherited_lock_ownership_after_release_input_failure.stdout | default('') | trim == 'owned')
 
         - name: Stop after imported release-input validation failure
           ansible.builtin.fail:
@@ -220,7 +270,9 @@
         - name: Write exclusive deployment lock owner
           ansible.builtin.shell: |
             set -eu
-            printf '%s\n' "pid=$$ release={{ release_id }}" > "{{ deployment_lock_directory }}/owner"
+            printf 'owner_token=%s\npid=%s release=%s\n' \
+              "{{ deployment_lock_owner_token }}" "$$" "{{ release_id }}" \
+              > "{{ deployment_lock_directory }}/owner"
           args:
             executable: /bin/sh
           changed_when: true
@@ -726,6 +778,10 @@
           ansible.builtin.set_fact:
             maintenance_response_enabled: false
 
+        - name: Mark the new-release transaction as successful
+          ansible.builtin.set_fact:
+            release_transaction_failed: false
+
       rescue:
         - name: Stop when exclusive deployment lock was not acquired
           ansible.builtin.fail:
@@ -934,12 +990,26 @@
             - not (previous_release_manifest.stat.exists | default(false))
 
       always:
-        - name: Release deployment lock
-          ansible.builtin.file:
-            path: "{{ deployment_lock_directory }}"
-            state: absent
+        - name: Remove deployment lock after a failed new-release transaction
+          ansible.builtin.shell: |
+            set -eu
+            lock="{{ deployment_lock_directory }}"
+            expected_token="{{ deployment_lock_owner_token | default('') }}"
+            if [ ! -e "$lock" ]; then
+              exit 0
+            fi
+            if [ -n "$expected_token" ]; then
+              current_owner="$(sed -n '1p' "$lock/owner" 2>/dev/null || true)"
+              if [ "$current_owner" != "owner_token=$expected_token" ]; then
+                exit 0
+              fi
+            fi
+            rm -rf -- "$lock"
+          args:
+            executable: /bin/sh
+          changed_when: false
           when: >-
-            deployment_lock_acquired | bool
+            deployment_lock_acquired | bool and release_transaction_failed | bool
       when: release_transaction_required | bool
 
     - name: Converge the already-active immutable release under the deployment lock
@@ -947,7 +1017,97 @@
         - name: Write same-release deployment lock owner
           ansible.builtin.shell: |
             set -eu
-            printf '%s\n' "pid=$$ release={{ release_id }}" > "{{ deployment_lock_directory }}/owner"
+            printf 'owner_token=%s\npid=%s release=%s\n' \
+              "{{ deployment_lock_owner_token }}" "$$" "{{ release_id }}" \
+              > "{{ deployment_lock_directory }}/owner"
+          args:
+            executable: /bin/sh
+          changed_when: false
+
+        - name: Inspect the retained same-release manifest
+          ansible.builtin.stat:
+            path: "{{ frontend_current_link }}/release-manifest.yml"
+          register: retained_same_release_manifest
+
+        - name: Read the retained same-release manifest
+          ansible.builtin.slurp:
+            src: "{{ frontend_current_link }}/release-manifest.yml"
+          register: retained_same_release_manifest_content
+          when: retained_same_release_manifest.stat.isreg | default(false)
+
+        - name: Verify the retained same-release manifest selects the active pair
+          ansible.builtin.assert:
+            that:
+              - retained_same_release_manifest.stat.isreg | default(false)
+              - >-
+                (retained_same_release_manifest_content.content | b64decode | from_yaml)
+                == selected_release
+            fail_msg: The retained release-manifest.yml does not select the already-active immutable pair.
+
+        - name: Read the retained same-release Compose override
+          ansible.builtin.slurp:
+            src: "{{ frontend_current_link }}/compose.override.yml"
+          register: retained_same_release_compose_override
+
+        - name: Verify the retained Compose override selects the approved backend image
+          ansible.builtin.assert:
+            that:
+              - >-
+                (retained_same_release_compose_override.content | b64decode | from_yaml) ==
+                {'services': {'backend': {'image': selected_release.backend.image}}}
+            fail_msg: The retained compose.override.yml does not select the approved immutable backend image.
+
+        - name: Read the retained frontend checksum sidecar
+          ansible.builtin.slurp:
+            src: "{{ frontend_current_link }}/{{ selected_release.frontend.artifact }}.sha256"
+          register: retained_frontend_checksum_sidecar
+
+        - name: Compute the retained frontend archive digest
+          ansible.builtin.command:
+            cmd: sha256sum "{{ frontend_current_link }}/{{ selected_release.frontend.artifact }}"
+          register: retained_frontend_archive_digest
+          changed_when: false
+          check_mode: false
+
+        - name: Verify the retained frontend checksum sidecar and independently computed digest
+          ansible.builtin.assert:
+            that:
+              - >-
+                (retained_frontend_checksum_sidecar.content | b64decode) ==
+                (selected_release.frontend.sha256 ~ '  ' ~ selected_release.frontend.artifact ~ '\n')
+              - retained_frontend_archive_digest.stdout.split()[0] == selected_release.frontend.sha256
+            fail_msg: The retained frontend archive, .sha256 sidecar, and release manifest disagree.
+
+        - name: Verify retained frontend archive structure before service restart
+          ansible.builtin.shell: |
+            set -eu
+            archive="{{ frontend_current_link }}/{{ selected_release.frontend.artifact }}"
+            entries="$(tar -tzf "$archive")"
+            printf '%s\n' "$entries" | grep -Fxq 'index.html'
+            if printf '%s\n' "$entries" | grep -Eq '(^/|(^|/)\.\./|^\.{1,2}$)'; then
+              echo 'unsafe retained frontend archive path' >&2
+              exit 1
+            fi
+            if tar -tvzf "$archive" | awk '$1 ~ /^[lbhcps]/ {bad=1} END {exit bad}'; then
+              :
+            else
+              echo 'retained frontend archive contains a link, device, or pipe entry' >&2
+              exit 1
+            fi
+          args:
+            executable: /bin/sh
+          changed_when: false
+
+        - name: Verify the retained frontend tree matches the selected immutable archive
+          ansible.builtin.shell: |
+            set -eu
+            verification_directory="$(mktemp -d)"
+            trap 'rm -rf "$verification_directory"' EXIT HUP INT TERM
+            tar -xzf "{{ frontend_current_link }}/{{ selected_release.frontend.artifact }}" \
+              -C "$verification_directory" \
+              --no-same-owner \
+              --no-same-permissions
+            diff -qr "{{ frontend_current_link }}/frontend" "$verification_directory"
           args:
             executable: /bin/sh
           changed_when: false
@@ -1056,7 +1216,47 @@
             active_release_public_health.content != '{"status":"UP"}' or
             (active_release_public_health.content_type | default('') | lower) != 'application/json' or
             (active_release_public_health.cache_control | default('') | lower) != 'no-store'
+
+        - name: Record successful same-release convergence
+          ansible.builtin.lineinfile:
+            path: "{{ release_record_file }}"
+            create: true
+            owner: root
+            group: root
+            mode: "0640"
+            insertafter: EOF
+            line: >-
+              {{ {'event': 'production_release', 'result': 'success',
+                  'convergence': 'same_release', 'pair': release_pair,
+                  'release_id': release_id,
+                  'backend_image': selected_release.backend.image,
+                  'frontend_artifact': selected_release.frontend.artifact,
+                  'frontend_sha256': selected_release.frontend.sha256,
+                  'developer_approval': developer_approval,
+                  'approval_record': developer_approval_record,
+                  'verified_public_health': true} | to_json }}
+          changed_when: false
+
+        - name: Mark the same-release transaction as successful
+          ansible.builtin.set_fact:
+            same_release_transaction_failed: false
       rescue:
+        - name: Rebuild the approved same-release override for rescue actions
+          ansible.builtin.copy:
+            dest: "{{ frontend_release_root }}/{{ release_id }}/compose.override.yml"
+            owner: root
+            group: root
+            mode: "0640"
+            content: |
+              services:
+                backend:
+                  image: {{ selected_release.backend.image }}
+
+        - name: Select the rebuilt same-release override for rescue actions
+          ansible.builtin.set_fact:
+            active_release_compose_override: >-
+              {{ frontend_release_root ~ '/' ~ release_id ~ '/compose.override.yml' }}
+
         - name: Retain maintenance after same-release convergence failure
           ansible.builtin.lineinfile:
             path: "{{ compose_env_file }}"
@@ -1067,17 +1267,254 @@
         - name: Apply failed same-release maintenance transition
           ansible.builtin.meta: flush_handlers
 
+        - name: Record failed same-release convergence without blocking recovery
+          block:
+            - name: Write failed same-release convergence result
+              ansible.builtin.lineinfile:
+                path: "{{ release_record_file }}"
+                create: true
+                owner: root
+                group: root
+                mode: "0640"
+                insertafter: EOF
+                line: >-
+                  {{ {'event': 'production_release', 'result': 'failed',
+                      'convergence': 'same_release', 'pair': release_pair,
+                      'release_id': release_id,
+                      'backend_image': selected_release.backend.image,
+                      'frontend_artifact': selected_release.frontend.artifact,
+                      'frontend_sha256': selected_release.frontend.sha256,
+                      'developer_approval': developer_approval,
+                      'approval_record': developer_approval_record,
+                      'database_change': database_change_required | bool} | to_json }}
+          rescue:
+            - name: Capture failed same-release recording failure for terminal reporting
+              ansible.builtin.set_fact:
+                failed_same_release_record_failed: true
+                failed_same_release_record_error: >-
+                  {{ ansible_failed_result.msg
+                     | default('same-release audit record could not be written') }}
+
+        - name: Inspect the previous compatible pair after same-release failure
+          ansible.builtin.stat:
+            path: "{{ frontend_previous_link }}/release-manifest.yml"
+          register: previous_same_release_manifest
+
+        - name: Restore the previous compatible pair after same-release failure
+          block:
+            - name: Read the previous release manifest before same-release rollback
+              ansible.builtin.slurp:
+                src: "{{ frontend_previous_link }}/release-manifest.yml"
+              register: previous_same_release_manifest_content
+
+            - name: Parse the previous release manifest before same-release rollback
+              ansible.builtin.set_fact:
+                previous_selected_release: >-
+                  {{ previous_same_release_manifest_content.content | b64decode | from_yaml }}
+
+            - name: Verify previous release manifest identity before same-release rollback
+              ansible.builtin.assert:
+                that:
+                  - previous_selected_release.format_version is integer
+                  - previous_selected_release.format_version == 1
+                  - previous_selected_release.backend.image is match('^ghcr\\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$')
+                  - previous_selected_release.backend.digest is match('^sha256:[0-9a-f]{64}$')
+                  - previous_selected_release.backend.image.split('@') | length == 2
+                  - previous_selected_release.backend.image.split('@')[1] == previous_selected_release.backend.digest
+                  - previous_selected_release.backend.release_commit is match('^[0-9a-f]{40}$')
+                  - previous_selected_release.frontend.repository is match('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
+                  - previous_selected_release.frontend.tag is match('^v[0-9]+\\.[0-9]+\\.[0-9]+$')
+                  - >-
+                    previous_selected_release.frontend.artifact ==
+                    'gam-frontend-' ~ previous_selected_release.frontend.tag ~ '.tar.gz'
+                  - previous_selected_release.frontend.sha256 is match('^[0-9a-f]{64}$')
+                  - previous_selected_release.frontend.release_commit is match('^[0-9a-f]{40}$')
+                  - previous_selected_release.rollback.minimum_days is integer
+                  - previous_selected_release.rollback.minimum_days >= 14
+                  - previous_selected_release.rollback.minimum_verified_releases is integer
+                  - previous_selected_release.rollback.minimum_verified_releases >= 2
+                  - previous_selected_release.rollback.retain_backend_digest is sameas true
+                  - previous_selected_release.rollback.retain_frontend_archive is sameas true
+                  - previous_selected_release.rollback.retain_frontend_checksum is sameas true
+                  - previous_selected_release.rollback.retain_manifest is sameas true
+                  - previous_selected_release.rollback.retain_fingerprinted_assets is sameas true
+                fail_msg: The retained previous release-manifest.yml does not identify an immutable rollback pair.
+
+            - name: Read the previous Compose override before same-release rollback
+              ansible.builtin.slurp:
+                src: "{{ frontend_previous_link }}/compose.override.yml"
+              register: previous_same_release_compose_override
+
+            - name: Verify the previous Compose override backend binding
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    (previous_same_release_compose_override.content | b64decode | from_yaml) ==
+                    {'services': {'backend': {'image': previous_selected_release.backend.image}}}
+                fail_msg: The previous compose.override.yml does not select the retained backend image.
+
+            - name: Read the previous frontend checksum sidecar
+              ansible.builtin.slurp:
+                src: >-
+                  {{ frontend_previous_link }}/{{ previous_selected_release.frontend.artifact }}.sha256
+              register: previous_same_release_frontend_checksum_sidecar
+
+            - name: Compute the previous frontend archive digest independently
+              ansible.builtin.command:
+                cmd: >-
+                  sha256sum "{{ frontend_previous_link }}/{{ previous_selected_release.frontend.artifact }}"
+              register: previous_same_release_frontend_archive_digest
+              changed_when: false
+              check_mode: false
+
+            - name: Verify the previous frontend checksum sidecar and archive digest
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    (previous_same_release_frontend_checksum_sidecar.content | b64decode) ==
+                    (previous_selected_release.frontend.sha256 ~ '  ' ~
+                    previous_selected_release.frontend.artifact ~ '\n')
+                  - >-
+                    previous_same_release_frontend_archive_digest.stdout.split()[0] ==
+                    previous_selected_release.frontend.sha256
+                fail_msg: The retained previous archive, .sha256 sidecar, and release manifest disagree.
+
+            - name: Verify previous frontend archive safety before same-release rollback
+              ansible.builtin.shell: |
+                set -eu
+                archive="{{ frontend_previous_link }}/{{ previous_selected_release.frontend.artifact }}"
+                entries="$(tar -tzf "$archive")"
+                printf '%s\n' "$entries" | grep -Fxq 'index.html'
+                if printf '%s\n' "$entries" | grep -Eq '(^/|(^|/)\.\./|^\.{1,2}$)'; then
+                  echo 'unsafe previous frontend archive path' >&2
+                  exit 1
+                fi
+                if tar -tvzf "$archive" | awk '$1 ~ /^[lbhcps]/ {bad=1} END {exit bad}'; then
+                  :
+                else
+                  echo 'previous frontend archive contains a link, device, or pipe entry' >&2
+                  exit 1
+                fi
+              args:
+                executable: /bin/sh
+              changed_when: false
+
+            - name: Verify the previous frontend tree matches its immutable archive
+              ansible.builtin.shell: |
+                set -eu
+                verification_directory="$(mktemp -d)"
+                trap 'rm -rf "$verification_directory"' EXIT HUP INT TERM
+                tar -xzf "{{ frontend_previous_link }}/{{ previous_selected_release.frontend.artifact }}" \
+                  -C "$verification_directory" \
+                  --no-same-owner \
+                  --no-same-permissions
+                diff -qr "{{ frontend_previous_link }}/frontend" "$verification_directory"
+              args:
+                executable: /bin/sh
+              changed_when: false
+
+            - name: Select previous compatible override after same-release failure
+              ansible.builtin.set_fact:
+                active_release_compose_override: "{{ frontend_previous_link }}/compose.override.yml"
+
+            - name: Restore previous compatible frontend link after same-release failure
+              ansible.builtin.file:
+                src: "{{ frontend_previous_link }}"
+                dest: "{{ frontend_current_link }}"
+                state: link
+                force: true
+
+            - name: Restart the previous compatible pair after same-release failure
+              ansible.builtin.command:
+                argv:
+                  - docker
+                  - compose
+                  - --env-file
+                  - "{{ compose_env_file }}"
+                  - -f
+                  - "{{ compose_file }}"
+                  - -f
+                  - "{{ frontend_previous_link }}/compose.override.yml"
+                  - up
+                  - -d
+                  - backend
+                  - caddy
+
+            - name: Disable maintenance after same-release compatible rollback
+              ansible.builtin.lineinfile:
+                path: "{{ compose_env_file }}"
+                regexp: '^GAM_MAINTENANCE_ENABLED='
+                line: GAM_MAINTENANCE_ENABLED=false
+              notify: Reload Caddy after maintenance transition
+
+            - name: Apply same-release compatible rollback transition
+              ansible.builtin.meta: flush_handlers
+
+            - name: Verify public health after same-release compatible rollback
+              ansible.builtin.uri:
+                url: "{{ gam_public_origin }}/api/health"
+                method: GET
+                headers:
+                  Accept: application/json
+                return_content: true
+                status_code: 200
+                validate_certs: true
+              delegate_to: localhost
+              register: same_release_rollback_health
+              failed_when: >-
+                same_release_rollback_health.status != 200 or
+                same_release_rollback_health.content != '{"status":"UP"}' or
+                (same_release_rollback_health.content_type | default('') | lower) != 'application/json' or
+                (same_release_rollback_health.cache_control | default('') | lower) != 'no-store'
+          rescue:
+            - name: Re-enable maintenance after failed same-release compatible rollback
+              ansible.builtin.lineinfile:
+                path: "{{ compose_env_file }}"
+                regexp: '^GAM_MAINTENANCE_ENABLED='
+                line: GAM_MAINTENANCE_ENABLED=true
+              notify: Reload Caddy after maintenance transition
+
+            - name: Apply maintenance after failed same-release compatible rollback
+              ansible.builtin.meta: flush_handlers
+
+            - name: Stop after failed same-release compatible rollback
+              ansible.builtin.fail:
+                msg: >-
+                  The previous compatible pair did not restore the public health contract;
+                  maintenance remains enabled for Developer-directed recovery.
+          when:
+            - database_rollback_compatible | bool
+            - previous_same_release_manifest.stat.isreg | default(false)
+
         - name: Stop after locked same-release convergence failure
           ansible.builtin.fail:
-            msg: The already-active immutable release did not converge under the exclusive deployment lock.
+            msg: >-
+              The already-active immutable release did not converge under the exclusive deployment lock;
+              a compatible previous pair was restored when one was available, otherwise maintenance remains enabled.
+              {{ ('The failed-result audit record also could not be written: '
+                  ~ failed_same_release_record_error)
+                 if failed_same_release_record_failed | bool else '' }}
       always:
-        - name: Release deployment lock
-          ansible.builtin.file:
-            path: "{{ deployment_lock_directory }}"
-            state: absent
+        - name: Remove deployment lock after a failed same-release transaction
+          ansible.builtin.shell: |
+            set -eu
+            lock="{{ deployment_lock_directory }}"
+            expected_token="{{ deployment_lock_owner_token | default('') }}"
+            if [ ! -e "$lock" ]; then
+              exit 0
+            fi
+            if [ -n "$expected_token" ]; then
+              current_owner="$(sed -n '1p' "$lock/owner" 2>/dev/null || true)"
+              if [ "$current_owner" != "owner_token=$expected_token" ]; then
+                exit 0
+              fi
+            fi
+            rm -rf -- "$lock"
+          args:
+            executable: /bin/sh
           changed_when: false
           when: >-
-            deployment_lock_acquired | bool
+            deployment_lock_acquired | bool and same_release_transaction_failed | bool
       when: not release_transaction_required | bool
 
   handlers:

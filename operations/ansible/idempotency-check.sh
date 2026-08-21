@@ -41,6 +41,7 @@ site_play_vars="{\"gam_operator_cidrs\":${operator_cidrs_json}}"
 if ! ansible-playbook \
   -i inventory/production.yml \
   site.yml \
+  --user root \
   --extra-vars "$site_play_vars" \
   "${ansible_connection_args[@]}" \
   --diff \
