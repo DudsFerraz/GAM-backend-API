@@ -1235,7 +1235,6 @@
                   'developer_approval': developer_approval,
                   'approval_record': developer_approval_record,
                   'verified_public_health': true} | to_json }}
-          changed_when: false
 
         - name: Mark the same-release transaction as successful
           ansible.builtin.set_fact:

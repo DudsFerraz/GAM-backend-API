@@ -337,15 +337,23 @@ class ProductionHostBaselineStructuralTest {
     }
 
     @Test
-    @DisplayName("ADR-0024 - idempotency check -> replay reports zero changes")
-    void idempotencyCheckShouldAssertAZeroChangeReplay() throws IOException {
+    @DisplayName("REQ-OPS-010 - idempotency check -> permits only one explained audit append")
+    void idempotencyCheckShouldPermitOnlyOneExplainedAuditAppend() throws IOException {
         Path check = requiredSingleFile(
                 ANSIBLE_ROOT,
                 path -> path.getFileName().toString().matches("(?i).*idempot.*")
         );
+        String content = read(check).toLowerCase();
 
-        assertThat(read(check))
-                .containsPattern("(?im)changed\\s*=\\s*0");
+        assertThat(content)
+                .containsPattern("(?m)^\\s*if \\(\\(replay_changed_count\\s*>\\s*0\\)\\); then\\s*$")
+                .contains("record successful same-release convergence")
+                .contains("explained_audit_changes")
+                .containsPattern("(?s)unexplained_changes\\s*>\\s*0.*unexplained configuration drift")
+                .containsPattern(
+                        "(?s)replay_changed_count\\s*!=\\s*1\\s*\\|\\|\\s*explained_audit_changes\\s*!=\\s*1"
+                )
+                .contains("outside the single same-release audit append");
     }
 
     @Test

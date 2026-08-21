@@ -465,6 +465,71 @@ def run_local_ansible(
         )
 
 
+def run_idempotency_replay_fixture(
+    *replay_task_names: str,
+) -> subprocess.CompletedProcess[str]:
+    replay_change_output = "".join(
+        f"  printf '%s\\n' 'TASK [{task_name}]'\n"
+        "  printf '%s\\n' 'changed: [production]'\n"
+        for task_name in replay_task_names
+    )
+    with tempfile.TemporaryDirectory(prefix="gam-idempotency-replay-") as temporary:
+        temporary_root = Path(temporary)
+        fake_bin = temporary_root / "bin"
+        fake_bin.mkdir()
+        invocation_marker = temporary_root / "initial-apply-complete"
+        fake_playbook = fake_bin / "ansible-playbook"
+        fake_playbook.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -eu\n"
+            "if [ ! -e \"$INVOCATION_MARKER\" ]; then\n"
+            "  : > \"$INVOCATION_MARKER\"\n"
+            "  printf '%s\\n' 'secret input convergence verified'\n"
+            f"  printf '%s\\n' '{POSTGRESQL_STATE_MARKER}'\n"
+            "  printf '%s\\n' 'changed=1 unreachable=0 failed=0'\n"
+            "else\n"
+            f"{replay_change_output}"
+            f"  printf '%s\\n' '{POSTGRESQL_STATE_MARKER}'\n"
+            f"  printf '%s\\n' 'changed={len(replay_task_names)} unreachable=0 failed=0'\n"
+            "fi\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        fake_playbook.chmod(0o755)
+
+        fake_ansible = fake_bin / "ansible"
+        fake_ansible.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf '%s\\n' 'Status: active'\n"
+            "printf '%s\\n' 'Default: deny (incoming)'\n"
+            "printf '%s\\n' '[ 1] 80/tcp ALLOW IN Anywhere'\n"
+            "printf '%s\\n' '[ 2] 443/tcp ALLOW IN Anywhere'\n"
+            "printf '%s\\n' '[ 3] 22/tcp ALLOW IN 203.0.113.10/32'\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        fake_ansible.chmod(0o755)
+
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "PATH": f"{bash_path(fake_bin)}:{environment.get('PATH', '')}",
+                "INVOCATION_MARKER": bash_path(invocation_marker),
+                "GAM_SSH_ALLOWED_CIDR": "203.0.113.10/32",
+                "GAM_OPERATOR_CIDRS": '["203.0.113.10/32"]',
+            }
+        )
+        return subprocess.run(
+            [bash_executable(), bash_path(IDEMPOTENCY_CHECK)],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+
 def site_lock_ownership_fact_task() -> dict:
     return next(
         task
@@ -845,6 +910,69 @@ class ProductionRuntimeBoundaryTest(unittest.TestCase):
                 "the canonical full-site lock must honor root bootstrap and gamops replay "
                 "identities: " + "; ".join(identity_violations),
             )
+
+    def test_idempotency_helper_accepts_the_explained_same_release_audit_write(self) -> None:
+        explained_audit = run_idempotency_replay_fixture(
+            "Record successful same-release convergence"
+        )
+        self.assertEqual(
+            0,
+            explained_audit.returncode,
+            "REQ-OPS-010 permits an explained audit-record append during the immediate "
+            "same-release replay; it must not be hidden as changed=0 or confused with "
+            "configuration drift:\n"
+            + explained_audit.stdout
+            + explained_audit.stderr,
+        )
+
+    def test_idempotency_helper_rejects_unexplained_configuration_drift(self) -> None:
+        unexplained_drift = run_idempotency_replay_fixture(
+            "Install versioned production Compose configuration"
+        )
+        self.assertNotEqual(
+            0,
+            unexplained_drift.returncode,
+            "REQ-OPS-010 must reject a replay whose change comes from unexplained "
+            "configuration drift",
+        )
+        self.assertIn(
+            "unexplained",
+            unexplained_drift.stderr.lower(),
+            "the rejected drift must be classified explicitly instead of reporting every "
+            "replay write as equivalent",
+        )
+
+    def test_idempotency_helper_rejects_an_audit_write_mixed_with_drift(self) -> None:
+        mixed_replay = run_idempotency_replay_fixture(
+            "Record successful same-release convergence",
+            "Install versioned production Compose configuration",
+        )
+        self.assertNotEqual(
+            0,
+            mixed_replay.returncode,
+            "an explained audit append must not conceal a second changed task",
+        )
+        self.assertIn(
+            "unexplained",
+            mixed_replay.stderr.lower(),
+            "the mixed replay must classify the additional configuration change as drift",
+        )
+
+    def test_idempotency_helper_rejects_duplicate_same_release_audit_writes(self) -> None:
+        duplicate_audit = run_idempotency_replay_fixture(
+            "Record successful same-release convergence",
+            "Record successful same-release convergence",
+        )
+        self.assertNotEqual(
+            0,
+            duplicate_audit.returncode,
+            "an immediate replay permits one explained result record, not duplicate appends",
+        )
+        self.assertIn(
+            "unexplained",
+            duplicate_audit.stderr.lower(),
+            "duplicate audit writes must remain observable as a non-idempotent replay",
+        )
 
     def test_full_site_replay_keeps_runtime_environment_converged_without_rewrites(self) -> None:
         site_environment_writer = next(
@@ -1398,6 +1526,7 @@ class ProductionRuntimeBoundaryTest(unittest.TestCase):
                     "name": "Let a competing invocation acquire the released lock",
                     "hosts": "localhost",
                     "connection": "local",
+                    "become": True,
                     "gather_facts": False,
                     "tasks": [
                         {
@@ -1422,7 +1551,7 @@ class ProductionRuntimeBoundaryTest(unittest.TestCase):
                     "name": "Run stale terminal cleanup from the first invocation",
                     "hosts": "localhost",
                     "connection": "local",
-                    "become": False,
+                    "become": True,
                     "gather_facts": False,
                     "vars": {"canonical_lock_cleanup_play": True},
                     "tasks": terminal_cleanup_tasks,
@@ -1441,18 +1570,68 @@ class ProductionRuntimeBoundaryTest(unittest.TestCase):
                 result.returncode,
                 "the owner-race scenario must reach terminal cleanup:\n" + result.stdout,
             )
-            self.assertTrue(
-                lock_directory.is_dir(),
-                "stale terminal cleanup must not delete a lock reacquired by a competitor:\n"
-                + result.stdout,
+            inspection = run_local_ansible(
+                [
+                    {
+                        "name": "Inspect and remove the preserved root-owned competitor lock",
+                        "hosts": "localhost",
+                        "connection": "local",
+                        "become": True,
+                        "gather_facts": False,
+                        "vars": {"expected_competitor_owner": competitor_owner},
+                        "tasks": [
+                            {
+                                "name": "Verify the competing lock identity",
+                                "block": [
+                                    {
+                                        "name": "Inspect the preserved competitor lock",
+                                        "ansible.builtin.stat": {
+                                            "path": escaped_lock_path,
+                                        },
+                                        "register": "preserved_competitor_lock",
+                                    },
+                                    {
+                                        "name": "Read the preserved competitor owner token",
+                                        "ansible.builtin.slurp": {
+                                            "src": escaped_lock_path + "/owner",
+                                        },
+                                        "register": "preserved_competitor_owner",
+                                    },
+                                    {
+                                        "name": "Assert root ownership and competitor identity",
+                                        "ansible.builtin.assert": {
+                                            "that": [
+                                                "preserved_competitor_lock.stat.isdir",
+                                                "preserved_competitor_lock.stat.uid == 0",
+                                                "preserved_competitor_lock.stat.gid == 0",
+                                                "(preserved_competitor_owner.content | b64decode | trim) == expected_competitor_owner",
+                                            ]
+                                        },
+                                    },
+                                ],
+                                "always": [
+                                    {
+                                        "name": "Remove the root-owned competitor fixture",
+                                        "ansible.builtin.file": {
+                                            "path": escaped_lock_path,
+                                            "state": "absent",
+                                        },
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ]
             )
             self.assertEqual(
-                competitor_owner,
-                (lock_directory / "owner").read_text(encoding="utf-8").strip(),
-                "terminal cleanup must preserve the competing invocation's ownership token",
+                0,
+                inspection.returncode,
+                "stale terminal cleanup must preserve the root-owned competing lock and "
+                "its ownership token before privileged fixture teardown:\n"
+                + inspection.stdout,
             )
 
-    def test_first_same_release_replay_records_success_without_changed_recap(self) -> None:
+    def test_first_same_release_replay_reports_explained_audit_record_write(self) -> None:
         release_tasks = {
             str(task.get("name")): copy.deepcopy(task)
             for task, _ in playbook_tasks_with_ancestors(DEPLOY_RELEASE)
@@ -1501,6 +1680,7 @@ class ProductionRuntimeBoundaryTest(unittest.TestCase):
                             "name": task_name,
                             "hosts": "localhost",
                             "connection": "local",
+                            "become": True,
                             "gather_facts": False,
                             "vars": scenario_vars,
                             "tasks": [release_tasks[task_name]],
@@ -1522,16 +1702,70 @@ class ProductionRuntimeBoundaryTest(unittest.TestCase):
                 "the first same-release replay result recording must succeed:\n"
                 + first_replay.stdout,
             )
-            self.assertIn(
-                "same_release",
-                release_record.read_text(encoding="utf-8"),
-                "the real same-release result-recording task must execute",
+            inspection = run_local_ansible(
+                [
+                    {
+                        "name": "Inspect and remove the root-owned release audit fixture",
+                        "hosts": "localhost",
+                        "connection": "local",
+                        "become": True,
+                        "gather_facts": False,
+                        "tasks": [
+                            {
+                                "name": "Verify the release audit file",
+                                "block": [
+                                    {
+                                        "name": "Inspect the release audit metadata",
+                                        "ansible.builtin.stat": {
+                                            "path": str(release_record).replace("\\", "/"),
+                                        },
+                                        "register": "release_audit_file",
+                                    },
+                                    {
+                                        "name": "Read the release audit contents",
+                                        "ansible.builtin.slurp": {
+                                            "src": str(release_record).replace("\\", "/"),
+                                        },
+                                        "register": "release_audit_contents",
+                                    },
+                                    {
+                                        "name": "Assert the protected audit contract",
+                                        "ansible.builtin.assert": {
+                                            "that": [
+                                                "release_audit_file.stat.uid == 0",
+                                                "release_audit_file.stat.gid == 0",
+                                                "release_audit_file.stat.mode == '0640'",
+                                                "'same_release' in (release_audit_contents.content | b64decode)",
+                                            ]
+                                        },
+                                    },
+                                ],
+                                "always": [
+                                    {
+                                        "name": "Remove the root-owned release audit fixture",
+                                        "ansible.builtin.file": {
+                                            "path": str(release_record).replace("\\", "/"),
+                                            "state": "absent",
+                                        },
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            )
+            self.assertEqual(
+                0,
+                inspection.returncode,
+                "the same-release audit append must preserve root:root mode 0640 "
+                "ownership and remain inspectable through the privileged fixture:\n"
+                + inspection.stdout,
             )
             self.assertRegex(
                 first_replay.stdout,
-                r"changed=0\b",
-                "the first real same-release replay must satisfy the canonical "
-                "zero-change recap even while recording its successful outcome:\n"
+                r"changed=1\b",
+                "the first real same-release replay must report its explained audit-record "
+                "append instead of masking that mutation as changed=0:\n"
                 + first_replay.stdout,
             )
 
@@ -1981,7 +2215,6 @@ class ProductionRuntimeBoundaryTest(unittest.TestCase):
                 cleanup_play = copy.deepcopy(play)
                 cleanup_play["hosts"] = "localhost"
                 cleanup_play["connection"] = "local"
-                cleanup_play["become"] = False
                 cleanup_play.pop("remote_user", None)
                 cleanup_play.pop("vars_files", None)
                 cleanup_plays.append(cleanup_play)

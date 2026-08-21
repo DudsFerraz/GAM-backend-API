@@ -355,8 +355,8 @@ class ProductionServiceMetricsStructuralTest {
     }
 
     @Test
-    @DisplayName("REQ-OPS-010 - real full-site replay -> release changes remain observable and changed=0 is required")
-    void realReplayShouldExposeReleaseChangesAndRequireZeroChanges() throws IOException {
+    @DisplayName("REQ-OPS-010 - real full-site replay -> only one explained audit append is permitted")
+    void realReplayShouldExposeReleaseChangesAndRejectOnlyUnexplainedChanges() throws IOException {
         String idempotencyCheck = requiredFile(PRODUCTION_IDEMPOTENCY_CHECK).toLowerCase();
         String site = requiredFile(PRODUCTION_PLAYBOOK).toLowerCase();
         String releasePlaybook = requiredFile(PRODUCTION_RELEASE_PLAYBOOK).toLowerCase();
@@ -372,7 +372,7 @@ class ProductionServiceMetricsStructuralTest {
                 .contains("--diff")
                 .doesNotContain("--check")
                 .doesNotContain("--start-at-task");
-        assertThat(idempotencyCheck).containsPattern("(?m)changed\\s*=\\s*0");
+        assertReplayAcceptsOnlyOneExplainedAuditAppend(idempotencyCheck);
     }
 
     @Test
@@ -459,8 +459,8 @@ class ProductionServiceMetricsStructuralTest {
                 .contains("has_database_privilege")
                 .contains("pg_extension")
                 .contains("pg_stat_statements")
-                .contains("shared_preload_libraries")
-                .containsPattern("(?m)changed\\s*=\\s*0");
+                .contains("shared_preload_libraries");
+        assertReplayAcceptsOnlyOneExplainedAuditAppend(idempotencyCheck);
         assertThat(realReplayInvocation(idempotencyCheck))
                 .contains("site.yml")
                 .doesNotContain("--check");
@@ -513,8 +513,20 @@ class ProductionServiceMetricsStructuralTest {
 
         assertThat(firstInvocation).as("the real full-site apply must exist").isGreaterThanOrEqualTo(0);
         assertThat(replayInvocation).as("the real full-site replay must exist").isGreaterThan(firstInvocation);
-        assertThat(replayEnd).as("the replay output must be captured for changed=0 validation").isGreaterThan(replayInvocation);
+        assertThat(replayEnd).as("the replay output must be captured for change classification").isGreaterThan(replayInvocation);
         return script.substring(replayInvocation, replayEnd);
+    }
+
+    private static void assertReplayAcceptsOnlyOneExplainedAuditAppend(String script) {
+        assertThat(script)
+                .containsPattern("(?m)^\\s*if \\(\\(replay_changed_count\\s*>\\s*0\\)\\); then\\s*$")
+                .contains("record successful same-release convergence")
+                .contains("explained_audit_changes")
+                .containsPattern("(?s)unexplained_changes\\s*>\\s*0.*unexplained configuration drift")
+                .containsPattern(
+                        "(?s)replay_changed_count\\s*!=\\s*1\\s*\\|\\|\\s*explained_audit_changes\\s*!=\\s*1"
+                )
+                .contains("outside the single same-release audit append");
     }
 
     private static int countOccurrences(String text, String value) {

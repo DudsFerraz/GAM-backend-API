@@ -127,9 +127,42 @@ if ! ansible-playbook \
   exit 1
 fi
 
-if grep -Eq 'changed=[1-9][0-9]*' "$replay_log" || ! grep -Eq 'changed=0' "$replay_log"; then
-  echo 'Production-site replay failed: expected changed=0.' >&2
+replay_changed_count="$({
+  grep -Eo 'changed=[0-9]+' "$replay_log" || true
+} | tail -n 1 | cut -d= -f2)"
+if [[ -z "$replay_changed_count" ]]; then
+  echo 'Production-site replay failed: the recap did not report a changed count.' >&2
   exit 1
+fi
+
+if ((replay_changed_count > 0)); then
+  explained_audit_changes="$(awk '
+    /^TASK \[/ {
+      explained_task = ($0 ~ /^TASK \[Record successful same-release convergence\]/)
+      next
+    }
+    /^changed: \[/ {
+      if (explained_task) {
+        explained_changes++
+      } else {
+        unexplained_changes++
+      }
+    }
+    END {
+      if (unexplained_changes > 0) {
+        exit 2
+      }
+      print explained_changes + 0
+    }
+  ' "$replay_log")" || {
+    echo 'Production-site replay failed: unexplained configuration drift was reported.' >&2
+    exit 1
+  }
+
+  if ((replay_changed_count != 1 || explained_audit_changes != 1)); then
+    echo 'Production-site replay failed: unexplained changes were reported outside the single same-release audit append.' >&2
+    exit 1
+  fi
 fi
 
 if ! grep -Fq "$postgresql_monitoring_state_marker" "$replay_log"; then
