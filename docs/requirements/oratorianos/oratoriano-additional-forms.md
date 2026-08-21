@@ -47,7 +47,7 @@ At most one current `COMPLETED` form shall exist per Oratoriano. The complete co
 
 `COMPLETED`, `SUPERSEDED`, and `REVOKED` versions shall be immutable and non-deletable through ordinary workflows. `SUPERSEDED` and `REVOKED` are terminal. A `DRAFT` may be soft-deleted with a required reason.
 
-Draft soft deletion shall atomically soft-delete its print snapshots and uploaded signed-attachment files. Those dependent records shall disappear from ordinary reads and downloads while remaining preserved for audit and future retention decisions. They shall not be restored automatically.
+Draft soft deletion shall atomically soft-delete its print snapshots and physically delete its transient signed-attachment rows and bytes under `REQ-ORATORIANO-FORM-UPLOAD-004`. Those dependent records shall disappear from ordinary reads and downloads. Print snapshots shall remain preserved for audit and future retention decisions and shall not be restored automatically; physically deleted draft attachments shall not be restorable.
 
 After revocation, no form is current until another draft completes.
 
@@ -59,7 +59,7 @@ A draft may contain any subset of fields and may be saved repeatedly.
 
 Completion shall validate the complete field matrix, conditional rules, required declarations, signed attachment, print-snapshot relationship, and current Oratoriano identity in one transaction. A failure shall leave the form as a draft and shall not partially synchronize the ordinary profile.
 
-No second-person review or approval step shall be required. The same authorized actor may enter, upload, and complete the form; the system shall record the actor and timestamp of each operation.
+No second-person review or approval step shall be required. The same authorized actor may enter, upload, and complete the form. Form lifecycle operations and retained attachment uploads shall preserve their accepted actor and timestamp attribution. Transient draft attachment mutations shall follow the no-activity rule in `REQ-ORATORIANO-FORM-UPLOAD-006`.
 
 ---
 
@@ -242,7 +242,7 @@ The permission catalog shall define:
 | Permission | Capability |
 | --- | --- |
 | `ORATORIANO_FORM_GET` | Read sensitive form detail |
-| `ORATORIANO_FORM_MANAGE` | Create, edit, complete, revoke, and soft-delete drafts |
+| `ORATORIANO_FORM_MANAGE` | Create, edit, complete, revoke, and soft-delete drafts; add, replace, and remove draft attachments |
 | `ORATORIANO_FORM_PDF_GENERATE` | Generate identified printable PDFs |
 | `ORATORIANO_FORM_ATTACHMENT_GET` | Download signed attachments |
 
@@ -310,9 +310,11 @@ The additional-form API shall expose:
 | `POST` | `/oratorianos/{oratorianoId}/forms/{formId}/print-snapshots` | Create immutable print-snapshot data and return `201 Created` |
 | `GET` | `/oratorianos/{oratorianoId}/forms/{formId}/print-snapshots` | Read paged recoverable print-snapshot metadata |
 | `GET` | `/oratorianos/{oratorianoId}/forms/{formId}/print-snapshots/{printSnapshotId}/pdf` | Render and download the disposable PDF |
+| `POST` | `/oratorianos/{oratorianoId}/forms/{formId}/signed-attachments` | Atomically append one or more files to a draft's active collection |
 | `PUT` | `/oratorianos/{oratorianoId}/forms/{formId}/signed-attachments` | Atomically replace a draft's complete PDF or ordered image collection |
 | `GET` | `/oratorianos/{oratorianoId}/forms/{formId}/signed-attachments` | Read the active signed-attachment collection's metadata |
 | `GET` | `/oratorianos/{oratorianoId}/forms/{formId}/signed-attachments/{attachmentId}` | Download one stored file with sensitive-read auditing |
+| `DELETE` | `/oratorianos/{oratorianoId}/forms/{formId}/signed-attachments/{attachmentId}` | Physically remove one active draft attachment and normalize image order |
 
 The print-snapshot mode shall derive from the immutable form origin; clients shall not choose a conflicting mode. Completing a form shall make the signed-attachment collection immutable.
 
@@ -355,11 +357,11 @@ Each item shall contain exactly:
 - `pageOrder`; and
 - `pageCount`.
 
-The successful `PUT /oratorianos/{oratorianoId}/forms/{formId}/signed-attachments` response shall use that same item representation. Neither operation shall expose the SHA-256 digest or attachment bytes in its JSON response.
+Successful `POST` and `PUT /oratorianos/{oratorianoId}/forms/{formId}/signed-attachments` responses shall use that same item representation for the complete resulting active collection. None of these operations shall expose the SHA-256 digest or attachment bytes in their JSON responses.
 
 The list operation shall require `ORATORIANO_FORM_ATTACHMENT_GET`. It shall be available for non-deleted forms in `DRAFT`, `COMPLETED`, `SUPERSEDED`, and `REVOKED` state. Reading this metadata shall not emit a sensitive-read activity; downloading a selected attachment remains separately authorized and audited under `REQ-ORATORIANO-FORM-015`.
 
-Attachments replaced by a later `PUT`, or soft-deleted with their draft, shall remain preserved according to the accepted audit and retention rules but shall not appear in ordinary metadata lists or downloads.
+Attachments discarded while their form is a draft shall be physically deleted according to `REQ-ORATORIANO-FORM-UPLOAD-004`. Attachments that survive completion shall remain preserved with their immutable form version and shall continue to appear in ordinary metadata lists and authorized downloads.
 
 Rationale:
 The upload response is transient. Recovering the same active identifiers after a client reload allows later download of the previously uploaded files without replacing the collection.
@@ -440,8 +442,9 @@ Scenario: New completion supersedes the prior current form
 Scenario: Draft deletion removes draft-owned artifacts from ordinary access
   Given a draft has print snapshots and uploaded signed-attachment files
   When the draft is soft-deleted with a valid reason
-  Then the draft and its dependent artifacts are soft-deleted atomically
-  And none are available through ordinary reads or downloads
+  Then the draft and print snapshots are soft-deleted atomically
+  And the signed-attachment rows and bytes are physically deleted
+  And none of those artifacts are available through ordinary reads or downloads
 
 Scenario: Sensitive download is audited
   Given an authorized user downloads a signed attachment
@@ -473,7 +476,7 @@ Scenario: Reload recovers the active signed-attachment identifiers
   And no sensitive-read activity is emitted for the metadata list
 
 Scenario: Signed-attachment upload and listing share one metadata shape
-  Given an authorized user uploads a valid signed-attachment collection
+  Given an authorized user appends or replaces a valid signed-attachment collection
   When the upload response and a later metadata-list response are compared
   Then both represent each active file with id, original filename, verified MIME type, byte length, page order, and page count
   And neither response contains attachment bytes or a digest
@@ -527,10 +530,12 @@ Scenario: Revocation does not roll back the ordinary profile
 * [ADR-0016: Store signed Oratoriano form attachments in PostgreSQL](../../decisions/0016-store-signed-oratoriano-form-attachments-in-postgresql.md)
 * [ADR-0015: Compose Oratorio permission bundles in code](../../decisions/0015-compose-oratorio-permission-bundles-in-code.md)
 * [ADR-0017: Serialize Oratorio and Oratoriano mutations](../../decisions/0017-serialize-oratorio-and-oratoriano-mutations.md)
+* [ADR-0034: Treat signed attachments as transient until form completion](../../decisions/0034-treat-signed-attachments-as-transient-until-form-completion.md)
 
 ## Related requirements
 
 * [Oratoriano Records](oratoriano-records.md)
+* [Draft Signed-Attachment Collection Management](incremental-signed-attachment-uploads.md)
 * [GamCPF](../common/gam-cpf.md)
 * [GamRG](../common/gam-rg.md)
 * [GamName](../common/gam-name.md)

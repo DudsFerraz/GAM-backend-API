@@ -54,7 +54,7 @@ classDiagram
     OratorioOccurrence "1" --> "0..*" OratorianoAttendance
     Oratoriano "1" --> "0..*" OratorianoAttendance
     Oratoriano "1" --> "0..*" AdditionalForm : immutable versions
-    AdditionalForm "1" *-- "0..*" SignedAttachment : completed document pages
+    AdditionalForm "1" *-- "0..*" SignedAttachment : draft working files or completed evidence
 ```
 
 ## Related requirements
@@ -64,3 +64,8 @@ classDiagram
 - [Oratorio Attendance Tracker](../requirements/oratorio/oratorio-attendance-tracker.md)
 - [Oratoriano Records](../requirements/oratorianos/oratoriano-records.md)
 - [Oratoriano Additional Forms](../requirements/oratorianos/oratoriano-additional-forms.md)
+- [Draft Signed-Attachment Collection Management](../requirements/oratorianos/incremental-signed-attachment-uploads.md)
+
+## Related ADRs
+
+- [ADR-0034: Treat signed attachments as transient until form completion](../decisions/0034-treat-signed-attachments-as-transient-until-form-completion.md)

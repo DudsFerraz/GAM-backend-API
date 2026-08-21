@@ -98,3 +98,11 @@ Different entities follow different lifecycle rules regarding deletion.
 
 * Simple join tables without entities (e.g., `oratorio_lanche`) do not use soft delete. Their lifecycle is managed entirely by the owning aggregate.
 * Rich assignment entities (e.g., `AccountRole`, `RolePermission`, `Presence`) use soft delete to preserve security and attendance history. Re-adding the same relationship later creates a completely new row rather than reusing the old one.
+
+### 4.6. Draft Signed Attachments
+
+**Rule: Transient while draft; historical after completion.**
+
+* Signed attachments owned by an Oratoriano additional-form `DRAFT` are transient working records under [`REQ-ORATORIANO-FORM-UPLOAD-004`](../requirements/oratorianos/incremental-signed-attachment-uploads.md#req-oratoriano-form-upload-004-transient-draft-retention-and-historical-completion-boundary) and [ADR-0034](../decisions/0034-treat-signed-attachments-as-transient-until-form-completion.md).
+* Individual removal, successful full replacement, and owning-draft deletion physically delete the affected draft attachment rows and bytes through the authorized aggregate workflow. This exception must not expose a generic repository hard-delete API.
+* The active collection gains historical meaning when the form completes. Attachments owned by `COMPLETED`, `SUPERSEDED`, or `REVOKED` forms remain immutable and protected from ordinary physical or soft deletion.

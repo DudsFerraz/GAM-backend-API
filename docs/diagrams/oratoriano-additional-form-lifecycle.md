@@ -3,8 +3,8 @@
 ```mermaid
 stateDiagram-v2
     [*] --> DRAFT: start transcription or direct entry
-    DRAFT --> DRAFT: edit, upload, or create print snapshot
-    DRAFT --> Deleted: soft-delete with reason
+    DRAFT --> DRAFT: edit, append, replace, remove, or create print snapshot
+    DRAFT --> Deleted: soft-delete form/snapshots; hard-delete attachments
     DRAFT --> COMPLETED: validate signed document and complete
     COMPLETED --> SUPERSEDED: newer version completes
     COMPLETED --> REVOKED: revoke with reason
@@ -14,6 +14,8 @@ stateDiagram-v2
 ```
 
 Completion requires all structured and conditional data, affirmative declarations and image-and-voice authorization, a valid `signedOn`, and the complete signed attachment. `COMPLETED`, `SUPERSEDED`, and `REVOKED` are immutable; only `DRAFT` may be soft-deleted.
+
+Signed attachments are transient while the form remains `DRAFT`. Discarded draft attachments are physically deleted; the active collection becomes immutable historical evidence when completion succeeds.
 
 ```mermaid
 flowchart TD
@@ -36,8 +38,10 @@ flowchart TD
 ## Related requirements
 
 - [Oratoriano Additional Forms](../requirements/oratorianos/oratoriano-additional-forms.md)
+- [Draft Signed-Attachment Collection Management](../requirements/oratorianos/incremental-signed-attachment-uploads.md)
 - [Oratoriano Records](../requirements/oratorianos/oratoriano-records.md)
 
 ## Related ADRs
 
 - [ADR-0016: Store signed Oratoriano form attachments in PostgreSQL](../decisions/0016-store-signed-oratoriano-form-attachments-in-postgresql.md)
+- [ADR-0034: Treat signed attachments as transient until form completion](../decisions/0034-treat-signed-attachments-as-transient-until-form-completion.md)

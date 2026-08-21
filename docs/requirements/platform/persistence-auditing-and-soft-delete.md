@@ -234,11 +234,14 @@ Physical deletion shall be limited to:
 
 - explicitly authorized developer-maintenance operations;
 - ephemeral security or session artifacts whose owning requirement mandates physical deletion; and
+- transient aggregate-owned working records whose owning Accepted Requirement defines both their hard-delete conditions and the lifecycle transition at which retained records gain historical meaning; and
 - aggregate-owned dependents with no independent historical meaning when their owner is legitimately physically deleted.
 
 Physical deletion shall be prevented by default while an independent domain or historical record references the target.
 
-When an owned or ephemeral child has no independent historical meaning, the owning requirement may require the child to be physically deleted with its owner.
+When an owned child has no independent historical meaning before a documented lifecycle transition, the owning requirement may require the child to be physically deleted when it is discarded while the owner remains active or is soft-deleted. Once that transition gives the retained child historical meaning, ordinary physical deletion shall be prohibited.
+
+When an owned or ephemeral child never has independent historical meaning, the owning requirement may require the child to be physically deleted with its owner.
 
 Low-level row-audit actor references may become null when the actor Account is physically deleted. The audited row and its timestamps shall remain preserved. Domain relationships shall not use this attribution exception.
 
@@ -365,6 +368,13 @@ Scenario: Ephemeral child follows its owner
   Then the child is physically deleted
   And no orphan row remains
 
+Scenario: Transient owned record is discarded before its historical boundary
+  Given an owning Accepted Requirement classifies a working record as transient
+  And defines the lifecycle transition at which a retained record gains historical meaning
+  When the transient record is discarded before that transition
+  Then the owning workflow physically deletes it
+  But a retained record that crossed the transition remains protected from ordinary physical deletion
+
 Scenario: Physical actor deletion preserves low-level audited data
   Given a row records an Account UUID in a row-audit actor field
   When that actor Account is physically deleted
@@ -451,6 +461,7 @@ The diagram distinguishes application-level soft-delete policy from database phy
 
 * [ADR-0018: Standardize persistence auditing, soft deletion, and relationship enforcement](../../decisions/0018-standardize-persistence-auditing-soft-deletion-and-relationship-enforcement.md)
 * [ADR-0019: Model activity history as typed append-only entries](../../decisions/0019-model-activity-history-as-typed-append-only-entries.md)
+* [ADR-0034: Treat signed attachments as transient until form completion](../../decisions/0034-treat-signed-attachments-as-transient-until-form-completion.md)
 
 ## Related requirements
 

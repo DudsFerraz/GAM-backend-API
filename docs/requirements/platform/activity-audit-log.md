@@ -278,7 +278,7 @@ The maintenance command, endpoint, or interface shape remains owned by the persi
 
 ## Action Registry
 
-All identifiers below have status `Registered`. Action-to-target assignment, reason mode, and metadata schema remain in the linked owner. Registration establishes the stable name and allowed actor kinds; it does not silently complete missing feature-specific requirements.
+The active identifiers in the first table below have status `Registered`. Action-to-target assignment, reason mode, and metadata schema remain in the linked owner. Registration establishes the stable name and allowed actor kinds; it does not silently complete missing feature-specific requirements.
 
 | Action identifiers | Allowed actor kind or kinds | Owning Requirement Specification |
 | --- | --- | --- |
@@ -296,9 +296,15 @@ All identifiers below have status `Registered`. Action-to-target assignment, rea
 | `ORATORIO_CREATED`, `ORATORIO_PLANNING_UPDATED`, `ORATORIO_TEAM_MEMBER_ASSIGNED`, `ORATORIO_TEAM_MEMBER_REMOVED`, `ORATORIO_CANCELLED`, `ORATORIO_LOCKED`, `ORATORIO_FINALIZED`, `ORATORIO_REOPENED`, `ORATORIO_DELETED` | `ACCOUNT` | [Oratorio Occurrences and Planning](../oratorio/oratorio-occurrences-and-planning.md) |
 | `ORATORIO_MEMBER_ATTENDANCE_REGISTERED`, `ORATORIO_MEMBER_ATTENDANCE_REMOVED`, `ORATORIANO_ATTENDANCE_REGISTERED`, `ORATORIANO_ATTENDANCE_REMOVED`, `ORATORIANO_REGISTERED_AND_MARKED_PRESENT` | `ACCOUNT` | [Oratorio Attendance Tracker](../oratorio/oratorio-attendance-tracker.md) |
 | `ORATORIANO_REGISTERED`, `ORATORIANO_UPDATED`, `ORATORIANO_DELETED`, `ORATORIANO_RESTORED` | `ACCOUNT` | [Oratoriano Records](../oratorianos/oratoriano-records.md) |
-| `ORATORIANO_FORM_DRAFT_CREATED`, `ORATORIANO_FORM_DRAFT_UPDATED`, `ORATORIANO_FORM_DRAFT_DELETED`, `ORATORIANO_FORM_COMPLETED`, `ORATORIANO_FORM_REVOKED`, `ORATORIANO_FORM_PRINT_SNAPSHOT_CREATED`, `ORATORIANO_FORM_PDF_RENDERED`, `ORATORIANO_FORM_DETAIL_READ`, `ORATORIANO_FORM_ATTACHMENTS_REPLACED`, `ORATORIANO_FORM_ATTACHMENT_DOWNLOADED` | `ACCOUNT` | [Oratoriano Additional Forms](../oratorianos/oratoriano-additional-forms.md) |
+| `ORATORIANO_FORM_DRAFT_CREATED`, `ORATORIANO_FORM_DRAFT_UPDATED`, `ORATORIANO_FORM_DRAFT_DELETED`, `ORATORIANO_FORM_COMPLETED`, `ORATORIANO_FORM_REVOKED`, `ORATORIANO_FORM_PRINT_SNAPSHOT_CREATED`, `ORATORIANO_FORM_PDF_RENDERED`, `ORATORIANO_FORM_DETAIL_READ`, `ORATORIANO_FORM_ATTACHMENT_DOWNLOADED` | `ACCOUNT` | [Oratoriano Additional Forms](../oratorianos/oratoriano-additional-forms.md) |
 | `PRESENCE_REGISTERED`, `PRESENCE_UPDATED`, `PRESENCE_REMOVED` | `ACCOUNT` | [Member Event Presences](../presences/member-event-presences.md) |
 | `DEVELOPER_RESTORE_EXECUTED`, `DEVELOPER_HARD_DELETE_EXECUTED`, `DEVELOPER_VIEWED_SOFT_DELETED_RECORDS` | `DEVELOPER` | [Persistence Auditing and Soft Delete](persistence-auditing-and-soft-delete.md) |
+
+Deprecated identifiers remain part of the readable registry but shall not be emitted by new workflows:
+
+| Action identifier | Status | Allowed actor kind or kinds | Owning Requirement Specification |
+| --- | --- | --- | --- |
+| `ORATORIANO_FORM_ATTACHMENTS_REPLACED` | `Deprecated` | `ACCOUNT` | [Draft Signed-Attachment Collection Management](../oratorianos/incremental-signed-attachment-uploads.md) |
 
 No ordinary Role, Permission, or Role-Permission mutation action is registered because no accepted owning product mutation workflow currently requires one.
 
