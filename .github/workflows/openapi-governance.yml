@@ -36,6 +36,8 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare repository Codex configuration
+        run: cp -R .codex.example .codex
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -46,6 +48,13 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: package-lock.json
+      - name: Prepare Maven Wrapper launcher
+        run: |
+          if [ ! -s .mvn/wrapper/maven-wrapper.jar ]; then
+            curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 \
+              --output .mvn/wrapper/maven-wrapper.jar \
+              https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/maven-wrapper/3.3.4/maven-wrapper-3.3.4.jar
+          fi
       - name: Validate compatibility baseline mode
         env:
           BASELINE_URL: ${{ vars.OPENAPI_BASELINE_URL }}
