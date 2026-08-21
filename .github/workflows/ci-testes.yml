@@ -32,6 +32,9 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
+      - name: Preparar configuração Codex para testes estruturais
+        run: cp -R .codex.example .codex
+
       - name: Configurar JDK 21
         uses: actions/setup-java@v4
         with:
