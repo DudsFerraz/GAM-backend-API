@@ -81,8 +81,18 @@ jobs:
         run: mvn clean test
 
       - name: Fazer Upload do Relatório de Cobertura
+        id: upload-coverage
         uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
           name: relatorio-cobertura-jacoco
           path: target/site/jacoco/
+
+      - name: Repetir Upload do Relatório de Cobertura
+        if: always() && steps.upload-coverage.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-cobertura-jacoco
+          path: target/site/jacoco/
+          overwrite: true
